@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   diplomAIcy:
-    image: mcr.microsoft.com/vscode/devcontainers/base:ubuntu
+    image: mcr.microsoft.com/devcontainers/typescript-node:1-22
     command: sleep infinity
     environment:
       - CLAUDE_CONFIG_DIR=/home/node/.claude

@@ -16,14 +16,14 @@
       "installOhMyZshConfig": true,
       "configureZshAsDefaultShell": true
     },
-    "ghcr.io/rocker-org/devcontainer-features/apt-packages:1": {
-      "packages": "postgresql-client"
-    },
     "ghcr.io/anthropics/devcontainer-features/claude-code:latest": {},
     "ghcr.io/devcontainers/features/github-cli:1": {}
   },
 
   "forwardPorts": [],
+
+  // Use 'postCreateCommand' to run commands after the container is created.
+  "postCreateCommand": "./.devcontainer/boot.sh",
 
   // Configure tool-specific properties.
   "customizations": {
