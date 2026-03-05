@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  diplomAIcy:
+    image: mcr.microsoft.com/vscode/devcontainers/base:ubuntu
+    command: sleep infinity
+    environment:
+      - CLAUDE_CONFIG_DIR=/home/node/.claude
+    volumes:
+      - ../..:/workspaces:cached
+      - claude-config:/home/node/.claude
+
+volumes:
+  claude-config:
