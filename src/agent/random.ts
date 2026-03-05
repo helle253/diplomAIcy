@@ -30,8 +30,45 @@ export class RandomAgent implements DiplomacyAgent {
     // No-op
   }
 
-  async negotiate(_gameState: GameState, _incomingMessages: Message[]): Promise<Message[]> {
-    return [];
+  async negotiate(gameState: GameState, _incomingMessages: Message[]): Promise<Message[]> {
+    // Generate random diplomatic chatter for demo purposes
+    if (Math.random() < 0.3) return []; // sometimes say nothing
+
+    const otherPowers = [
+      Power.England, Power.France, Power.Germany, Power.Italy,
+      Power.Austria, Power.Russia, Power.Turkey,
+    ].filter(p => p !== this.power);
+
+    const templates = [
+      `I propose we work together this turn.`,
+      `Let's coordinate our moves against our mutual enemies.`,
+      `I have no hostile intentions toward you.`,
+      `Can we agree to a ceasefire?`,
+      `I'm planning to move east - stay out of my way.`,
+      `I'll support your position if you support mine.`,
+      `Watch out - I think you're about to be attacked.`,
+      `Let's form an alliance against the strongest power.`,
+      `I need your help. Can we talk?`,
+      `I'm willing to offer a non-aggression pact.`,
+      `Don't trust what the others are telling you.`,
+      `I'll leave your borders alone if you leave mine alone.`,
+    ];
+
+    const messages: Message[] = [];
+    const numMessages = Math.random() < 0.5 ? 1 : 2;
+
+    for (let i = 0; i < numMessages; i++) {
+      const isGlobal = Math.random() < 0.15;
+      messages.push({
+        from: this.power,
+        to: isGlobal ? 'Global' : pickRandom(otherPowers),
+        content: pickRandom(templates),
+        phase: gameState.phase,
+        timestamp: Date.now(),
+      });
+    }
+
+    return messages;
   }
 
   async submitOrders(gameState: GameState): Promise<Order[]> {

@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>diplomAIcy - Spectator</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ---- Header ---- */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 16px;
+      background: #16213e;
+      border-bottom: 1px solid #0f3460;
+      flex-shrink: 0;
+    }
+
+    header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #e94560;
+      letter-spacing: 1px;
+    }
+
+    #phase-display {
+      font-size: 14px;
+      color: #a0a0c0;
+      font-weight: 500;
+    }
+
+    #connection-status {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 10px;
+    }
+    #connection-status.connected { background: #1b5e20; color: #a5d6a7; }
+    #connection-status.disconnected { background: #b71c1c; color: #ef9a9a; }
+
+    /* ---- Two-panel layout ---- */
+    .main-container {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ---- Panel 1: Map ---- */
+    .map-panel {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      border-right: 1px solid #0f3460;
+    }
+
+    .map-area {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px;
+      min-height: 0;
+    }
+
+    #map-svg {
+      width: 100%;
+      height: 100%;
+      max-width: 1000px;
+      max-height: 760px;
+    }
+
+    /* Slider bar at bottom of map panel */
+    .slider-bar {
+      padding: 8px 16px;
+      background: #16213e;
+      border-top: 1px solid #0f3460;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    .slider-bar label {
+      font-size: 11px;
+      color: #7986cb;
+      white-space: nowrap;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    #phase-slider {
+      flex: 1;
+      accent-color: #e94560;
+      cursor: pointer;
+    }
+
+    #slider-phase-label {
+      font-size: 12px;
+      color: #a0a0c0;
+      min-width: 150px;
+      text-align: right;
+    }
+
+    .slider-buttons {
+      display: flex;
+      gap: 4px;
+    }
+
+    .slider-buttons button {
+      background: #0f3460;
+      border: 1px solid #1a4a80;
+      color: #a0a0c0;
+      padding: 2px 8px;
+      border-radius: 3px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .slider-buttons button:hover { background: #1a4a80; color: #fff; }
+    .slider-buttons button.active { background: #e94560; border-color: #e94560; color: #fff; }
+
+    /* SC summary row */
+    .sc-summary {
+      display: flex;
+      gap: 8px;
+      padding: 6px 16px;
+      background: #111a30;
+      border-top: 1px solid #0f3460;
+      flex-wrap: wrap;
+      flex-shrink: 0;
+    }
+
+    .sc-chip {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+    }
+
+    .sc-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .sc-chip .sc-num {
+      font-weight: bold;
+      min-width: 14px;
+    }
+
+    /* Province styles */
+    .province { stroke: #334; stroke-width: 1; cursor: pointer; transition: fill 0.3s; }
+    .province.sea { fill: #1a3a5c; }
+    .province.land { fill: #3a5a3a; }
+    .province.coastal { fill: #4a6a4a; }
+    .province:hover { stroke: #fff; stroke-width: 2; filter: brightness(1.2); }
+
+    .province.power-England { fill: #1565c0; }
+    .province.power-France { fill: #42a5f5; }
+    .province.power-Germany { fill: #5d4037; }
+    .province.power-Italy { fill: #2e7d32; }
+    .province.power-Austria { fill: #c62828; }
+    .province.power-Russia { fill: #6a1b9a; }
+    .province.power-Turkey { fill: #e65100; }
+
+    .province-label {
+      font-size: 8px;
+      fill: #ccc;
+      text-anchor: middle;
+      pointer-events: none;
+      font-weight: 500;
+      text-transform: uppercase;
+    }
+
+    .sc-marker {
+      stroke: #ffd700;
+      stroke-width: 1.5;
+      fill: none;
+      pointer-events: none;
+    }
+
+    /* ---- Panel 2: Messages ---- */
+    .messages-panel {
+      width: 360px;
+      display: flex;
+      flex-direction: column;
+      background: #16213e;
+      flex-shrink: 0;
+    }
+
+    .messages-header {
+      padding: 10px 14px;
+      border-bottom: 1px solid #0f3460;
+    }
+
+    .messages-header h2 {
+      font-size: 13px;
+      text-transform: uppercase;
+      color: #e94560;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+
+    .msg-filter {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+
+    .msg-filter button {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      border: 1px solid #0f3460;
+      background: transparent;
+      color: #8890b0;
+      cursor: pointer;
+    }
+    .msg-filter button:hover { background: #1a2a50; }
+    .msg-filter button.active { background: #0f3460; color: #e0e0e0; border-color: #3a5a90; }
+
+    .messages-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 14px;
+    }
+
+    .msg-entry {
+      padding: 8px 10px;
+      margin-bottom: 6px;
+      background: #111a30;
+      border-radius: 6px;
+      border-left: 3px solid #555;
+      font-size: 12px;
+    }
+
+    .msg-meta {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+      font-size: 10px;
+    }
+
+    .msg-from { font-weight: bold; }
+    .msg-to { color: #8890b0; }
+    .msg-phase-tag { color: #7986cb; font-style: italic; }
+    .msg-content { color: #c8c8e0; line-height: 1.4; }
+
+    .msg-entry.from-England { border-left-color: #1976d2; }
+    .msg-entry.from-France { border-left-color: #64b5f6; }
+    .msg-entry.from-Germany { border-left-color: #795548; }
+    .msg-entry.from-Italy { border-left-color: #43a047; }
+    .msg-entry.from-Austria { border-left-color: #e53935; }
+    .msg-entry.from-Russia { border-left-color: #8e24aa; }
+    .msg-entry.from-Turkey { border-left-color: #ef6c00; }
+
+    .no-messages {
+      color: #556;
+      font-style: italic;
+      padding: 20px 0;
+      text-align: center;
+      font-size: 13px;
+    }
+
+    /* Tooltip */
+    #tooltip {
+      display: none;
+      position: fixed;
+      background: #222;
+      border: 1px solid #555;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      pointer-events: none;
+      z-index: 100;
+      max-width: 200px;
+    }
+    #tooltip .tt-name { font-weight: bold; text-transform: uppercase; }
+    #tooltip .tt-owner { color: #aaa; }
+    #tooltip .tt-unit { color: #ffd700; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>diplomAIcy</h1>
+    <span id="phase-display">Waiting for game...</span>
+    <span id="connection-status" class="disconnected">Disconnected</span>
+  </header>
+
+  <div class="main-container">
+    <!-- Panel 1: Map + slider -->
+    <div class="map-panel">
+      <div class="map-area">
+        <svg id="map-svg" viewBox="0 0 1000 760" preserveAspectRatio="xMidYMid meet">
+          <g id="provinces-layer"></g>
+          <g id="labels-layer"></g>
+          <g id="sc-layer"></g>
+          <g id="units-layer"></g>
+        </svg>
+      </div>
+      <div class="sc-summary" id="sc-summary"></div>
+      <div class="slider-bar">
+        <label>Turn</label>
+        <input type="range" id="phase-slider" min="0" max="0" value="0" />
+        <span id="slider-phase-label">--</span>
+        <div class="slider-buttons">
+          <button id="btn-prev" title="Previous phase">&lt;</button>
+          <button id="btn-next" title="Next phase">&gt;</button>
+          <button id="btn-live" class="active" title="Follow live">LIVE</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panel 2: Messages -->
+    <div class="messages-panel">
+      <div class="messages-header">
+        <h2>Diplomatic Messages</h2>
+        <div class="msg-filter" id="msg-filter"></div>
+      </div>
+      <div class="messages-list" id="messages-list">
+        <div class="no-messages">No messages yet</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="tooltip">
+    <div class="tt-name"></div>
+    <div class="tt-owner"></div>
+    <div class="tt-unit"></div>
+  </div>
+
+  <script type="module">
+    import { MAP_DATA } from './map-data.js';
+
+    // ========================================================================
+    // Constants
+    // ========================================================================
+    const POWER_COLORS = {
+      England: '#1976d2',
+      France: '#64b5f6',
+      Germany: '#795548',
+      Italy: '#43a047',
+      Austria: '#e53935',
+      Russia: '#8e24aa',
+      Turkey: '#ef6c00',
+    };
+    const POWER_ORDER = ['England', 'France', 'Germany', 'Italy', 'Austria', 'Russia', 'Turkey'];
+    const SUPPLY_CENTER_PROVINCES = new Set([
+      'edi','lvp','lon','bre','par','mar','kie','ber','mun',
+      'ven','rom','nap','vie','tri','bud','stp','mos','war','sev',
+      'con','ank','smy','nor','swe','den','hol','bel','spa','por',
+      'tun','ser','rum','bul','gre',
+    ]);
+
+    // ========================================================================
+    // State
+    // ========================================================================
+    let snapshots = [];       // PhaseSnapshot[]
+    let currentIndex = -1;    // selected slider position
+    let isLive = true;        // auto-follow latest phase
+    let filterPower = null;   // message filter by power (null = all)
+
+    // ========================================================================
+    // Map init
+    // ========================================================================
+    function initMap() {
+      const provincesLayer = document.getElementById('provinces-layer');
+      const labelsLayer = document.getElementById('labels-layer');
+      const scLayer = document.getElementById('sc-layer');
+
+      for (const [id, data] of Object.entries(MAP_DATA.provinces)) {
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', data.path);
+        path.setAttribute('id', `prov-${id}`);
+        path.classList.add('province', data.type);
+        provincesLayer.appendChild(path);
+
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', data.center[0]);
+        text.setAttribute('y', data.center[1] + 3);
+        text.classList.add('province-label');
+        text.textContent = id;
+        labelsLayer.appendChild(text);
+
+        if (SUPPLY_CENTER_PROVINCES.has(id)) {
+          const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          circle.setAttribute('cx', data.center[0]);
+          circle.setAttribute('cy', data.center[1] - 8);
+          circle.setAttribute('r', '3');
+          circle.classList.add('sc-marker');
+          scLayer.appendChild(circle);
+        }
+
+        path.addEventListener('mouseenter', (e) => showTooltip(e, id));
+        path.addEventListener('mousemove', moveTooltip);
+        path.addEventListener('mouseleave', hideTooltip);
+      }
+    }
+
+    // ========================================================================
+    // Tooltip
+    // ========================================================================
+    const tooltip = document.getElementById('tooltip');
+
+    function showTooltip(e, provinceId) {
+      tooltip.querySelector('.tt-name').textContent = provinceId;
+      let ownerText = '', unitText = '';
+      const snap = getSelectedSnapshot();
+      if (snap) {
+        const owner = snap.gameState.supplyCenters?.[provinceId];
+        if (owner) ownerText = `Owner: ${owner}`;
+        const unit = snap.gameState.units?.find(u => u.province === provinceId);
+        if (unit) unitText = `${unit.power} ${unit.type}`;
+      }
+      tooltip.querySelector('.tt-owner').textContent = ownerText;
+      tooltip.querySelector('.tt-unit').textContent = unitText;
+      tooltip.style.display = 'block';
+      moveTooltip(e);
+    }
+
+    function moveTooltip(e) {
+      tooltip.style.left = (e.clientX + 12) + 'px';
+      tooltip.style.top = (e.clientY + 12) + 'px';
+    }
+
+    function hideTooltip() { tooltip.style.display = 'none'; }
+
+    // ========================================================================
+    // Snapshot access
+    // ========================================================================
+    function getSelectedSnapshot() {
+      if (currentIndex < 0 || currentIndex >= snapshots.length) return null;
+      return snapshots[currentIndex];
+    }
+
+    // ========================================================================
+    // Display update
+    // ========================================================================
+    function updateDisplay() {
+      const snap = getSelectedSnapshot();
+      if (!snap) return;
+
+      updatePhaseDisplay(snap);
+      updateProvinceColors(snap);
+      updateUnits(snap);
+      updateSCSummary(snap);
+      updateMessages(snap);
+    }
+
+    function updatePhaseDisplay(snap) {
+      const p = snap.phase;
+      document.getElementById('phase-display').textContent =
+        `${p.season} ${p.year} - ${p.type}`;
+    }
+
+    function updateProvinceColors(snap) {
+      for (const [id] of Object.entries(MAP_DATA.provinces)) {
+        const el = document.getElementById(`prov-${id}`);
+        if (!el) continue;
+        POWER_ORDER.forEach(p => el.classList.remove(`power-${p}`));
+        const owner = snap.gameState.supplyCenters?.[id];
+        if (owner) el.classList.add(`power-${owner}`);
+      }
+    }
+
+    function updateUnits(snap) {
+      const layer = document.getElementById('units-layer');
+      layer.innerHTML = '';
+      if (!snap.gameState.units) return;
+
+      for (const unit of snap.gameState.units) {
+        const provData = MAP_DATA.provinces[unit.province];
+        if (!provData) continue;
+        const cx = provData.center[0], cy = provData.center[1];
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+
+        if (unit.type === 'Army') {
+          const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          rect.setAttribute('x', cx - 6); rect.setAttribute('y', cy - 18);
+          rect.setAttribute('width', 12); rect.setAttribute('height', 12);
+          rect.setAttribute('rx', 2);
+          rect.setAttribute('fill', POWER_COLORS[unit.power] || '#888');
+          rect.setAttribute('stroke', '#111'); rect.setAttribute('stroke-width', '1');
+          g.appendChild(rect);
+          const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          t.setAttribute('x', cx); t.setAttribute('y', cy - 10);
+          t.setAttribute('text-anchor', 'middle'); t.setAttribute('fill', '#fff');
+          t.setAttribute('font-size', '7'); t.setAttribute('font-weight', 'bold');
+          t.textContent = 'A';
+          g.appendChild(t);
+        } else {
+          const circ = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+          circ.setAttribute('cx', cx); circ.setAttribute('cy', cy - 12);
+          circ.setAttribute('r', 7);
+          circ.setAttribute('fill', POWER_COLORS[unit.power] || '#888');
+          circ.setAttribute('stroke', '#111'); circ.setAttribute('stroke-width', '1');
+          g.appendChild(circ);
+          const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          t.setAttribute('x', cx); t.setAttribute('y', cy - 9);
+          t.setAttribute('text-anchor', 'middle'); t.setAttribute('fill', '#fff');
+          t.setAttribute('font-size', '7'); t.setAttribute('font-weight', 'bold');
+          t.textContent = 'F';
+          g.appendChild(t);
+        }
+        layer.appendChild(g);
+      }
+    }
+
+    function updateSCSummary(snap) {
+      const counts = {};
+      POWER_ORDER.forEach(p => counts[p] = 0);
+      if (snap.gameState.supplyCenters) {
+        for (const owner of Object.values(snap.gameState.supplyCenters)) {
+          if (counts[owner] !== undefined) counts[owner]++;
+        }
+      }
+      document.getElementById('sc-summary').innerHTML = POWER_ORDER.map(p =>
+        `<span class="sc-chip">
+          <span class="sc-dot" style="background:${POWER_COLORS[p]}"></span>
+          <span>${p}</span>
+          <span class="sc-num">${counts[p]}</span>
+        </span>`
+      ).join('');
+    }
+
+    // ========================================================================
+    // Messages
+    // ========================================================================
+    function updateMessages(snap) {
+      const list = document.getElementById('messages-list');
+      const messages = snap.messages || [];
+
+      // Filter
+      let filtered = messages;
+      if (filterPower) {
+        filtered = messages.filter(m => m.from === filterPower || m.to === filterPower);
+      }
+
+      if (filtered.length === 0) {
+        list.innerHTML = '<div class="no-messages">No messages yet</div>';
+        return;
+      }
+
+      // Show most recent first
+      list.innerHTML = filtered.slice().reverse().map(m => {
+        const phaseStr = m.phase ? `${m.phase.season} ${m.phase.year}` : '';
+        const toLabel = m.to === 'Global' ? 'Global' : m.to;
+        return `<div class="msg-entry from-${m.from}">
+          <div class="msg-meta">
+            <span>
+              <span class="msg-from" style="color:${POWER_COLORS[m.from] || '#aaa'}">${m.from}</span>
+              <span class="msg-to"> &rarr; ${toLabel}</span>
+            </span>
+            <span class="msg-phase-tag">${phaseStr}</span>
+          </div>
+          <div class="msg-content">${escapeHtml(m.content)}</div>
+        </div>`;
+      }).join('');
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text || '';
+      return div.innerHTML;
+    }
+
+    // ========================================================================
+    // Message filter buttons
+    // ========================================================================
+    function initMessageFilter() {
+      const container = document.getElementById('msg-filter');
+      // "All" button
+      const allBtn = document.createElement('button');
+      allBtn.textContent = 'All';
+      allBtn.classList.add('active');
+      allBtn.addEventListener('click', () => {
+        filterPower = null;
+        setActiveFilter(allBtn);
+        updateDisplay();
+      });
+      container.appendChild(allBtn);
+
+      for (const power of POWER_ORDER) {
+        const btn = document.createElement('button');
+        btn.textContent = power;
+        btn.style.borderLeftColor = POWER_COLORS[power];
+        btn.addEventListener('click', () => {
+          filterPower = power;
+          setActiveFilter(btn);
+          updateDisplay();
+        });
+        container.appendChild(btn);
+      }
+    }
+
+    function setActiveFilter(activeBtn) {
+      document.querySelectorAll('#msg-filter button').forEach(b => b.classList.remove('active'));
+      activeBtn.classList.add('active');
+    }
+
+    // ========================================================================
+    // Slider
+    // ========================================================================
+    const slider = document.getElementById('phase-slider');
+    const sliderLabel = document.getElementById('slider-phase-label');
+    const btnPrev = document.getElementById('btn-prev');
+    const btnNext = document.getElementById('btn-next');
+    const btnLive = document.getElementById('btn-live');
+
+    slider.addEventListener('input', () => {
+      isLive = false;
+      btnLive.classList.remove('active');
+      currentIndex = parseInt(slider.value);
+      updateSliderLabel();
+      updateDisplay();
+    });
+
+    btnPrev.addEventListener('click', () => {
+      if (currentIndex > 0) {
+        isLive = false;
+        btnLive.classList.remove('active');
+        currentIndex--;
+        slider.value = currentIndex;
+        updateSliderLabel();
+        updateDisplay();
+      }
+    });
+
+    btnNext.addEventListener('click', () => {
+      if (currentIndex < snapshots.length - 1) {
+        currentIndex++;
+        slider.value = currentIndex;
+        if (currentIndex === snapshots.length - 1) {
+          isLive = true;
+          btnLive.classList.add('active');
+        } else {
+          isLive = false;
+          btnLive.classList.remove('active');
+        }
+        updateSliderLabel();
+        updateDisplay();
+      }
+    });
+
+    btnLive.addEventListener('click', () => {
+      isLive = true;
+      btnLive.classList.add('active');
+      if (snapshots.length > 0) {
+        currentIndex = snapshots.length - 1;
+        slider.value = currentIndex;
+        updateSliderLabel();
+        updateDisplay();
+      }
+    });
+
+    function updateSliderLabel() {
+      const snap = getSelectedSnapshot();
+      if (snap) {
+        sliderLabel.textContent = `${snap.phase.season} ${snap.phase.year} - ${snap.phase.type}`;
+      } else {
+        sliderLabel.textContent = '--';
+      }
+    }
+
+    function syncSlider() {
+      slider.max = Math.max(0, snapshots.length - 1);
+      if (isLive && snapshots.length > 0) {
+        currentIndex = snapshots.length - 1;
+        slider.value = currentIndex;
+      }
+      updateSliderLabel();
+    }
+
+    // ========================================================================
+    // WebSocket
+    // ========================================================================
+    function connectWebSocket() {
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(`${protocol}//${location.host}`);
+      const statusEl = document.getElementById('connection-status');
+
+      ws.onopen = () => {
+        statusEl.textContent = 'Connected';
+        statusEl.className = 'connected';
+      };
+
+      ws.onclose = () => {
+        statusEl.textContent = 'Disconnected';
+        statusEl.className = 'disconnected';
+        setTimeout(connectWebSocket, 3000);
+      };
+
+      ws.onerror = () => ws.close();
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+
+          if (msg.type === 'full_history') {
+            snapshots = msg.snapshots || [];
+            syncSlider();
+            updateDisplay();
+          } else if (msg.type === 'new_phase') {
+            snapshots.push(msg.snapshot);
+            syncSlider();
+            if (isLive) updateDisplay();
+          } else if (msg.type === 'game_end') {
+            // Game ended — stay on current view
+          } else if (msg.type === 'game_restarting') {
+            snapshots = [];
+            currentIndex = -1;
+            isLive = true;
+            btnLive.classList.add('active');
+            syncSlider();
+            document.getElementById('phase-display').textContent = 'New game starting...';
+            document.getElementById('messages-list').innerHTML =
+              '<div class="no-messages">New game starting...</div>';
+          }
+        } catch (err) {
+          console.error('Failed to parse message:', err);
+        }
+      };
+    }
+
+    // ========================================================================
+    // Init
+    // ========================================================================
+    initMap();
+    initMessageFilter();
+    connectWebSocket();
+  </script>
+</body>
+</html>

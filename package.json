@@ -4,12 +4,20 @@
   "description": "Agent-oriented Diplomacy client with spectator UI",
   "type": "module",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp -r src/ui/public dist/ui/public",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "start": "tsc && node dist/ui/server.js",
+    "start:ui": "tsc && node dist/ui/server.js"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/ws": "^8.18.1",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "ws": "^8.19.0"
   }
 }
