@@ -62,6 +62,49 @@ const POWER_COLORS: Record<string, string> = {
   Turkey: '#ef6c00',
 };
 
+// Per-province unit position offsets (dx, dy) relative to the default text-based position.
+// Used to nudge units into province centers when the text label is near an edge.
+const UNIT_OFFSETS: Record<string, { dx: number; dy: number }> = {
+  // British Isles — small, tightly packed provinces
+  cly: { dx: -5, dy: 10 },
+  edi: { dx: 5, dy: 10 },
+  lvp: { dx: -5, dy: 5 },
+  yor: { dx: 5, dy: 0 },
+  wal: { dx: -5, dy: 5 },
+  lon: { dx: 0, dy: 5 },
+  // France
+  pic: { dx: 0, dy: 5 },
+  bre: { dx: 0, dy: 5 },
+  par: { dx: 5, dy: 0 },
+  gas: { dx: 5, dy: 5 },
+  bur: { dx: 5, dy: 0 },
+  // Low Countries / Germany
+  bel: { dx: 0, dy: 5 },
+  hol: { dx: 0, dy: 5 },
+  ruh: { dx: 5, dy: 0 },
+  kie: { dx: 5, dy: 0 },
+  ber: { dx: 0, dy: 0 },
+  // Northern Italy — tight cluster
+  pie: { dx: 0, dy: 5 },
+  ven: { dx: 5, dy: -5 },
+  tus: { dx: -5, dy: 5 },
+  rom: { dx: 0, dy: 5 },
+  apu: { dx: 0, dy: 5 },
+  // Balkans
+  alb: { dx: 0, dy: 5 },
+  ser: { dx: 5, dy: 0 },
+  tri: { dx: 0, dy: 5 },
+  // Scandinavia
+  den: { dx: 0, dy: 5 },
+  swe: { dx: 0, dy: 5 },
+  nor: { dx: 0, dy: 5 },
+  // Eastern
+  stp: { dx: -10, dy: 10 },
+  arm: { dx: -10, dy: 0 },
+  sev: { dx: -10, dy: 5 },
+  con: { dx: 0, dy: 5 },
+};
+
 // Pixel offsets for fleet placement on multi-coast provinces.
 // Keys are "province/coast", values are {dx, dy} relative to the province text label.
 const COAST_OFFSETS: Record<string, { dx: number; dy: number }> = {
@@ -277,11 +320,14 @@ function updateUnits(): void {
 
     const color = POWER_COLORS[unit.power] || '#888';
 
+    // Apply per-province offset to center unit in territory
+    const provOffset = UNIT_OFFSETS[unit.province];
+
     // Apply coast offset for fleets on multi-coast provinces
     const coastKey = unit.coast ? `${unit.province}/${unit.coast}` : '';
-    const offset = COAST_OFFSETS[coastKey];
-    const cx = pos.x + (offset?.dx ?? 0);
-    const cy = pos.y - 15 + (offset?.dy ?? 0);
+    const coastOffset = COAST_OFFSETS[coastKey];
+    const cx = pos.x + (provOffset?.dx ?? 0) + (coastOffset?.dx ?? 0);
+    const cy = pos.y - 15 + (provOffset?.dy ?? 0) + (coastOffset?.dy ?? 0);
 
     const g = document.createElementNS(ns, 'g');
     g.classList.add('unit-marker');
