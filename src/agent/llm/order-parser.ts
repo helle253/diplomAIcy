@@ -190,6 +190,73 @@ export function parseMessages(text: string, power: Power, phase: Phase): Message
   return messages;
 }
 
+/**
+ * Parse the batch negotiation response which can be either:
+ * - A JSON object { replies: [...], defer: [1, 3] }
+ * - A plain JSON array [...] (backward compat, treated as all replies)
+ */
+export function parseBatchNegotiationResponse(
+  text: string,
+  power: Power,
+  phase: Phase,
+  incomingCount: number,
+): { replies: Message[]; deferredIndices: number[] } {
+  // Try to extract a JSON object with replies/defer
+  const fenceMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
+  const jsonStr = fenceMatch?.[1] ?? text;
+
+  let repliesRaw: unknown[] = [];
+  let deferRaw: unknown[] = [];
+
+  try {
+    // Try parsing as object first
+    const braceStart = jsonStr.indexOf('{');
+    const braceEnd = jsonStr.lastIndexOf('}');
+    if (braceStart !== -1 && braceEnd > braceStart) {
+      const parsed = JSON.parse(jsonStr.slice(braceStart, braceEnd + 1)) as Record<string, unknown>;
+      if (parsed && typeof parsed === 'object') {
+        if (Array.isArray(parsed.replies)) repliesRaw = parsed.replies;
+        if (Array.isArray(parsed.defer)) deferRaw = parsed.defer;
+      }
+    }
+  } catch {
+    /* fall through to array parsing */
+  }
+
+  // Fallback: treat entire response as a replies array
+  if (repliesRaw.length === 0 && deferRaw.length === 0) {
+    repliesRaw = extractJSON(text);
+  }
+
+  const replies = parseMessagesFromArray(repliesRaw, power, phase);
+
+  // Validate deferred indices (1-based from prompt → 0-based)
+  const deferredIndices: number[] = [];
+  for (const d of deferRaw) {
+    const idx = typeof d === 'number' ? d - 1 : -1; // convert 1-based to 0-based
+    if (idx >= 0 && idx < incomingCount) {
+      deferredIndices.push(idx);
+    }
+  }
+
+  return { replies, deferredIndices };
+}
+
+function parseMessagesFromArray(raw: unknown[], power: Power, phase: Phase): Message[] {
+  const messages: Message[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const rec = item as Record<string, unknown>;
+    const to = resolvePower(rec.to);
+    if (!to) continue;
+    if (to === power) continue;
+    const content = typeof rec.content === 'string' ? rec.content.trim() : '';
+    if (!content) continue;
+    messages.push({ from: power, to, content, phase, timestamp: Date.now() });
+  }
+  return messages;
+}
+
 export function parseRetreats(
   text: string,
   situations: RetreatSituation[],

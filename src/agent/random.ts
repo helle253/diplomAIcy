@@ -13,7 +13,7 @@ import {
   Unit,
   UnitType,
 } from '../engine/types.js';
-import { DiplomacyAgent } from './interface.js';
+import { BatchMessageResult, DiplomacyAgent } from './interface.js';
 
 function pickRandom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
@@ -35,13 +35,13 @@ export class RandomAgent implements DiplomacyAgent {
     return this.generateMessages(gameState);
   }
 
-  async onMessages(messages: Message[], gameState: GameState): Promise<Message[]> {
+  async onMessages(messages: Message[], gameState: GameState): Promise<BatchMessageResult> {
     const replies: Message[] = [];
     for (const message of messages) {
       const r = await this.onMessage(message, gameState);
       replies.push(...r);
     }
-    return replies;
+    return { replies, deferred: [] };
   }
 
   async onMessage(message: Message, gameState: GameState): Promise<Message[]> {

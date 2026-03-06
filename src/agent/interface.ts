@@ -8,6 +8,12 @@ import {
   RetreatSituation,
 } from '../engine/types.js';
 
+/** Result from batch message processing — replies to send now, deferred messages to revisit later */
+export interface BatchMessageResult {
+  replies: Message[];
+  deferred: Message[]; // incoming messages the agent chose not to handle yet
+}
+
 export interface DiplomacyAgent {
   power: Power;
 
@@ -23,7 +29,8 @@ export interface DiplomacyAgent {
 
   // Called with a batch of accumulated messages — single LLM call for all
   // Optional: if not implemented, falls back to calling onMessage per message
-  onMessages?(messages: Message[], gameState: GameState): Promise<Message[]>;
+  // Deferred messages are re-queued for the next batch
+  onMessages?(messages: Message[], gameState: GameState): Promise<BatchMessageResult>;
 
   // Submit orders for the current phase
   submitOrders(gameState: GameState): Promise<Order[]>;

@@ -2,6 +2,7 @@ import 'dotenv/config';
 
 import { Power } from '../../engine/types.js';
 import { AnthropicClient } from '../llm/anthropic-client.js';
+import { AgentConfig, getAgentConfig, loadConfig, toLLMClientConfig } from '../llm/config.js';
 import { LLMAgent } from '../llm/llm-agent.js';
 import { LLMClient, OpenAICompatibleClient } from '../llm/llm-client.js';
 import { RandomAgent } from '../random.js';
@@ -10,11 +11,11 @@ import { connectRemoteAgent } from './remote-adapter.js';
 
 const VALID_POWERS = new Set(Object.values(Power));
 
-function parseArgs(): { power: Power; server: string; type: string } {
+function parseArgs(): { power: Power; server: string; type?: string } {
   const args = process.argv.slice(2);
   let power: string | undefined;
   let server = process.env.GAME_SERVER ?? 'http://localhost:3000/trpc';
-  let type = 'random';
+  let type: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--power' && args[i + 1]) {
@@ -37,33 +38,61 @@ function parseArgs(): { power: Power; server: string; type: string } {
   return { power: power as Power, server, type };
 }
 
-async function main() {
-  const { power, server, type } = parseArgs();
+function createLLMClient(cfg: AgentConfig): LLMClient {
+  const clientConfig = toLLMClientConfig(cfg);
+  return cfg.provider === 'anthropic'
+    ? new AnthropicClient(clientConfig)
+    : new OpenAICompatibleClient(clientConfig);
+}
 
-  // Create agent implementation
-  let agent;
-  if (type === 'llm') {
-    const provider = process.env.LLM_PROVIDER ?? 'openai';
-    const baseUrl = process.env.LLM_BASE_URL;
-    const apiKey = process.env.LLM_API_KEY;
-    const model = process.env.LLM_MODEL;
+function resolveAgentConfig(power: Power, typeOverride?: string): AgentConfig {
+  // Try loading per-power config from the game config file
+  const gameConfig = loadConfig();
+  const cfg = getAgentConfig(gameConfig, power);
 
-    if (!baseUrl || !apiKey || !model) {
-      console.error('LLM agent requires env vars: LLM_BASE_URL, LLM_API_KEY, LLM_MODEL');
-      process.exit(1);
-    }
-
-    const client: LLMClient =
-      provider === 'anthropic'
-        ? new AnthropicClient({ baseUrl, apiKey, model })
-        : new OpenAICompatibleClient({ baseUrl, apiKey, model });
-
-    agent = new LLMAgent(power, client);
-  } else {
-    agent = new RandomAgent(power);
+  // CLI --type flag overrides config file
+  if (typeOverride) {
+    cfg.type = typeOverride as AgentConfig['type'];
   }
 
-  console.log(`Starting ${type} agent for ${power}, connecting to ${server}...`);
+  // 'remote' doesn't make sense for the agent runner — treat as 'llm'
+  if ((cfg as { type: string }).type === 'remote') {
+    cfg.type = 'llm';
+  }
+
+  // For LLM agents, env vars fill in any missing fields (backward compat)
+  if (cfg.type === 'llm') {
+    cfg.provider ??= (process.env.LLM_PROVIDER as AgentConfig['provider']) ?? 'openai';
+    cfg.baseUrl ??= process.env.LLM_BASE_URL;
+    cfg.apiKey ??= process.env.LLM_API_KEY;
+    cfg.model ??= process.env.LLM_MODEL;
+  }
+
+  return cfg;
+}
+
+async function main() {
+  const { power, server, type } = parseArgs();
+  const cfg = resolveAgentConfig(power, type);
+
+  let agent;
+  if (cfg.type === 'llm') {
+    if (!cfg.baseUrl || !cfg.apiKey || !cfg.model) {
+      console.error(
+        `LLM agent for ${power} requires baseUrl, apiKey, model.\n` +
+          `Set via config file (powers.${power}) or env vars: LLM_BASE_URL, LLM_API_KEY, LLM_MODEL`,
+      );
+      process.exit(1);
+    }
+    const client = createLLMClient(cfg);
+    agent = new LLMAgent(power, client);
+    console.log(
+      `Starting llm agent for ${power} (${cfg.provider}/${cfg.model}), connecting to ${server}...`,
+    );
+  } else {
+    agent = new RandomAgent(power);
+    console.log(`Starting random agent for ${power}, connecting to ${server}...`);
+  }
 
   const trpcClient = createGameClient(server);
   await connectRemoteAgent(agent, trpcClient);

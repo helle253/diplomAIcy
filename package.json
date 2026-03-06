@@ -16,7 +16,8 @@
     "agent": "tsc && node dist/agent/remote/run.js",
     "start:remote": "DIPLOMAICY_CONFIG=diplomaicy.config.remote.json yarn start",
     "play:llm": "yarn build && bash scripts/play-llm.sh",
-    "play:random": "AGENT_TYPE=random yarn build && bash scripts/play-llm.sh"
+    "play:random": "AGENT_TYPE=random yarn build && bash scripts/play-llm.sh",
+    "play:mixed": "AGENT_CONFIG=diplomaicy.config.mixed.json AGENT_TYPE= yarn build && bash scripts/play-llm.sh"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.1",

@@ -274,17 +274,23 @@ You received the following ${incomingMessages.length} message(s):
 ${incomingSection}
 
 Decide which messages to respond to and craft your replies. You may respond to all, some, or none. You can also send messages to powers who didn't message you.
-If you choose not to respond to any, return an empty array.
 
-Respond with a JSON array inside a fenced code block:
+You may also DEFER messages — choosing to wait before responding. Deferred messages will be presented to you again later. This is strategic: a delayed response can signal disinterest, buy time to gather information, or let you see how other negotiations develop before committing. Use "defer" to list the message numbers you want to revisit later.
+
+Respond with a JSON object inside a fenced code block:
 \`\`\`json
-[
-  { "to": "England", "content": "Your message here" },
-  { "to": "Global", "content": "Public announcement" }
-]
+{
+  "replies": [
+    { "to": "England", "content": "Your message here" },
+    { "to": "Global", "content": "Public announcement" }
+  ],
+  "defer": [3]
+}
 \`\`\`
 
-Be strategic. Consider who to ally with, who to deceive, and what information to share or withhold.`;
+Both "replies" and "defer" are optional. Omit "replies" or set it to [] if you don't want to send anything now. Omit "defer" or set it to [] if you want to handle all messages immediately.
+
+Be strategic. Consider who to ally with, who to deceive, what information to share or withhold, and when the timing of your response matters.`;
 }
 
 export function buildRetreatsPrompt(

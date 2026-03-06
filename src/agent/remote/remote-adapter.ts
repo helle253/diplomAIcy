@@ -42,6 +42,7 @@ export async function connectRemoteAgent(
   // ── Message batching ────────────────────────────────────────────────
   let pendingMessages: Message[] = [];
   let batchTimer: ReturnType<typeof setTimeout> | null = null;
+  const deferCounts = new Map<string, number>(); // tracks how many times a message was deferred
 
   function flushPendingMessages() {
     if (batchTimer) {
@@ -70,6 +71,7 @@ export async function connectRemoteAgent(
     workQueue.length = 0;
     workQueue.push(...kept);
     workQueue.push({ kind: 'phase', gameState, deadlineMs });
+    deferCounts.clear();
     drainWorkQueue();
   }
 
@@ -176,14 +178,20 @@ export async function connectRemoteAgent(
 
   // ── Message batch handler ─────────────────────────────────────────
 
+  const MAX_DEFERS = 2; // max times a message can be deferred before being dropped
+
   async function handleMessageBatch(messages: Message[]) {
     try {
       const state = await client.getState.query();
       const gameState = deserializeGameState(state as SerializedGameState);
 
       let replies: Message[];
+      let deferred: Message[] = [];
+
       if (agent.onMessages) {
-        replies = await agent.onMessages(messages, gameState);
+        const result = await agent.onMessages(messages, gameState);
+        replies = result.replies;
+        deferred = result.deferred;
       } else {
         // Fallback: call onMessage sequentially for each message
         replies = [];
@@ -200,6 +208,35 @@ export async function connectRemoteAgent(
           to: reply.to,
           content: reply.content,
         });
+      }
+
+      // Re-queue deferred messages (with defer count tracking)
+      if (deferred.length > 0) {
+        const requeued: Message[] = [];
+        for (const msg of deferred) {
+          const key = msg.id ?? `${msg.from}-${msg.timestamp}`;
+          const count = (deferCounts.get(key) ?? 0) + 1;
+          if (count > MAX_DEFERS) {
+            logger.info(
+              `[${agent.power}] Dropping deferred message from ${msg.from} (max defers reached)`,
+            );
+            continue;
+          }
+          deferCounts.set(key, count);
+          requeued.push(msg);
+        }
+        if (requeued.length > 0) {
+          logger.info(`[${agent.power}] Re-queuing ${requeued.length} deferred messages`);
+          pendingMessages.push(...requeued);
+          // Restart the batch timer for the deferred messages
+          if (!batchTimer) {
+            batchTimer = setTimeout(() => {
+              batchTimer = null;
+              flushPendingMessages();
+              drainWorkQueue();
+            }, MESSAGE_BATCH_DELAY);
+          }
+        }
       }
     } catch (err) {
       logger.error(`[${agent.power}] onMessageBatch error:`, err);

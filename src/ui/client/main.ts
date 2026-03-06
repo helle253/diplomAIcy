@@ -121,7 +121,7 @@ const COAST_OFFSETS: Record<string, { dx: number; dy: number }> = {
 let snapshots: PhaseSnapshot[] = [];
 let currentIndex = 0;
 let isLive = true;
-let activeTab = 'All';
+let activeChannel = 'All';
 let svgRoot: SVGSVGElement | null = null;
 let unitsLayer: SVGGElement | null = null;
 
@@ -241,6 +241,7 @@ function updateAll(): void {
   updateProvinceColors();
   updateUnits();
   updateSCSummary();
+  renderChatTabs();
   updateMessages();
 }
 
@@ -391,23 +392,80 @@ function updateSCSummary(): void {
 
 // --- Messages ----------------------------------------------------------------
 
+/** Derive a stable channel key from a message's participants (sorted, joined). */
+function channelKey(m: Message): string {
+  if (m.to === 'Global') return 'Global';
+  const recipients = Array.isArray(m.to) ? m.to : [m.to];
+  const parties = Array.from(new Set([m.from, ...recipients]));
+  parties.sort();
+  return parties.join(',');
+}
+
+/** Human-readable channel label: "England ↔ France" or "Global". */
+function channelLabel(key: string): string {
+  if (key === 'Global') return 'Global';
+  return key.split(',').join(' ↔ ');
+}
+
+/** Short channel label using 3-letter abbreviations. */
+function channelLabelShort(key: string): string {
+  if (key === 'Global') return 'Global';
+  return key
+    .split(',')
+    .map((p) => p.slice(0, 3).toUpperCase())
+    .join('↔');
+}
+
+/** Detect all channels present across ALL snapshots. */
+function detectChannels(): string[] {
+  const keys = new Set<string>();
+  for (const snap of snapshots) {
+    if (!snap) continue;
+    for (const m of snap.messages) {
+      keys.add(channelKey(m));
+    }
+  }
+  // Sort: Global first, then by number of parties (fewer first), then alphabetically
+  return Array.from(keys).sort((a, b) => {
+    if (a === 'Global') return -1;
+    if (b === 'Global') return 1;
+    const aParts = a.split(',').length;
+    const bParts = b.split(',').length;
+    if (aParts !== bParts) return aParts - bParts;
+    return a.localeCompare(b);
+  });
+}
+
 function buildChatTabs(): void {
-  const tabs = ['All', ...POWERS];
-  chatTabs.innerHTML = tabs
-    .map(
-      (t) =>
-        `<button class="chat-tab${t === activeTab ? ' active' : ''}" data-tab="${t}">${t}</button>`,
-    )
-    .join('');
+  renderChatTabs();
 
   chatTabs.addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest('.chat-tab') as HTMLElement | null;
     if (!btn) return;
-    activeTab = btn.dataset.tab!;
+    activeChannel = btn.dataset.tab!;
     chatTabs.querySelectorAll('.chat-tab').forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
     updateMessages();
   });
+}
+
+function renderChatTabs(): void {
+  const channels = detectChannels();
+  const tabs = ['All', ...channels];
+
+  // Preserve selection if channel still exists, otherwise reset
+  if (activeChannel !== 'All' && !channels.includes(activeChannel)) {
+    activeChannel = 'All';
+  }
+
+  chatTabs.innerHTML = tabs
+    .map((t) => {
+      const label = t === 'All' ? 'All' : channelLabelShort(t);
+      const title = t === 'All' ? 'All messages' : channelLabel(t);
+      const active = t === activeChannel ? ' active' : '';
+      return `<button class="chat-tab${active}" data-tab="${escapeHtml(t)}" title="${escapeHtml(title)}">${escapeHtml(label)}</button>`;
+    })
+    .join('');
 }
 
 function updateMessages(): void {
@@ -420,14 +478,9 @@ function updateMessages(): void {
 
   let msgs = snap.messages;
 
-  // Filter by active tab
-  if (activeTab !== 'All') {
-    msgs = msgs.filter((m) => {
-      if (m.from === activeTab) return true;
-      if (m.to === activeTab) return true;
-      if (Array.isArray(m.to) && m.to.includes(activeTab)) return true;
-      return false;
-    });
+  // Filter by selected channel
+  if (activeChannel !== 'All') {
+    msgs = msgs.filter((m) => channelKey(m) === activeChannel);
   }
 
   // Most recent first
@@ -541,8 +594,9 @@ function connect(): void {
           const latest = snapshots[snapshots.length - 1];
           if (latest) {
             latest.messages.push(data.message);
-            // If viewing the latest snapshot, refresh messages
+            // Refresh tabs (new channel may have appeared) and messages
             if (currentIndex === snapshots.length - 1) {
+              renderChatTabs();
               updateMessages();
             }
           }

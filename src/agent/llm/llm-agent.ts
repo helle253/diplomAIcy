@@ -9,9 +9,15 @@ import {
   RetreatSituation,
 } from '../../engine/types.js';
 import { logger } from '../../util/logger.js';
-import { DiplomacyAgent } from '../interface.js';
+import { BatchMessageResult, DiplomacyAgent } from '../interface.js';
 import { ChatMessage, LLMClient } from './llm-client.js';
-import { parseBuildOrders, parseMessages, parseOrders, parseRetreats } from './order-parser.js';
+import {
+  parseBatchNegotiationResponse,
+  parseBuildOrders,
+  parseMessages,
+  parseOrders,
+  parseRetreats,
+} from './order-parser.js';
 import {
   buildBatchNegotiationPrompt,
   buildBuildsPrompt,
@@ -92,7 +98,7 @@ export class LLMAgent implements DiplomacyAgent {
     }
   }
 
-  async onMessages(messages: Message[], gameState: GameState): Promise<Message[]> {
+  async onMessages(messages: Message[], gameState: GameState): Promise<BatchMessageResult> {
     logger.info(`[${this.power}] LLMAgent.onMessages batch of ${messages.length}`);
     this.messageHistory.push(...messages);
 
@@ -101,7 +107,7 @@ export class LLMAgent implements DiplomacyAgent {
       logger.info(
         `[${this.power}] LLMAgent.onMessages rate-limited (${this.responsesThisPhase}/${MAX_RESPONSES_PER_PHASE})`,
       );
-      return [];
+      return { replies: [], deferred: [] };
     }
 
     try {
@@ -112,15 +118,23 @@ export class LLMAgent implements DiplomacyAgent {
         messages,
       );
       const response = await this.complete(prompt);
-      const replies = parseMessages(response, this.power, gameState.phase);
+      const { replies, deferredIndices } = parseBatchNegotiationResponse(
+        response,
+        this.power,
+        gameState.phase,
+        messages.length,
+      );
       this.responsesThisPhase += replies.length;
       this.trackMessages(replies);
-      logger.info(`[${this.power}] LLMAgent.onMessages produced ${replies.length} replies`);
-      return replies;
+      const deferred = deferredIndices.map((i) => messages[i]);
+      logger.info(
+        `[${this.power}] LLMAgent.onMessages produced ${replies.length} replies, deferred ${deferred.length}`,
+      );
+      return { replies, deferred };
     } catch (err) {
       logger.error(`[${this.power}] LLMAgent.onMessages error:`, err);
       logger.warn(`[${this.power}] LLMAgent.onMessages falling back to no replies`);
-      return [];
+      return { replies: [], deferred: [] };
     }
   }
 
