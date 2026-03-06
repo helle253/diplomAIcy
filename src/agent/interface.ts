@@ -1,4 +1,12 @@
-import { Power, GameState, Message, Order, RetreatOrder, BuildOrder, RetreatSituation } from '../engine/types.js';
+import {
+  BuildOrder,
+  GameState,
+  Message,
+  Order,
+  Power,
+  RetreatOrder,
+  RetreatSituation,
+} from '../engine/types.js';
 
 export interface DiplomacyAgent {
   power: Power;
@@ -6,14 +14,22 @@ export interface DiplomacyAgent {
   // Called at the start of a game with game info
   initialize(gameState: GameState): Promise<void>;
 
-  // Negotiation phase: receive messages, return messages to send
-  negotiate(gameState: GameState, incomingMessages: Message[]): Promise<Message[]>;
+  // Generate opening messages at the start of a diplomacy phase
+  // These are sent through the MessageBus to kick off negotiation
+  openNegotiation(gameState: GameState): Promise<Message[]>;
+
+  // Called when a message is pushed to this agent via the MessageBus
+  // Return messages to send in response (pushed back through the bus)
+  onMessage(message: Message, gameState: GameState): Promise<Message[]>;
 
   // Submit orders for the current phase
   submitOrders(gameState: GameState): Promise<Order[]>;
 
   // Submit retreat orders when units are dislodged
-  submitRetreats(gameState: GameState, retreatSituations: RetreatSituation[]): Promise<RetreatOrder[]>;
+  submitRetreats(
+    gameState: GameState,
+    retreatSituations: RetreatSituation[],
+  ): Promise<RetreatOrder[]>;
 
   // Submit build/disband orders in Winter
   // buildCount > 0 means builds available, < 0 means must disband

@@ -1,11 +1,4 @@
-import {
-  Province,
-  ProvinceType,
-  Coast,
-  Power,
-  Unit,
-  UnitType,
-} from './types.js';
+import { Coast, Power, Province, ProvinceType, Unit, UnitType } from './types.js';
 
 // ============================================================================
 // Standard Diplomacy Map Data

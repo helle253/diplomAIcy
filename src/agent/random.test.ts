@@ -1,18 +1,20 @@
-import { describe, it, expect } from 'vitest';
-import { RandomAgent } from './random.js';
-import { PROVINCES, STARTING_UNITS, STARTING_SUPPLY_CENTERS } from '../engine/map.js';
+import { describe, expect, it } from 'vitest';
+
+import { PROVINCES, STARTING_SUPPLY_CENTERS, STARTING_UNITS } from '../engine/map.js';
 import {
-  Power,
+  Coast,
   GameState,
+  Message,
+  OrderType,
+  PhaseType,
+  Power,
+  ProvinceType,
+  RetreatSituation,
+  Season,
   Unit,
   UnitType,
-  OrderType,
-  ProvinceType,
-  Season,
-  PhaseType,
-  Coast,
-  RetreatSituation,
 } from '../engine/types.js';
+import { RandomAgent } from './random.js';
 
 // ============================================================================
 // Helper: create a minimal GameState
@@ -37,13 +39,31 @@ describe('RandomAgent — initialize & negotiate', () => {
     await expect(agent.initialize(makeGameState(STARTING_UNITS))).resolves.toBeUndefined();
   });
 
-  it('negotiate returns valid messages', async () => {
+  it('openNegotiation returns valid messages', async () => {
     const agent = new RandomAgent(Power.Germany);
-    const messages = await agent.negotiate(makeGameState(STARTING_UNITS), []);
+    const messages = await agent.openNegotiation(makeGameState(STARTING_UNITS));
     expect(messages).toBeInstanceOf(Array);
     for (const msg of messages) {
       expect(msg.from).toBe(Power.Germany);
       expect(typeof msg.content).toBe('string');
+    }
+  });
+
+  it('onMessage returns valid reply messages', async () => {
+    const agent = new RandomAgent(Power.Germany);
+    const gs = makeGameState(STARTING_UNITS);
+    const incoming: Message = {
+      from: Power.France,
+      to: Power.Germany,
+      content: 'Hello!',
+      phase: gs.phase,
+      timestamp: Date.now(),
+    };
+    const replies = await agent.onMessage(incoming, gs);
+    expect(replies).toBeInstanceOf(Array);
+    for (const msg of replies) {
+      expect(msg.from).toBe(Power.Germany);
+      expect(msg.to).toBe(Power.France);
     }
   });
 
@@ -68,15 +88,15 @@ describe('RandomAgent — submitOrders', () => {
     expect(orders).toHaveLength(3);
   });
 
-  it('only generates orders for its own power\'s units', async () => {
+  it("only generates orders for its own power's units", async () => {
     const agent = new RandomAgent(Power.England);
     const state = makeGameState(STARTING_UNITS);
     const orders = await agent.submitOrders(state);
 
     // Every order should reference an English unit's province
-    const englishProvs = STARTING_UNITS
-      .filter(u => u.power === Power.England)
-      .map(u => u.province);
+    const englishProvs = STARTING_UNITS.filter((u) => u.power === Power.England).map(
+      (u) => u.province,
+    );
 
     for (const order of orders) {
       expect(englishProvs).toContain(order.unit);
@@ -104,7 +124,7 @@ describe('RandomAgent — submitOrders', () => {
       const orders = await agent.submitOrders(state);
       for (const order of orders) {
         if (order.type !== OrderType.Move) continue;
-        const unit = STARTING_UNITS.find(u => u.province === order.unit)!;
+        const unit = STARTING_UNITS.find((u) => u.province === order.unit)!;
         const prov = PROVINCES[order.unit];
 
         // Destination must be in the unit's adjacency list
@@ -144,13 +164,13 @@ describe('RandomAgent — submitOrders', () => {
 
         // The supported unit must be a friendly unit
         const supportedUnit = STARTING_UNITS.find(
-          u => u.province === order.supportedUnit && u.power === Power.Austria
+          (u) => u.province === order.supportedUnit && u.power === Power.Austria,
         );
         expect(supportedUnit).toBeDefined();
 
         // The supported unit must be adjacent to the supporting unit
         const supporterProv = PROVINCES[order.unit];
-        const unitObj = STARTING_UNITS.find(u => u.province === order.unit)!;
+        const unitObj = STARTING_UNITS.find((u) => u.province === order.unit)!;
         if (unitObj.type === UnitType.Army) {
           expect(supporterProv.adjacency.army).toContain(order.supportedUnit);
         } else {
@@ -168,7 +188,7 @@ describe('RandomAgent — submitOrders', () => {
 
     for (let i = 0; i < 30; i++) {
       const orders = await agent.submitOrders(state);
-      const stpOrder = orders.find(o => o.unit === 'stp');
+      const stpOrder = orders.find((o) => o.unit === 'stp');
       if (stpOrder && stpOrder.type === OrderType.Move) {
         expect(stpScAdj).toContain(stpOrder.destination);
       }
@@ -177,9 +197,7 @@ describe('RandomAgent — submitOrders', () => {
 
   it('Move to multi-coast destination specifies a coast for fleets', async () => {
     // Place a fleet adjacent to Spain to test coast selection
-    const units: Unit[] = [
-      { type: UnitType.Fleet, power: Power.France, province: 'mao' },
-    ];
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.France, province: 'mao' }];
     const agent = new RandomAgent(Power.France);
     const state = makeGameState(units);
 
@@ -196,9 +214,7 @@ describe('RandomAgent — submitOrders', () => {
   });
 
   it('returns Hold for unit in unknown province', async () => {
-    const units: Unit[] = [
-      { type: UnitType.Army, power: Power.Germany, province: 'xxx' },
-    ];
+    const units: Unit[] = [{ type: UnitType.Army, power: Power.Germany, province: 'xxx' }];
     const agent = new RandomAgent(Power.Germany);
     const state = makeGameState(units);
     const orders = await agent.submitOrders(state);
@@ -416,7 +432,7 @@ describe('RandomAgent — submitBuilds', () => {
     const orders = await agent.submitBuilds(state, -2);
 
     expect(orders).toHaveLength(2);
-    orders.forEach(o => expect(o.type).toBe('Remove'));
+    orders.forEach((o) => expect(o.type).toBe('Remove'));
     // Should be different units
     if (orders[0].type === 'Remove' && orders[1].type === 'Remove') {
       expect(orders[0].unit).not.toBe(orders[1].unit);
@@ -432,9 +448,7 @@ describe('RandomAgent — submitBuilds', () => {
 
   it('does not build on occupied home centers', async () => {
     // ber is occupied, so builds should go to kie or mun
-    const units: Unit[] = [
-      { type: UnitType.Army, power: Power.Germany, province: 'ber' },
-    ];
+    const units: Unit[] = [{ type: UnitType.Army, power: Power.Germany, province: 'ber' }];
     const agent = new RandomAgent(Power.Germany);
     const state = makeGameState(units);
 
@@ -459,8 +473,8 @@ describe('RandomAgent — submitBuilds', () => {
     const orders = await agent.submitBuilds(state, 2);
 
     expect(orders).toHaveLength(2);
-    const builds = orders.filter(o => o.type === 'Build');
-    const waives = orders.filter(o => o.type === 'Waive');
+    const builds = orders.filter((o) => o.type === 'Build');
+    const waives = orders.filter((o) => o.type === 'Waive');
     expect(builds).toHaveLength(1);
     expect(waives).toHaveLength(1);
     if (builds[0].type === 'Build') {
@@ -475,8 +489,13 @@ describe('RandomAgent — submitBuilds', () => {
 
 describe('RandomAgent — all powers from starting position', () => {
   const allPowers = [
-    Power.England, Power.France, Power.Germany, Power.Italy,
-    Power.Austria, Power.Russia, Power.Turkey,
+    Power.England,
+    Power.France,
+    Power.Germany,
+    Power.Italy,
+    Power.Austria,
+    Power.Russia,
+    Power.Turkey,
   ];
 
   for (const power of allPowers) {
@@ -485,12 +504,12 @@ describe('RandomAgent — all powers from starting position', () => {
       const state = makeGameState(STARTING_UNITS);
       const orders = await agent.submitOrders(state);
 
-      const unitCount = STARTING_UNITS.filter(u => u.power === power).length;
+      const unitCount = STARTING_UNITS.filter((u) => u.power === power).length;
       expect(orders).toHaveLength(unitCount);
 
       for (const order of orders) {
         // Every order unit should be one of this power's provinces
-        const unit = STARTING_UNITS.find(u => u.province === order.unit && u.power === power);
+        const unit = STARTING_UNITS.find((u) => u.province === order.unit && u.power === power);
         expect(unit).toBeDefined();
 
         if (order.type === OrderType.Move) {

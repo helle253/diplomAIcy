@@ -1,18 +1,17 @@
 import {
-  Unit,
-  UnitType,
-  Order,
-  OrderType,
-  MoveOrder,
-  SupportOrder,
   ConvoyOrder,
-  HoldOrder,
+  MoveOrder,
+  Order,
+  OrderResolution,
+  OrderStatus,
+  OrderType,
+  Power,
   Province,
   ProvinceType,
-  Power,
-  OrderStatus,
-  OrderResolution,
   RetreatSituation,
+  SupportOrder,
+  Unit,
+  UnitType,
 } from './types.js';
 
 // === Result type ===
@@ -44,7 +43,7 @@ function isAdjacent(
   from: string,
   to: string,
   unitType: UnitType,
-  provinces: Record<string, Province>
+  provinces: Record<string, Province>,
 ): boolean {
   const prov = provinces[from];
   if (!prov) return false;
@@ -61,16 +60,12 @@ function convoyRouteExists(
   from: string,
   to: string,
   convoyOrders: OrderState[],
-  provinces: Record<string, Province>
+  provinces: Record<string, Province>,
 ): boolean {
   // Find all fleets that are convoying this army from `from` to `to` and haven't failed
   const availableConvoys = convoyOrders.filter((os) => {
     const o = os.order as ConvoyOrder;
-    return (
-      o.convoyedUnit === from &&
-      o.destination === to &&
-      os.status === OrderStatus.Succeeds
-    );
+    return o.convoyedUnit === from && o.destination === to && os.status === OrderStatus.Succeeds;
   });
 
   const convoyProvinces = new Set(availableConvoys.map((os) => os.order.unit));
@@ -92,7 +87,7 @@ function convoyRouteExists(
           prov.adjacency.fleet.length > 0
           ? prov.adjacency.fleet
           : prov.adjacency.army
-        : provinces[current]?.adjacency.fleet ?? [];
+        : (provinces[current]?.adjacency.fleet ?? []);
 
     for (const neighbor of neighbors) {
       if (visited.has(neighbor)) continue;
@@ -122,7 +117,7 @@ function validateOrder(
   order: Order,
   unit: Unit,
   units: Unit[],
-  provinces: Record<string, Province>
+  provinces: Record<string, Province>,
 ): Order {
   switch (order.type) {
     case OrderType.Move: {
@@ -133,10 +128,7 @@ function validateOrder(
           return { type: OrderType.Hold, unit: order.unit };
         }
         const destProv = provinces[move.destination];
-        if (
-          !destProv ||
-          destProv.type === ProvinceType.Sea
-        ) {
+        if (!destProv || destProv.type === ProvinceType.Sea) {
           return { type: OrderType.Hold, unit: order.unit };
         }
       } else {
@@ -153,10 +145,7 @@ function validateOrder(
           return { type: OrderType.Hold, unit: order.unit };
         }
         // Fleets can't move to land (non-coastal) provinces
-        if (
-          unit.type === UnitType.Fleet &&
-          destProv.type === ProvinceType.Land
-        ) {
+        if (unit.type === UnitType.Fleet && destProv.type === ProvinceType.Land) {
           return { type: OrderType.Hold, unit: order.unit };
         }
       }
@@ -173,16 +162,12 @@ function validateOrder(
       if (sup.destination) {
         // Support-move: the supporting unit must be able to move to the destination
         // (adjacency check with the supporting unit's type)
-        if (
-          !isAdjacent(order.unit, sup.destination, unit.type, provinces)
-        ) {
+        if (!isAdjacent(order.unit, sup.destination, unit.type, provinces)) {
           return { type: OrderType.Hold, unit: order.unit };
         }
       } else {
         // Support-hold: the supporting unit must be adjacent to the supported unit
-        if (
-          !isAdjacent(order.unit, sup.supportedUnit, unit.type, provinces)
-        ) {
+        if (!isAdjacent(order.unit, sup.supportedUnit, unit.type, provinces)) {
           return { type: OrderType.Hold, unit: order.unit };
         }
       }
@@ -217,7 +202,7 @@ function validateOrder(
 export function resolveOrders(
   units: Unit[],
   orders: Map<string, Order>,
-  provinces: Record<string, Province>
+  provinces: Record<string, Province>,
 ): ResolutionResult {
   // Build order states, assigning Hold to units without orders
   const orderStates = new Map<string, OrderState>();
@@ -246,20 +231,12 @@ export function resolveOrders(
 
     // Phase 1: Check convoy routes for convoy moves
     for (const [prov, state] of orderStates) {
-      if (
-        state.order.type === OrderType.Move &&
-        (state.order as MoveOrder).viaConvoy
-      ) {
+      if (state.order.type === OrderType.Move && (state.order as MoveOrder).viaConvoy) {
         const move = state.order as MoveOrder;
         const convoyStates = Array.from(orderStates.values()).filter(
-          (os) => os.order.type === OrderType.Convoy
+          (os) => os.order.type === OrderType.Convoy,
         );
-        const routeExists = convoyRouteExists(
-          prov,
-          move.destination,
-          convoyStates,
-          provinces
-        );
+        const routeExists = convoyRouteExists(prov, move.destination, convoyStates, provinces);
         if (!routeExists && state.status === OrderStatus.Succeeds) {
           state.status = OrderStatus.Fails;
           state.reason = 'No valid convoy route';
@@ -305,21 +282,13 @@ export function resolveOrders(
 
       const move = state.order as MoveOrder;
       const destination = move.destination;
-      const attackStrength = calculateAttackStrength(
-        prov,
-        orderStates,
-        units
-      );
+      const attackStrength = calculateAttackStrength(prov, orderStates, units);
 
       // Check for head-to-head battle
       const headToHead = findHeadToHead(prov, move, orderStates);
 
       if (headToHead) {
-        const opposingStrength = calculateAttackStrength(
-          headToHead,
-          orderStates,
-          units
-        );
+        const opposingStrength = calculateAttackStrength(headToHead, orderStates, units);
 
         if (attackStrength <= opposingStrength) {
           state.status = OrderStatus.Fails;
@@ -334,9 +303,7 @@ export function resolveOrders(
       const competitors = getCompetingMoves(prov, destination, orderStates);
       if (competitors.length > 0) {
         const maxCompetitorStrength = Math.max(
-          ...competitors.map((c) =>
-            calculateAttackStrength(c, orderStates, units)
-          )
+          ...competitors.map((c) => calculateAttackStrength(c, orderStates, units)),
         );
         if (attackStrength <= maxCompetitorStrength) {
           // Bounce: we're not strictly stronger
@@ -347,15 +314,8 @@ export function resolveOrders(
           // Also fail all competitors with equal or lesser strength
           for (const comp of competitors) {
             const compState = orderStates.get(comp)!;
-            const compStrength = calculateAttackStrength(
-              comp,
-              orderStates,
-              units
-            );
-            if (
-              compStrength <= attackStrength &&
-              compState.status === OrderStatus.Succeeds
-            ) {
+            const compStrength = calculateAttackStrength(comp, orderStates, units);
+            if (compStrength <= attackStrength && compState.status === OrderStatus.Succeeds) {
               compState.status = OrderStatus.Fails;
               compState.reason = `Bounced with competing move(s) to ${destination}`;
               changed = true;
@@ -382,11 +342,7 @@ export function resolveOrders(
 
         if (!occupierIsMovingAway && !occupierIsInHeadToHead) {
           // Must overcome the hold strength
-          const holdStrength = calculateHoldStrength(
-            destination,
-            orderStates,
-            units
-          );
+          const holdStrength = calculateHoldStrength(destination, orderStates, units);
 
           // Self-dislodgement prevention
           if (state.unit.power === occupier.power) {
@@ -476,20 +432,14 @@ export function resolveOrders(
       reason: state.reason,
     });
 
-    if (
-      state.order.type === OrderType.Move &&
-      state.status === OrderStatus.Succeeds
-    ) {
+    if (state.order.type === OrderType.Move && state.status === OrderStatus.Succeeds) {
       successfulMoveDestinations.add((state.order as MoveOrder).destination);
     }
   }
 
   // Determine dislodged units
   for (const [prov, state] of orderStates) {
-    if (
-      state.order.type === OrderType.Move &&
-      state.status === OrderStatus.Succeeds
-    ) {
+    if (state.order.type === OrderType.Move && state.status === OrderStatus.Succeeds) {
       const move = state.order as MoveOrder;
       const dislodgedUnit = findUnit(units, move.destination);
 
@@ -508,7 +458,7 @@ export function resolveOrders(
             units,
             provinces,
             successfulMoveDestinations,
-            bouncedProvinces
+            bouncedProvinces,
           );
 
           dislodgedUnits.push({
@@ -529,11 +479,7 @@ export function resolveOrders(
     if (dislodgedProvs.has(unit.province)) continue; // dislodged, will be in retreat situations
 
     const state = orderStates.get(unit.province);
-    if (
-      state &&
-      state.order.type === OrderType.Move &&
-      state.status === OrderStatus.Succeeds
-    ) {
+    if (state && state.order.type === OrderType.Move && state.status === OrderStatus.Succeeds) {
       const move = state.order as MoveOrder;
       newPositions.push({
         ...unit,
@@ -553,7 +499,7 @@ export function resolveOrders(
 function calculateAttackStrength(
   attackerProv: string,
   orderStates: Map<string, OrderState>,
-  units: Unit[]
+  units: Unit[],
 ): number {
   const state = orderStates.get(attackerProv);
   if (!state || state.order.type !== OrderType.Move) return 0;
@@ -567,10 +513,7 @@ function calculateAttackStrength(
     if (supState.status !== OrderStatus.Succeeds) continue;
 
     const sup = supState.order as SupportOrder;
-    if (
-      sup.supportedUnit === attackerProv &&
-      sup.destination === move.destination
-    ) {
+    if (sup.supportedUnit === attackerProv && sup.destination === move.destination) {
       // Self-dislodgement check: don't count support if it would dislodge own unit
       const targetOccupier = findUnit(units, move.destination);
       if (targetOccupier && targetOccupier.power === supState.unit.power) {
@@ -593,7 +536,7 @@ function calculateAttackStrength(
 function calculateHoldStrength(
   province: string,
   orderStates: Map<string, OrderState>,
-  units: Unit[]
+  units: Unit[],
 ): number {
   const unit = findUnit(units, province);
   if (!unit) return 0;
@@ -602,10 +545,7 @@ function calculateHoldStrength(
   if (!state) return 0;
 
   // If the unit is successfully moving away, hold strength is 0
-  if (
-    state.order.type === OrderType.Move &&
-    state.status === OrderStatus.Succeeds
-  ) {
+  if (state.order.type === OrderType.Move && state.status === OrderStatus.Succeeds) {
     return 0;
   }
 
@@ -631,7 +571,7 @@ function calculateHoldStrength(
 function findHeadToHead(
   prov: string,
   move: MoveOrder,
-  orderStates: Map<string, OrderState>
+  orderStates: Map<string, OrderState>,
 ): string | null {
   const targetState = orderStates.get(move.destination);
   if (!targetState) return null;
@@ -649,7 +589,7 @@ function findHeadToHead(
 function getCompetingMoves(
   excludeProv: string,
   destination: string,
-  orderStates: Map<string, OrderState>
+  orderStates: Map<string, OrderState>,
 ): string[] {
   const competitors: string[] = [];
   for (const [prov, state] of orderStates) {
@@ -668,7 +608,7 @@ function getCompetingMoves(
 function isBeingDislodged(
   province: string,
   orderStates: Map<string, OrderState>,
-  units: Unit[]
+  units: Unit[],
 ): boolean {
   for (const [prov, state] of orderStates) {
     if (state.order.type !== OrderType.Move) continue;
@@ -691,10 +631,7 @@ function isBeingDislodged(
 
 // === Circular movement detection and resolution ===
 
-function resolveCircularMovement(
-  orderStates: Map<string, OrderState>,
-  units: Unit[]
-): void {
+function resolveCircularMovement(orderStates: Map<string, OrderState>, units: Unit[]): void {
   // Find cycles of 3+ moves where all units rotate (A->B, B->C, C->A).
   // Only consider move orders that are still marked as succeeding.
   const moveOrders = new Map<string, string>();
@@ -772,15 +709,12 @@ function getRetreatDestinations(
   units: Unit[],
   provinces: Record<string, Province>,
   successfulMoveDestinations: Set<string>,
-  bouncedProvinces: Set<string>
+  bouncedProvinces: Set<string>,
 ): string[] {
   const prov = provinces[unit.province];
   if (!prov) return [];
 
-  const adjacentProvs =
-    unit.type === UnitType.Army
-      ? prov.adjacency.army
-      : prov.adjacency.fleet;
+  const adjacentProvs = unit.type === UnitType.Army ? prov.adjacency.army : prov.adjacency.fleet;
 
   const occupiedProvinces = new Set<string>();
   // Current unit positions (before moves) minus those that moved away successfully
@@ -823,10 +757,8 @@ function getRetreatDestinations(
     // Province must be valid for the unit type
     const adjProv = provinces[adj];
     if (!adjProv) return false;
-    if (unit.type === UnitType.Army && adjProv.type === ProvinceType.Sea)
-      return false;
-    if (unit.type === UnitType.Fleet && adjProv.type === ProvinceType.Land)
-      return false;
+    if (unit.type === UnitType.Army && adjProv.type === ProvinceType.Sea) return false;
+    if (unit.type === UnitType.Fleet && adjProv.type === ProvinceType.Land) return false;
     return true;
   });
 }

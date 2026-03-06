@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
-import { PROVINCES, STARTING_UNITS, STARTING_SUPPLY_CENTERS } from './map.js';
-import { ProvinceType, Coast, Power, UnitType } from './types.js';
+import { describe, expect, it } from 'vitest';
+
+import { PROVINCES, STARTING_SUPPLY_CENTERS, STARTING_UNITS } from './map.js';
+import { Coast, Power, ProvinceType, UnitType } from './types.js';
 
 // ============================================================================
 // Structural Validation
@@ -40,7 +41,7 @@ describe('Structural Validation', () => {
 
   it('should have 12 neutral supply centers (supplyCenter true, no homeCenter)', () => {
     const neutralSCs = provinceIds.filter(
-      (id) => PROVINCES[id].supplyCenter && PROVINCES[id].homeCenter === undefined
+      (id) => PROVINCES[id].supplyCenter && PROVINCES[id].homeCenter === undefined,
     );
     expect(neutralSCs.length).toBe(12);
   });
@@ -60,14 +61,42 @@ describe('Structural Validation', () => {
 
 describe('Province Type Validation', () => {
   const expectedInland = [
-    'boh', 'gal', 'sil', 'tyr', 'bur', 'ruh', 'ukr', 'mos',
-    'bud', 'vie', 'war', 'mun', 'par', 'ser',
+    'boh',
+    'gal',
+    'sil',
+    'tyr',
+    'bur',
+    'ruh',
+    'ukr',
+    'mos',
+    'bud',
+    'vie',
+    'war',
+    'mun',
+    'par',
+    'ser',
   ];
 
   const expectedSea = [
-    'nat', 'nwg', 'bar', 'nth', 'iri', 'eng', 'mao', 'wes',
-    'lyo', 'tys', 'ion', 'adr', 'aeg', 'eas', 'bla', 'bal',
-    'bot', 'hel', 'ska',
+    'nat',
+    'nwg',
+    'bar',
+    'nth',
+    'iri',
+    'eng',
+    'mao',
+    'wes',
+    'lyo',
+    'tys',
+    'ion',
+    'adr',
+    'aeg',
+    'eas',
+    'bla',
+    'bal',
+    'bot',
+    'hel',
+    'ska',
   ];
 
   it('should have all inland provinces typed as Land', () => {
@@ -136,7 +165,7 @@ describe('Adjacency Symmetry', () => {
       for (const neighbor of PROVINCES[id].adjacency.army) {
         expect(
           PROVINCES[neighbor].adjacency.army,
-          `${id} lists ${neighbor} in army adj, but ${neighbor} does not list ${id}`
+          `${id} lists ${neighbor} in army adj, but ${neighbor} does not list ${id}`,
         ).toContain(id);
       }
     }
@@ -158,7 +187,7 @@ describe('Adjacency Symmetry', () => {
         }
         expect(
           inMainFleet || inCoastFleet,
-          `${id} lists ${neighbor} in fleet adj, but ${neighbor} does not list ${id} in fleet or any coast`
+          `${id} lists ${neighbor} in fleet adj, but ${neighbor} does not list ${id} in fleet or any coast`,
         ).toBe(true);
       }
     }
@@ -185,7 +214,7 @@ describe('Adjacency Symmetry', () => {
           }
           expect(
             inMainFleet || inCoastFleet,
-            `${id}(${coast}) lists ${neighbor} in fleetByCoast, but ${neighbor} does not list ${id}`
+            `${id}(${coast}) lists ${neighbor} in fleetByCoast, but ${neighbor} does not list ${id}`,
           ).toBe(true);
         }
       }
@@ -214,8 +243,7 @@ describe('Adjacency Symmetry', () => {
 // ============================================================================
 
 describe('Starting Position Validation', () => {
-  const findUnit = (province: string) =>
-    STARTING_UNITS.find((u) => u.province === province);
+  const findUnit = (province: string) => STARTING_UNITS.find((u) => u.province === province);
 
   describe('England starting units', () => {
     it('F lon', () => {
@@ -378,11 +406,11 @@ describe('Starting Position Validation', () => {
       if (p.homeCenter !== undefined) {
         expect(
           STARTING_SUPPLY_CENTERS.has(id),
-          `${id} has homeCenter ${p.homeCenter} but is not in STARTING_SUPPLY_CENTERS`
+          `${id} has homeCenter ${p.homeCenter} but is not in STARTING_SUPPLY_CENTERS`,
         ).toBe(true);
         expect(
           STARTING_SUPPLY_CENTERS.get(id),
-          `${id} STARTING_SUPPLY_CENTERS power should match homeCenter`
+          `${id} STARTING_SUPPLY_CENTERS power should match homeCenter`,
         ).toBe(p.homeCenter);
       }
     }
@@ -492,8 +520,20 @@ describe('Specific Adjacency Spot-Checks', () => {
 
   describe('Key inland verification — no fleet access', () => {
     const inlandProvinces = [
-      'boh', 'gal', 'sil', 'tyr', 'bur', 'ruh', 'ukr', 'mos',
-      'bud', 'vie', 'war', 'mun', 'par', 'ser',
+      'boh',
+      'gal',
+      'sil',
+      'tyr',
+      'bur',
+      'ruh',
+      'ukr',
+      'mos',
+      'bud',
+      'vie',
+      'war',
+      'mun',
+      'par',
+      'ser',
     ];
 
     for (const id of inlandProvinces) {

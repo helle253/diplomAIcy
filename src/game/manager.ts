@@ -1,26 +1,30 @@
-import {
-  Power,
-  GameState,
-  Unit,
-  Season,
-  PhaseType,
-  Phase,
-  Order,
-  OrderType,
-  Message,
-  RetreatOrder,
-  BuildOrder,
-  OrderResolution,
-  Coast,
-} from '../engine/types.js';
-import { PROVINCES, STARTING_UNITS, STARTING_SUPPLY_CENTERS } from '../engine/map.js';
-import { resolveOrders, ResolutionResult } from '../engine/resolver.js';
 import { DiplomacyAgent } from '../agent/interface.js';
+import { PROVINCES, STARTING_SUPPLY_CENTERS, STARTING_UNITS } from '../engine/map.js';
+import { ResolutionResult, resolveOrders } from '../engine/resolver.js';
+import {
+  BuildOrder,
+  Coast,
+  GameState,
+  Message,
+  Order,
+  OrderResolution,
+  Phase,
+  PhaseType,
+  Power,
+  RetreatOrder,
+  Season,
+} from '../engine/types.js';
+import { MessageBus } from './message-bus.js';
 
 const VICTORY_THRESHOLD = 18;
 const ALL_POWERS = [
-  Power.England, Power.France, Power.Germany, Power.Italy,
-  Power.Austria, Power.Russia, Power.Turkey,
+  Power.England,
+  Power.France,
+  Power.Germany,
+  Power.Italy,
+  Power.Austria,
+  Power.Russia,
+  Power.Turkey,
 ];
 
 export interface TurnRecord {
@@ -55,19 +59,24 @@ export interface GameEvent {
 }
 
 export type GameEventListener = (event: GameEvent) => void;
+export type GameMessageListener = (message: Message) => void;
 
 export class GameManager {
   private agents: Map<Power, DiplomacyAgent> = new Map();
   private state: GameState;
   private turnHistory: TurnRecord[] = [];
   private listeners: GameEventListener[] = [];
+  private messageListeners: GameMessageListener[] = [];
   private endYear: number;
+  private phaseDelayMs: number;
+  private currentBus: MessageBus | null = null;
 
-  constructor(maxYears = 50) {
+  constructor(maxYears = 50, phaseDelayMs = 0) {
     this.endYear = 1900 + maxYears;
+    this.phaseDelayMs = phaseDelayMs;
     this.state = {
       phase: { year: 1901, season: Season.Spring, type: PhaseType.Diplomacy },
-      units: STARTING_UNITS.map(u => ({ ...u })),
+      units: STARTING_UNITS.map((u) => ({ ...u })),
       supplyCenters: new Map(STARTING_SUPPLY_CENTERS),
       orderHistory: [],
       retreatSituations: [],
@@ -82,6 +91,18 @@ export class GameManager {
     this.listeners.push(listener);
   }
 
+  /** Listen to every diplomatic message as it flows through the bus */
+  onMessage(listener: GameMessageListener): void {
+    this.messageListeners.push(listener);
+  }
+
+  /** Send a message into the current diplomacy phase's bus (for external senders) */
+  async sendMessage(message: Message): Promise<void> {
+    if (this.currentBus) {
+      await this.currentBus.send(message);
+    }
+  }
+
   getState(): GameState {
     return this.state;
   }
@@ -90,9 +111,12 @@ export class GameManager {
     return this.turnHistory;
   }
 
-  private emit(event: GameEvent): void {
+  private async emit(event: GameEvent): Promise<void> {
     for (const listener of this.listeners) {
       listener(event);
+    }
+    if (this.phaseDelayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, this.phaseDelayMs));
     }
   }
 
@@ -105,11 +129,9 @@ export class GameManager {
     }
 
     // Initialize all agents
-    await Promise.all(
-      ALL_POWERS.map(p => this.agents.get(p)!.initialize(this.state))
-    );
+    await Promise.all(ALL_POWERS.map((p) => this.agents.get(p)!.initialize(this.state)));
 
-    this.emit({
+    await this.emit({
       type: 'game_start',
       phase: this.state.phase,
       gameState: this.state,
@@ -120,7 +142,7 @@ export class GameManager {
       // Spring
       await this.runDiplomacyPhase(Season.Spring);
       await this.runOrdersPhase(Season.Spring);
-      const springVictory = this.checkVictory();
+      const springVictory = await this.checkVictory();
       if (springVictory) return springVictory;
 
       // Fall
@@ -130,7 +152,7 @@ export class GameManager {
       // Update supply center ownership after Fall
       this.updateSupplyCenterOwnership();
 
-      const fallVictory = this.checkVictory();
+      const fallVictory = await this.checkVictory();
       if (fallVictory) return fallVictory;
 
       // Winter builds
@@ -159,49 +181,51 @@ export class GameManager {
   private async runDiplomacyPhase(season: Season): Promise<void> {
     this.state.phase = { year: this.state.phase.year, season, type: PhaseType.Diplomacy };
 
-    this.emit({
+    await this.emit({
       type: 'phase_start',
       phase: this.state.phase,
       gameState: this.state,
     });
 
-    // Collect messages from all agents
-    const allMessages: Message[] = [];
-    const activePowers = this.getActivePowers();
+    // Create a message bus for this phase
+    const bus = new MessageBus(this.state.phase);
+    this.currentBus = bus;
 
-    // Run multiple negotiation rounds
-    const NEGOTIATION_ROUNDS = 3;
-    for (let round = 0; round < NEGOTIATION_ROUNDS; round++) {
-      const roundMessages: Message[] = [];
-      await Promise.all(
-        activePowers.map(async (power) => {
-          const agent = this.agents.get(power)!;
-          // Filter messages visible to this power
-          const incoming = allMessages.filter(
-            m => m.to === power || m.to === 'Global'
-          );
-          const newMessages = await agent.negotiate(this.state, incoming);
-          // Stamp messages with metadata
-          for (const msg of newMessages) {
-            msg.phase = { ...this.state.phase };
-            msg.timestamp = Date.now();
-          }
-          roundMessages.push(...newMessages);
-        })
-      );
-      allMessages.push(...roundMessages);
+    // Wire up external message listeners (UI broadcast, etc.)
+    for (const listener of this.messageListeners) {
+      bus.onMessage(listener);
     }
+
+    // Register each agent as a handler on the bus
+    const activePowers = this.getActivePowers();
+    for (const power of activePowers) {
+      const agent = this.agents.get(power)!;
+      bus.registerHandler(power, (msg) => agent.onMessage(msg, this.state));
+    }
+
+    // Collect opening messages from all agents and send through the bus
+    const openingMessages = await Promise.all(
+      activePowers.map(async (power) => {
+        const agent = this.agents.get(power)!;
+        return agent.openNegotiation(this.state);
+      }),
+    );
+
+    await bus.sendAll(openingMessages.flat());
+
+    // Close the bus for this phase
+    this.currentBus = null;
 
     this.turnHistory.push({
       phase: { ...this.state.phase },
-      messages: allMessages,
+      messages: bus.getMessages(),
     });
   }
 
   private async runOrdersPhase(season: Season): Promise<void> {
     this.state.phase = { year: this.state.phase.year, season, type: PhaseType.Orders };
 
-    this.emit({
+    await this.emit({
       type: 'phase_start',
       phase: this.state.phase,
       gameState: this.state,
@@ -217,14 +241,12 @@ export class GameManager {
         const orders = await agent.submitOrders(this.state);
         for (const order of orders) {
           // Verify the order is for this power's unit
-          const unit = this.state.units.find(
-            u => u.province === order.unit && u.power === power
-          );
+          const unit = this.state.units.find((u) => u.province === order.unit && u.power === power);
           if (unit) {
             orderMap.set(order.unit, order);
           }
         }
-      })
+      }),
     );
 
     // Resolve orders
@@ -238,7 +260,7 @@ export class GameManager {
 
     this.state.orderHistory.push(result.resolutions);
 
-    this.emit({
+    await this.emit({
       type: 'orders_resolved',
       phase: this.state.phase,
       gameState: this.state,
@@ -259,12 +281,12 @@ export class GameManager {
 
   private async runRetreatsPhase(
     season: Season,
-    resolutionResult: ResolutionResult
+    resolutionResult: ResolutionResult,
   ): Promise<void> {
     this.state.phase = { year: this.state.phase.year, season, type: PhaseType.Retreats };
     this.state.retreatSituations = resolutionResult.dislodgedUnits;
 
-    this.emit({
+    await this.emit({
       type: 'phase_start',
       phase: this.state.phase,
       gameState: this.state,
@@ -272,19 +294,17 @@ export class GameManager {
 
     // Collect retreat orders from affected powers
     const allRetreatOrders: RetreatOrder[] = [];
-    const affectedPowers = new Set(
-      resolutionResult.dislodgedUnits.map(d => d.unit.power)
-    );
+    const affectedPowers = new Set(resolutionResult.dislodgedUnits.map((d) => d.unit.power));
 
     await Promise.all(
       [...affectedPowers].map(async (power) => {
         const agent = this.agents.get(power)!;
         const retreatOrders = await agent.submitRetreats(
           this.state,
-          resolutionResult.dislodgedUnits
+          resolutionResult.dislodgedUnits,
         );
         allRetreatOrders.push(...retreatOrders);
-      })
+      }),
     );
 
     // Process retreat orders
@@ -302,11 +322,16 @@ export class GameManager {
     }
 
     // Resolve retreat conflicts (two units retreating to same province = both destroyed)
-    for (const [dest, orders] of retreatDestinations) {
+    for (const [, orders] of retreatDestinations) {
       if (orders.length === 1) {
-        const order = orders[0] as { type: 'RetreatMove'; unit: string; destination: string; coast?: Coast };
+        const order = orders[0] as {
+          type: 'RetreatMove';
+          unit: string;
+          destination: string;
+          coast?: Coast;
+        };
         const dislodgedInfo = resolutionResult.dislodgedUnits.find(
-          d => d.unit.province === order.unit
+          (d) => d.unit.province === order.unit,
         );
         if (dislodgedInfo) {
           newPositions.push({
@@ -327,7 +352,7 @@ export class GameManager {
       retreats: allRetreatOrders,
     };
 
-    this.emit({
+    await this.emit({
       type: 'retreats_resolved',
       phase: this.state.phase,
       gameState: this.state,
@@ -354,7 +379,7 @@ export class GameManager {
       type: PhaseType.Builds,
     };
 
-    this.emit({
+    await this.emit({
       type: 'phase_start',
       phase: this.state.phase,
       gameState: this.state,
@@ -366,7 +391,7 @@ export class GameManager {
     await Promise.all(
       activePowers.map(async (power) => {
         const scCount = this.getSupplyCenterCount(power);
-        const unitCount = this.state.units.filter(u => u.power === power).length;
+        const unitCount = this.state.units.filter((u) => u.power === power).length;
         const buildCount = scCount - unitCount;
 
         if (buildCount === 0) return;
@@ -377,7 +402,7 @@ export class GameManager {
 
         // Process build orders
         this.processBuildOrders(power, buildOrders, buildCount);
-      })
+      }),
     );
 
     const turnRecord: TurnRecord = {
@@ -385,7 +410,7 @@ export class GameManager {
       builds: allBuildOrders,
     };
 
-    this.emit({
+    await this.emit({
       type: 'builds_resolved',
       phase: this.state.phase,
       gameState: this.state,
@@ -407,7 +432,7 @@ export class GameManager {
           // Must be an unoccupied home supply center
           if (province.homeCenter !== power) continue;
           if (!province.supplyCenter) continue;
-          if (this.state.units.some(u => u.province === order.province)) continue;
+          if (this.state.units.some((u) => u.province === order.province)) continue;
           // Must own the supply center
           if (this.state.supplyCenters.get(order.province) !== power) continue;
 
@@ -429,7 +454,7 @@ export class GameManager {
         if (removalsNeeded <= 0) break;
         if (order.type === 'Remove') {
           const idx = this.state.units.findIndex(
-            u => u.province === order.unit && u.power === power
+            (u) => u.province === order.unit && u.power === power,
           );
           if (idx !== -1) {
             this.state.units.splice(idx, 1);
@@ -441,7 +466,10 @@ export class GameManager {
       while (removalsNeeded > 0) {
         let idx = -1;
         for (let i = this.state.units.length - 1; i >= 0; i--) {
-          if (this.state.units[i].power === power) { idx = i; break; }
+          if (this.state.units[i].power === power) {
+            idx = i;
+            break;
+          }
         }
         if (idx === -1) break;
         this.state.units.splice(idx, 1);
@@ -459,13 +487,13 @@ export class GameManager {
   }
 
   private getActivePowers(): Power[] {
-    const powersWithUnits = new Set(this.state.units.map(u => u.power));
-    return ALL_POWERS.filter(p => powersWithUnits.has(p));
+    const powersWithUnits = new Set(this.state.units.map((u) => u.power));
+    return ALL_POWERS.filter((p) => powersWithUnits.has(p));
   }
 
   private getEliminatedPowers(): Power[] {
     const active = new Set(this.getActivePowers());
-    return ALL_POWERS.filter(p => !active.has(p));
+    return ALL_POWERS.filter((p) => !active.has(p));
   }
 
   private eliminateDeadPowers(): void {
@@ -474,7 +502,7 @@ export class GameManager {
     // This is called after winter builds, so any power with SCs should have had a chance to build
   }
 
-  private checkVictory(): GameResult | null {
+  private async checkVictory(): Promise<GameResult | null> {
     for (const power of ALL_POWERS) {
       const scCount = this.getSupplyCenterCount(power);
       if (scCount >= VICTORY_THRESHOLD) {
@@ -485,7 +513,7 @@ export class GameManager {
           eliminatedPowers: this.getEliminatedPowers(),
         };
 
-        this.emit({
+        await this.emit({
           type: 'game_end',
           phase: this.state.phase,
           gameState: this.state,

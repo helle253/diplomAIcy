@@ -183,8 +183,10 @@ export interface GameState {
 // === Messages (for negotiation) ===
 
 export interface Message {
+  id?: string;
+  gameId?: string;
   from: Power;
-  to: Power | 'Global';
+  to: Power | Power[] | 'Global';
   content: string;
   phase: Phase;
   timestamp: number;

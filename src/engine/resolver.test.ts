@@ -1,14 +1,8 @@
-import { describe, it, expect } from 'vitest';
-import { resolveOrders } from './resolver.js';
+import { describe, expect, it } from 'vitest';
+
 import { PROVINCES } from './map.js';
-import {
-  Unit,
-  UnitType,
-  Order,
-  OrderType,
-  OrderStatus,
-  Power,
-} from './types.js';
+import { resolveOrders } from './resolver.js';
+import { Order, OrderStatus, OrderType, Power, Unit, UnitType } from './types.js';
 
 // ============================================================================
 // Helper: find the resolution for the unit originally at a given province
@@ -28,12 +22,8 @@ function res(result: ReturnType<typeof resolveOrders>, province: string) {
 describe('Basic Orders [Rule 12]', () => {
   it('Hold succeeds when uncontested', () => {
     // [Rule 12] A unit ordered to hold remains "in place".
-    const units: Unit[] = [
-      { type: UnitType.Army, power: Power.Germany, province: 'mun' },
-    ];
-    const orders = new Map<string, Order>([
-      ['mun', { type: OrderType.Hold, unit: 'mun' }],
-    ]);
+    const units: Unit[] = [{ type: UnitType.Army, power: Power.Germany, province: 'mun' }];
+    const orders = new Map<string, Order>([['mun', { type: OrderType.Hold, unit: 'mun' }]]);
     const result = resolveOrders(units, orders, PROVINCES);
 
     expect(res(result, 'mun')!.status).toBe(OrderStatus.Succeeds);
@@ -43,9 +33,7 @@ describe('Basic Orders [Rule 12]', () => {
 
   it('Move to empty adjacent province succeeds', () => {
     // [Rule 12] A unit moves "to an adjacent province".
-    const units: Unit[] = [
-      { type: UnitType.Army, power: Power.Germany, province: 'mun' },
-    ];
+    const units: Unit[] = [{ type: UnitType.Army, power: Power.Germany, province: 'mun' }];
     const orders = new Map<string, Order>([
       ['mun', { type: OrderType.Move, unit: 'mun', destination: 'bur' }],
     ]);
@@ -57,9 +45,7 @@ describe('Basic Orders [Rule 12]', () => {
 
   it('Unit with no order defaults to Hold', () => {
     // [Rule 12] A unit not given an order is treated as holding.
-    const units: Unit[] = [
-      { type: UnitType.Army, power: Power.Germany, province: 'mun' },
-    ];
+    const units: Unit[] = [{ type: UnitType.Army, power: Power.Germany, province: 'mun' }];
     const orders = new Map<string, Order>(); // empty — no order given
     const result = resolveOrders(units, orders, PROVINCES);
 
@@ -71,9 +57,7 @@ describe('Basic Orders [Rule 12]', () => {
   it('Move to non-adjacent province becomes Hold', () => {
     // [Rule 12] Invalid orders (non-adjacent destination) are converted to Hold.
     // Munich is not adjacent to Paris by army.
-    const units: Unit[] = [
-      { type: UnitType.Army, power: Power.Germany, province: 'mun' },
-    ];
+    const units: Unit[] = [{ type: UnitType.Army, power: Power.Germany, province: 'mun' }];
     const orders = new Map<string, Order>([
       ['mun', { type: OrderType.Move, unit: 'mun', destination: 'par' }],
     ]);
@@ -86,9 +70,7 @@ describe('Basic Orders [Rule 12]', () => {
   it('Army cannot move to sea province — becomes Hold', () => {
     // [Rule 12] Armies cannot enter sea provinces (except via convoy).
     // Kiel is fleet-adjacent to Baltic Sea, but armies cannot go there.
-    const units: Unit[] = [
-      { type: UnitType.Army, power: Power.Germany, province: 'kie' },
-    ];
+    const units: Unit[] = [{ type: UnitType.Army, power: Power.Germany, province: 'kie' }];
     const orders = new Map<string, Order>([
       ['kie', { type: OrderType.Move, unit: 'kie', destination: 'bal' }],
     ]);
@@ -101,9 +83,7 @@ describe('Basic Orders [Rule 12]', () => {
   it('Fleet cannot move to inland province — becomes Hold', () => {
     // [Rule 12] Fleets are "limited to coastline-adjacent provinces" — cannot enter inland.
     // Kiel fleet cannot move to Munich (inland).
-    const units: Unit[] = [
-      { type: UnitType.Fleet, power: Power.Germany, province: 'kie' },
-    ];
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.Germany, province: 'kie' }];
     const orders = new Map<string, Order>([
       ['kie', { type: OrderType.Move, unit: 'kie', destination: 'mun' }],
     ]);
@@ -115,9 +95,7 @@ describe('Basic Orders [Rule 12]', () => {
 
   it('Fleet moves along coast successfully', () => {
     // [Rule 12] Fleets move through sea provinces and along coastlines.
-    const units: Unit[] = [
-      { type: UnitType.Fleet, power: Power.England, province: 'nth' },
-    ];
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.England, province: 'nth' }];
     const orders = new Map<string, Order>([
       ['nth', { type: OrderType.Move, unit: 'nth', destination: 'eng' }],
     ]);
@@ -171,7 +149,9 @@ describe('Combat [Rules 15-18]', () => {
     expect(res(result, 'ruh')!.status).toBe(OrderStatus.Succeeds);
     expect(result.dislodgedUnits).toHaveLength(1);
     expect(result.dislodgedUnits[0].unit.province).toBe('bur');
-    expect(result.newPositions.find(u => u.power === Power.Germany && u.province === 'bur')).toBeDefined();
+    expect(
+      result.newPositions.find((u) => u.power === Power.Germany && u.province === 'bur'),
+    ).toBeDefined();
   });
 
   it('Supported move (2) vs supported hold (2) — attack fails', () => {
@@ -211,8 +191,8 @@ describe('Combat [Rules 15-18]', () => {
     expect(res(result, 'mun')!.status).toBe(OrderStatus.Fails);
     expect(res(result, 'par')!.status).toBe(OrderStatus.Fails);
     // Both stay in place
-    expect(result.newPositions.find(u => u.province === 'mun')).toBeDefined();
-    expect(result.newPositions.find(u => u.province === 'par')).toBeDefined();
+    expect(result.newPositions.find((u) => u.province === 'mun')).toBeDefined();
+    expect(result.newPositions.find((u) => u.province === 'par')).toBeDefined();
   });
 
   it('Stronger of two competing moves wins', () => {
@@ -270,8 +250,8 @@ describe('Combat [Rules 15-18]', () => {
 
     expect(res(result, 'bur')!.status).toBe(OrderStatus.Succeeds);
     expect(res(result, 'ruh')!.status).toBe(OrderStatus.Succeeds);
-    expect(result.newPositions.find(u => u.power === Power.France)!.province).toBe('par');
-    expect(result.newPositions.find(u => u.power === Power.Germany)!.province).toBe('bur');
+    expect(result.newPositions.find((u) => u.power === Power.France)!.province).toBe('par');
+    expect(result.newPositions.find((u) => u.power === Power.Germany)!.province).toBe('bur');
   });
 
   it('Bounce prevents move-out, so attacker also fails (dependency chain)', () => {
@@ -344,7 +324,7 @@ describe('Support Cutting [Rules 19-21]', () => {
 
     expect(res(result, 'mun')!.status).toBe(OrderStatus.Succeeds); // not cut
     expect(res(result, 'ruh')!.status).toBe(OrderStatus.Succeeds); // wins head-to-head
-    expect(res(result, 'bur')!.status).toBe(OrderStatus.Fails);   // loses
+    expect(res(result, 'bur')!.status).toBe(OrderStatus.Fails); // loses
     expect(result.dislodgedUnits).toHaveLength(1);
     expect(result.dislodgedUnits[0].unit.province).toBe('bur');
   });
@@ -453,8 +433,8 @@ describe('Head-to-Head [Rules 15-16]', () => {
 
     expect(res(result, 'mun')!.status).toBe(OrderStatus.Fails);
     expect(res(result, 'bur')!.status).toBe(OrderStatus.Fails);
-    expect(result.newPositions.find(u => u.province === 'mun')).toBeDefined();
-    expect(result.newPositions.find(u => u.province === 'bur')).toBeDefined();
+    expect(result.newPositions.find((u) => u.province === 'mun')).toBeDefined();
+    expect(result.newPositions.find((u) => u.province === 'bur')).toBeDefined();
   });
 
   it('Supported head-to-head — stronger wins, weaker dislodged', () => {
@@ -534,7 +514,7 @@ describe('Self-Dislodgement Prevention [Rule 22]', () => {
     expect(result.dislodgedUnits).toHaveLength(0);
   });
 
-  it('Foreign support not counted if it would dislodge supporter\'s own unit', () => {
+  it("Foreign support not counted if it would dislodge supporter's own unit", () => {
     // [Rule 22] Support that would dislodge the supporter's own power's unit
     //           is excluded from attack strength calculation.
     // German A Ruh -> Bur. French A Mar S A Ruh -> Bur. French A Bur H.
@@ -602,7 +582,7 @@ describe('Convoy [Rules 12, 24]', () => {
 
     expect(res(result, 'lon')!.status).toBe(OrderStatus.Succeeds);
     expect(res(result, 'eng')!.status).toBe(OrderStatus.Succeeds);
-    expect(result.newPositions.find(u => u.type === UnitType.Army)!.province).toBe('bel');
+    expect(result.newPositions.find((u) => u.type === UnitType.Army)!.province).toBe('bel');
   });
 
   it('Convoy disrupted — dislodged fleet breaks the chain', () => {
@@ -625,7 +605,7 @@ describe('Convoy [Rules 12, 24]', () => {
     expect(res(result, 'bre')!.status).toBe(OrderStatus.Succeeds);
     expect(res(result, 'eng')!.status).toBe(OrderStatus.Fails);
     expect(res(result, 'lon')!.status).toBe(OrderStatus.Fails);
-    expect(result.newPositions.find(u => u.type === UnitType.Army)!.province).toBe('lon');
+    expect(result.newPositions.find((u) => u.type === UnitType.Army)!.province).toBe('lon');
   });
 
   it('Convoy with no matching fleet — army stays', () => {
@@ -642,7 +622,7 @@ describe('Convoy [Rules 12, 24]', () => {
     const result = resolveOrders(units, orders, PROVINCES);
 
     expect(res(result, 'lon')!.status).toBe(OrderStatus.Fails);
-    expect(result.newPositions.find(u => u.type === UnitType.Army)!.province).toBe('lon');
+    expect(result.newPositions.find((u) => u.type === UnitType.Army)!.province).toBe('lon');
   });
 
   it('Convoy order by non-fleet becomes Hold', () => {
@@ -706,9 +686,9 @@ describe('Circular Movement [Rule 23]', () => {
     expect(res(result, 'boh')!.status).toBe(OrderStatus.Succeeds);
     expect(res(result, 'sil')!.status).toBe(OrderStatus.Succeeds);
 
-    expect(result.newPositions.find(u => u.power === Power.Germany)!.province).toBe('boh');
-    expect(result.newPositions.find(u => u.power === Power.Austria)!.province).toBe('sil');
-    expect(result.newPositions.find(u => u.power === Power.Russia)!.province).toBe('mun');
+    expect(result.newPositions.find((u) => u.power === Power.Germany)!.province).toBe('boh');
+    expect(result.newPositions.find((u) => u.power === Power.Austria)!.province).toBe('sil');
+    expect(result.newPositions.find((u) => u.power === Power.Russia)!.province).toBe('mun');
   });
 
   it('Two-unit swap is NOT circular movement — both bounce', () => {
@@ -763,9 +743,7 @@ describe('Circular Movement [Rule 23]', () => {
 describe('Support Validation [Rule 13]', () => {
   it('Support for non-existent unit becomes Hold', () => {
     // [Rule 13] Cannot support a unit that doesn't exist — order is invalid.
-    const units: Unit[] = [
-      { type: UnitType.Army, power: Power.Germany, province: 'mun' },
-    ];
+    const units: Unit[] = [{ type: UnitType.Army, power: Power.Germany, province: 'mun' }];
     const orders = new Map<string, Order>([
       ['mun', { type: OrderType.Support, unit: 'mun', supportedUnit: 'ruh', destination: 'bur' }],
     ]);
@@ -900,9 +878,9 @@ describe('Retreats [Rules 25-27]', () => {
     const result = resolveOrders(units, orders, PROVINCES);
 
     // France's unit should NOT be in newPositions (it's dislodged)
-    expect(result.newPositions.find(u => u.power === Power.France)).toBeUndefined();
+    expect(result.newPositions.find((u) => u.power === Power.France)).toBeUndefined();
     // Germany should have units at mun (supporter) and bur (moved in)
-    expect(result.newPositions.filter(u => u.power === Power.Germany)).toHaveLength(2);
+    expect(result.newPositions.filter((u) => u.power === Power.Germany)).toHaveLength(2);
   });
 });
 
@@ -984,8 +962,8 @@ describe('Complex Interactions', () => {
 
     expect(res(result, 'bur')!.status).toBe(OrderStatus.Succeeds);
     expect(res(result, 'ruh')!.status).toBe(OrderStatus.Succeeds);
-    expect(result.newPositions.find(u => u.power === Power.France)!.province).toBe('par');
-    expect(result.newPositions.find(u => u.province === 'bur')!.power).toBe(Power.Germany);
+    expect(result.newPositions.find((u) => u.power === Power.France)!.province).toBe('par');
+    expect(result.newPositions.find((u) => u.province === 'bur')!.power).toBe(Power.Germany);
     expect(result.dislodgedUnits).toHaveLength(0);
   });
 
@@ -1012,7 +990,7 @@ describe('Complex Interactions', () => {
     const result = resolveOrders(units, orders, PROVINCES);
 
     expect(result.dislodgedUnits).toHaveLength(2);
-    const dislodgedProvs = result.dislodgedUnits.map(d => d.unit.province).sort();
+    const dislodgedProvs = result.dislodgedUnits.map((d) => d.unit.province).sort();
     expect(dislodgedProvs).toEqual(['bur', 'ven']);
   });
 
@@ -1056,7 +1034,7 @@ describe('Edge Cases', () => {
     const result = resolveOrders(units, orders, PROVINCES);
 
     expect(result.resolutions).toHaveLength(3);
-    result.resolutions.forEach(r => {
+    result.resolutions.forEach((r) => {
       expect(r.order.type).toBe(OrderType.Hold);
       expect(r.status).toBe(OrderStatus.Succeeds);
     });

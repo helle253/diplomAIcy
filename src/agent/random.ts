@@ -1,18 +1,18 @@
+import { PROVINCES } from '../engine/map.js';
 import {
-  Power,
+  BuildOrder,
+  Coast,
   GameState,
   Message,
   Order,
   OrderType,
-  RetreatOrder,
-  BuildOrder,
-  RetreatSituation,
-  UnitType,
-  Unit,
+  Power,
   ProvinceType,
-  Coast,
+  RetreatOrder,
+  RetreatSituation,
+  Unit,
+  UnitType,
 } from '../engine/types.js';
-import { PROVINCES } from '../engine/map.js';
 import { DiplomacyAgent } from './interface.js';
 
 function pickRandom<T>(arr: T[]): T {
@@ -30,14 +30,47 @@ export class RandomAgent implements DiplomacyAgent {
     // No-op
   }
 
-  async negotiate(gameState: GameState, _incomingMessages: Message[]): Promise<Message[]> {
-    // Generate random diplomatic chatter for demo purposes
-    if (Math.random() < 0.3) return []; // sometimes say nothing
+  async openNegotiation(gameState: GameState): Promise<Message[]> {
+    if (Math.random() < 0.3) return [];
+    return this.generateMessages(gameState);
+  }
 
+  async onMessage(message: Message, gameState: GameState): Promise<Message[]> {
+    // 40% chance to reply to a direct message
+    if (Math.random() < 0.6) return [];
+
+    const replyTemplates = [
+      `Agreed, let's work together.`,
+      `I'll consider your proposal.`,
+      `That sounds reasonable.`,
+      `I'm not sure I can trust you on this.`,
+      `Interesting. Tell me more.`,
+      `I have a counter-proposal for you.`,
+      `Let's see how the board develops first.`,
+      `You have my support — for now.`,
+    ];
+
+    return [
+      {
+        from: this.power,
+        to: message.from,
+        content: pickRandom(replyTemplates),
+        phase: gameState.phase,
+        timestamp: Date.now(),
+      },
+    ];
+  }
+
+  private generateMessages(gameState: GameState): Message[] {
     const otherPowers = [
-      Power.England, Power.France, Power.Germany, Power.Italy,
-      Power.Austria, Power.Russia, Power.Turkey,
-    ].filter(p => p !== this.power);
+      Power.England,
+      Power.France,
+      Power.Germany,
+      Power.Italy,
+      Power.Austria,
+      Power.Russia,
+      Power.Turkey,
+    ].filter((p) => p !== this.power);
 
     const templates = [
       `I propose we work together this turn.`,
@@ -146,7 +179,7 @@ export class RandomAgent implements DiplomacyAgent {
 
   async submitRetreats(
     _gameState: GameState,
-    retreatSituations: RetreatSituation[]
+    retreatSituations: RetreatSituation[],
   ): Promise<RetreatOrder[]> {
     const orders: RetreatOrder[] = [];
 
@@ -198,7 +231,7 @@ export class RandomAgent implements DiplomacyAgent {
       // Build units on unoccupied home supply centers
       const occupiedProvinces = new Set(gameState.units.map((u) => u.province));
       const homeCenters = Object.values(PROVINCES).filter(
-        (p) => p.homeCenter === this.power && p.supplyCenter
+        (p) => p.homeCenter === this.power && p.supplyCenter,
       );
       const availableCenters = homeCenters.filter((p) => !occupiedProvinces.has(p.id));
 

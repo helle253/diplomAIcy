@@ -1,29 +1,34 @@
-import { describe, it, expect } from 'vitest';
-import { GameManager, GameEvent } from './manager.js';
-import { RandomAgent } from '../agent/random.js';
-import {
-  Power,
-  Season,
-  PhaseType,
-  UnitType,
-  OrderType,
-  GameState,
-  Order,
-  Message,
-  RetreatOrder,
-  BuildOrder,
-  RetreatSituation,
-} from '../engine/types.js';
+import { describe, expect, it } from 'vitest';
+
 import { DiplomacyAgent } from '../agent/interface.js';
+import { RandomAgent } from '../agent/random.js';
 import { STARTING_UNITS } from '../engine/map.js';
+import {
+  BuildOrder,
+  GameState,
+  Message,
+  Order,
+  OrderType,
+  PhaseType,
+  Power,
+  RetreatOrder,
+  RetreatSituation,
+  Season,
+} from '../engine/types.js';
+import { GameEvent, GameManager } from './manager.js';
 
 // ============================================================================
 // Helper: register all 7 random agents
 // ============================================================================
 function registerAllRandom(manager: GameManager): void {
   const powers = [
-    Power.England, Power.France, Power.Germany, Power.Italy,
-    Power.Austria, Power.Russia, Power.Turkey,
+    Power.England,
+    Power.France,
+    Power.Germany,
+    Power.Italy,
+    Power.Austria,
+    Power.Russia,
+    Power.Turkey,
   ];
   for (const power of powers) {
     manager.registerAgent(new RandomAgent(power));
@@ -35,30 +40,40 @@ function registerAllRandom(manager: GameManager): void {
 // ============================================================================
 class HoldAgent implements DiplomacyAgent {
   power: Power;
-  constructor(power: Power) { this.power = power; }
+  constructor(power: Power) {
+    this.power = power;
+  }
   async initialize(_gs: GameState) {}
-  async negotiate(_gs: GameState, _msgs: Message[]) { return []; }
+  async openNegotiation(_gs: GameState) {
+    return [];
+  }
+  async onMessage(_msg: Message, _gs: GameState) {
+    return [];
+  }
   async submitOrders(gs: GameState): Promise<Order[]> {
     return gs.units
-      .filter(u => u.power === this.power)
-      .map(u => ({ type: OrderType.Hold as const, unit: u.province }));
+      .filter((u) => u.power === this.power)
+      .map((u) => ({ type: OrderType.Hold as const, unit: u.province }));
   }
   async submitRetreats(_gs: GameState, retreats: RetreatSituation[]): Promise<RetreatOrder[]> {
     return retreats
-      .filter(r => r.unit.power === this.power)
-      .map(r => ({ type: 'Disband' as const, unit: r.unit.province }));
+      .filter((r) => r.unit.power === this.power)
+      .map((r) => ({ type: 'Disband' as const, unit: r.unit.province }));
   }
   async submitBuilds(_gs: GameState, buildCount: number): Promise<BuildOrder[]> {
-    return buildCount > 0
-      ? Array(buildCount).fill({ type: 'Waive' as const })
-      : [];
+    return buildCount > 0 ? Array(buildCount).fill({ type: 'Waive' as const }) : [];
   }
 }
 
 function registerAllHold(manager: GameManager): void {
   const powers = [
-    Power.England, Power.France, Power.Germany, Power.Italy,
-    Power.Austria, Power.Russia, Power.Turkey,
+    Power.England,
+    Power.France,
+    Power.Germany,
+    Power.Italy,
+    Power.Austria,
+    Power.Russia,
+    Power.Turkey,
   ];
   for (const power of powers) {
     manager.registerAgent(new HoldAgent(power));
@@ -105,7 +120,7 @@ describe('GameManager — All-Hold game', () => {
     registerAllHold(manager);
 
     const events: GameEvent[] = [];
-    manager.onEvent(e => events.push(e));
+    manager.onEvent((e) => events.push(e));
 
     const result = await manager.run();
 
@@ -118,9 +133,10 @@ describe('GameManager — All-Hold game', () => {
     expect(state.units).toHaveLength(22);
     for (const startUnit of STARTING_UNITS) {
       const found = state.units.find(
-        u => u.province === startUnit.province &&
-             u.power === startUnit.power &&
-             u.type === startUnit.type
+        (u) =>
+          u.province === startUnit.province &&
+          u.power === startUnit.power &&
+          u.type === startUnit.type,
       );
       expect(found, `${startUnit.power} ${startUnit.type} at ${startUnit.province}`).toBeDefined();
     }
@@ -131,7 +147,7 @@ describe('GameManager — All-Hold game', () => {
     registerAllHold(manager);
 
     const eventTypes: string[] = [];
-    manager.onEvent(e => eventTypes.push(e.type));
+    manager.onEvent((e) => eventTypes.push(e.type));
 
     await manager.run();
 
@@ -189,7 +205,7 @@ describe('GameManager — Random agent game', () => {
     }
 
     // No two units at the same province
-    const provinces = state.units.map(u => u.province);
+    const provinces = state.units.map((u) => u.province);
     expect(new Set(provinces).size).toBe(provinces.length);
   });
 
@@ -213,7 +229,7 @@ describe('GameManager — Random agent game', () => {
 
     const state = manager.getState();
     for (const power of result.eliminatedPowers) {
-      const units = state.units.filter(u => u.power === power);
+      const units = state.units.filter((u) => u.power === power);
       expect(units).toHaveLength(0);
     }
   });
@@ -229,7 +245,7 @@ describe('GameManager — Event system', () => {
     registerAllHold(manager);
 
     let firstEvent: GameEvent | null = null;
-    manager.onEvent(e => {
+    manager.onEvent((e) => {
       if (!firstEvent) firstEvent = e;
     });
 
@@ -259,7 +275,7 @@ describe('GameManager — Event system', () => {
     registerAllHold(manager);
 
     const orderEvents: GameEvent[] = [];
-    manager.onEvent(e => {
+    manager.onEvent((e) => {
       if (e.type === 'orders_resolved') orderEvents.push(e);
     });
 
@@ -294,7 +310,7 @@ describe('GameManager — Build phase', () => {
     registerAllHold(manager);
 
     const buildEvents: GameEvent[] = [];
-    manager.onEvent(e => {
+    manager.onEvent((e) => {
       if (e.type === 'builds_resolved') buildEvents.push(e);
     });
 
@@ -319,8 +335,21 @@ describe('GameManager — Victory detection', () => {
     // Hack the supply centers to give England 18
     const state = manager.getState();
     const neutralSCs = [
-      'nor', 'swe', 'den', 'hol', 'bel', 'spa', 'por',
-      'tun', 'ser', 'rum', 'bul', 'gre', 'naf', 'alb', 'mun',
+      'nor',
+      'swe',
+      'den',
+      'hol',
+      'bel',
+      'spa',
+      'por',
+      'tun',
+      'ser',
+      'rum',
+      'bul',
+      'gre',
+      'naf',
+      'alb',
+      'mun',
     ];
     for (const sc of neutralSCs) {
       state.supplyCenters.set(sc, Power.England);
