@@ -37,11 +37,14 @@ export class OpenAICompatibleClient implements LLMClient {
       max_tokens: this.config.maxTokens,
     };
 
+    const MAX_RETRIES = 6;
     let lastError: Error | null = null;
 
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       if (attempt > 0) {
-        await new Promise((r) => setTimeout(r, 1000 * attempt));
+        const baseDelay = Math.min(1000 * Math.pow(2, attempt), 60000);
+        const jitter = Math.random() * baseDelay * 0.5;
+        await new Promise((r) => setTimeout(r, baseDelay + jitter));
       }
 
       try {
@@ -61,6 +64,13 @@ export class OpenAICompatibleClient implements LLMClient {
           );
           // Retry on 429 or 5xx
           if (response.status === 429 || response.status >= 500) {
+            const retryAfter = response.headers.get('retry-after');
+            if (retryAfter && attempt < MAX_RETRIES - 1) {
+              const waitMs = parseInt(retryAfter, 10) * 1000;
+              if (waitMs > 0 && waitMs <= 120000) {
+                await new Promise((r) => setTimeout(r, waitMs));
+              }
+            }
             lastError = err;
             continue;
           }

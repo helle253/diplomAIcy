@@ -55,7 +55,7 @@ for power in "${POWERS[@]}"; do
   DIPLOMAICY_CONFIG="$AGENT_CONFIG" \
     node dist/agent/remote/run.js --power "$power" --server "$SERVER_URL" $TYPE_FLAG &
   PIDS+=($!)
-  sleep 0.3
+  sleep 3
 done
 
 echo "All agents launched. Game in progress..."

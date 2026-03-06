@@ -35,11 +35,14 @@ export class AnthropicClient implements LLMClient {
       body.system = systemMsg.content;
     }
 
+    const MAX_RETRIES = 6;
     let lastError: Error | null = null;
 
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       if (attempt > 0) {
-        await new Promise((r) => setTimeout(r, 1000 * attempt));
+        const baseDelay = Math.min(1000 * Math.pow(2, attempt), 60000);
+        const jitter = Math.random() * baseDelay * 0.5;
+        await new Promise((r) => setTimeout(r, baseDelay + jitter));
       }
 
       try {
@@ -57,6 +60,14 @@ export class AnthropicClient implements LLMClient {
           const text = await response.text().catch(() => '');
           const err = new Error(`Anthropic API error ${response.status}: ${text.slice(0, 200)}`);
           if (response.status === 429 || response.status >= 500) {
+            // Respect retry-after header if present
+            const retryAfter = response.headers.get('retry-after');
+            if (retryAfter && attempt < MAX_RETRIES - 1) {
+              const waitMs = parseInt(retryAfter, 10) * 1000;
+              if (waitMs > 0 && waitMs <= 120000) {
+                await new Promise((r) => setTimeout(r, waitMs));
+              }
+            }
             lastError = err;
             continue;
           }
