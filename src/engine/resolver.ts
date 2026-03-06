@@ -6,7 +6,6 @@ import {
   OrderResolution,
   OrderStatus,
   OrderType,
-  Power,
   Province,
   ProvinceType,
   RetreatSituation,
@@ -117,12 +116,6 @@ function convoyRouteExists(
   }
 
   return false;
-}
-
-// === Helper: get the power of the unit at a province ===
-
-function getPower(units: Unit[], province: string): Power | undefined {
-  return findUnit(units, province)?.power;
 }
 
 // === Validate an order and convert invalid ones to Hold ===
@@ -406,7 +399,7 @@ export function resolveOrders(
 
     // Phase 6: Self-dislodgement prevention for supports
     // If a support would cause a unit of the same power to be dislodged, the support fails
-    for (const [prov, state] of orderStates) {
+    for (const [, state] of orderStates) {
       if (state.order.type !== OrderType.Support) continue;
       if (state.status !== OrderStatus.Succeeds) continue;
 
@@ -439,7 +432,7 @@ export function resolveOrders(
   const successfulMoveDestinations = new Set<string>();
 
   // Identify bounced provinces (where competing moves all failed)
-  for (const [prov, state] of orderStates) {
+  for (const [, state] of orderStates) {
     if (state.order.type === OrderType.Move && state.status === OrderStatus.Fails) {
       const move = state.order as MoveOrder;
       if (state.reason?.includes('Bounced')) {
@@ -449,7 +442,7 @@ export function resolveOrders(
   }
 
   // Build resolutions and track successful moves
-  for (const [prov, state] of orderStates) {
+  for (const [, state] of orderStates) {
     resolutions.push({
       order: state.order,
       power: state.unit.power,
@@ -533,7 +526,7 @@ function calculateAttackStrength(
   let strength = 1;
 
   // Count successful supports for this move
-  for (const [supProv, supState] of orderStates) {
+  for (const [, supState] of orderStates) {
     if (supState.order.type !== OrderType.Support) continue;
     if (supState.status !== OrderStatus.Succeeds) continue;
 
@@ -577,7 +570,7 @@ function calculateHoldStrength(
   let strength = 1;
 
   // Count successful support-holds
-  for (const [supProv, supState] of orderStates) {
+  for (const [, supState] of orderStates) {
     if (supState.order.type !== OrderType.Support) continue;
     if (supState.status !== OrderStatus.Succeeds) continue;
 
@@ -656,7 +649,7 @@ function isBeingDislodged(
 
 // === Circular movement detection and resolution ===
 
-function resolveCircularMovement(orderStates: Map<string, OrderState>, units: Unit[]): void {
+function resolveCircularMovement(orderStates: Map<string, OrderState>, _units: Unit[]): void {
   // Find cycles of 3+ moves where all units rotate (A->B, B->C, C->A).
   // Only consider move orders that are still marked as succeeding.
   const moveOrders = new Map<string, string>();
