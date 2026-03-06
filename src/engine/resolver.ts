@@ -247,6 +247,25 @@ export function resolveOrders(
     changed = false;
     iterations++;
 
+    // Phase 0: Re-evaluate — restore statuses that may have been set based on
+    // stale information (e.g. support cut by a convoyed attack whose convoy was
+    // later disrupted). This allows the subsequent phases to re-derive the
+    // correct result. Only combat-related failures are reset; permanent failures
+    // (self-dislodgement, invalid orders) are kept.
+    for (const [, state] of orderStates) {
+      if (state.status !== OrderStatus.Fails) continue;
+      if (state.order.type === OrderType.Support && state.reason?.startsWith('Support cut by')) {
+        state.status = OrderStatus.Succeeds;
+        state.reason = undefined;
+      } else if (
+        state.order.type === OrderType.Move &&
+        (state.reason?.includes('Bounced') || state.reason?.includes('Failed to dislodge'))
+      ) {
+        state.status = OrderStatus.Succeeds;
+        state.reason = undefined;
+      }
+    }
+
     // Phase 1: Check convoy routes for convoy moves
     for (const [prov, state] of orderStates) {
       if (state.order.type === OrderType.Move && (state.order as MoveOrder).viaConvoy) {
@@ -263,7 +282,6 @@ export function resolveOrders(
       }
     }
 
-    // Phase 2: Cut supports
     for (const [prov, state] of orderStates) {
       if (state.order.type !== OrderType.Support) continue;
       if (state.status !== OrderStatus.Succeeds) continue;
@@ -280,12 +298,23 @@ export function resolveOrders(
         // Support is NOT cut if the attack comes from the province the support targets
         if (attackProv === targetProvince) continue;
 
-        // Self-dislodgement: support is not cut by own power IF the support
-        // would cause the attacker's own unit to be dislodged.
-        // However, a simple attack from any non-target province does cut support
-        // regardless of power (the self-dislodgement rule prevents the actual
-        // dislodgement, but the support is still cut by any attack).
-        // Actually: support IS cut by any attack from non-target province.
+        // A convoyed move with no valid route does NOT cut support — the army
+        // never moved. (A convoyed move that bounces at the destination still
+        // cuts support, like any other bounced move.)
+        if (attackMove.viaConvoy) {
+          const convoyStates = Array.from(orderStates.values()).filter(
+            (os) => os.order.type === OrderType.Convoy,
+          );
+          const routeExists = convoyRouteExists(
+            attackProv,
+            attackMove.destination,
+            convoyStates,
+            provinces,
+          );
+          if (!routeExists) continue;
+        }
+
+        // Support IS cut by any valid attack from a non-target province.
         state.status = OrderStatus.Fails;
         state.reason = `Support cut by attack from ${attackProv}`;
         changed = true;
