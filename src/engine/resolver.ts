@@ -1,4 +1,5 @@
 import {
+  Coast,
   ConvoyOrder,
   MoveOrder,
   Order,
@@ -44,14 +45,27 @@ function isAdjacent(
   to: string,
   unitType: UnitType,
   provinces: Record<string, Province>,
+  fromCoast?: Coast,
 ): boolean {
   const prov = provinces[from];
   if (!prov) return false;
   if (unitType === UnitType.Army) {
     return prov.adjacency.army.includes(to);
-  } else {
-    return prov.adjacency.fleet.includes(to);
   }
+
+  // Fleet on a multi-coast province: use coast-specific adjacency
+  if (fromCoast && prov.adjacency.fleetByCoast) {
+    const coastAdj = prov.adjacency.fleetByCoast[fromCoast];
+    return coastAdj ? coastAdj.includes(to) : false;
+  }
+
+  // Fleet moving to a multi-coast province: check if reachable via any coast
+  const destProv = provinces[to];
+  if (destProv?.adjacency.fleetByCoast) {
+    return Object.values(destProv.adjacency.fleetByCoast).some((adj) => adj && adj.includes(from));
+  }
+
+  return prov.adjacency.fleet.includes(to);
 }
 
 // === Helper: check if a convoy route exists ===
@@ -133,7 +147,7 @@ function validateOrder(
         }
       } else {
         // Direct move: must be adjacent
-        if (!isAdjacent(order.unit, move.destination, unit.type, provinces)) {
+        if (!isAdjacent(order.unit, move.destination, unit.type, provinces, unit.coast)) {
           return { type: OrderType.Hold, unit: order.unit };
         }
         const destProv = provinces[move.destination];
@@ -147,6 +161,17 @@ function validateOrder(
         // Fleets can't move to land (non-coastal) provinces
         if (unit.type === UnitType.Fleet && destProv.type === ProvinceType.Land) {
           return { type: OrderType.Hold, unit: order.unit };
+        }
+        // Fleet moving to multi-coast province must specify a valid, reachable coast
+        if (unit.type === UnitType.Fleet && destProv.coasts && destProv.coasts.length > 0) {
+          if (!move.coast || !destProv.coasts.includes(move.coast)) {
+            return { type: OrderType.Hold, unit: order.unit };
+          }
+          // The specified coast must be reachable from the source province
+          const coastAdj = destProv.adjacency.fleetByCoast?.[move.coast];
+          if (!coastAdj || !coastAdj.includes(order.unit)) {
+            return { type: OrderType.Hold, unit: order.unit };
+          }
         }
       }
       return order;
@@ -162,12 +187,12 @@ function validateOrder(
       if (sup.destination) {
         // Support-move: the supporting unit must be able to move to the destination
         // (adjacency check with the supporting unit's type)
-        if (!isAdjacent(order.unit, sup.destination, unit.type, provinces)) {
+        if (!isAdjacent(order.unit, sup.destination, unit.type, provinces, unit.coast)) {
           return { type: OrderType.Hold, unit: order.unit };
         }
       } else {
         // Support-hold: the supporting unit must be adjacent to the supported unit
-        if (!isAdjacent(order.unit, sup.supportedUnit, unit.type, provinces)) {
+        if (!isAdjacent(order.unit, sup.supportedUnit, unit.type, provinces, unit.coast)) {
           return { type: OrderType.Hold, unit: order.unit };
         }
       }
@@ -714,7 +739,14 @@ function getRetreatDestinations(
   const prov = provinces[unit.province];
   if (!prov) return [];
 
-  const adjacentProvs = unit.type === UnitType.Army ? prov.adjacency.army : prov.adjacency.fleet;
+  let adjacentProvs: string[];
+  if (unit.type === UnitType.Army) {
+    adjacentProvs = prov.adjacency.army;
+  } else if (unit.coast && prov.adjacency.fleetByCoast) {
+    adjacentProvs = prov.adjacency.fleetByCoast[unit.coast] ?? [];
+  } else {
+    adjacentProvs = prov.adjacency.fleet;
+  }
 
   const occupiedProvinces = new Set<string>();
   // Current unit positions (before moves) minus those that moved away successfully

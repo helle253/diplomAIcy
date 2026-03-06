@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import { PROVINCES } from './map.js';
 import { resolveOrders } from './resolver.js';
-import { Order, OrderStatus, OrderType, Power, Unit, UnitType } from './types.js';
+import { Coast, Order, OrderStatus, OrderType, Power, Unit, UnitType } from './types.js';
 
 // ============================================================================
 // Helper: find the resolution for the unit originally at a given province
+// Rules Source: https://www.playdiplomacy.com/help.php?sub_page=Game_Rules
 // ============================================================================
 function res(result: ReturnType<typeof resolveOrders>, province: string) {
   return result.resolutions.find((r) => r.order.unit === province);
@@ -1101,5 +1102,607 @@ describe('Edge Cases', () => {
     // bur -> mun also fails since mun didn't leave
     expect(res(result, 'bur')!.status).toBe(OrderStatus.Fails);
     expect(result.dislodgedUnits).toHaveLength(0);
+  });
+});
+
+// ============================================================================
+// 10. SPLIT COASTS
+// [Rule 32] "Bulgaria, St. Petersburg, and Spain have split coasts. A fleet
+//            moving to those provinces must select which coast it will move to
+//            and can only move on to other provinces adjacent that coast."
+//           "However, the fleet occupies the entire province for all other
+//            purposes."
+//           "A fleet can receive support from a second fleet that is adjacent
+//            to the province yet not adjacent to the coast the first fleet
+//            is on."
+// Rules Source: https://www.playdiplomacy.com/help.php?sub_page=Game_Rules
+// ============================================================================
+
+describe('Split Coasts [Rule 32]', () => {
+  // --- Movement from a multi-coast province ---
+
+  it('Fleet on STP/SC can move to adjacent south coast province (FIN)', () => {
+    // [Rule 32] Fleet on a coast "can only move on to other provinces adjacent that coast."
+    // STP south coast is adjacent to: fin, lvn, bot
+    const units: Unit[] = [
+      { type: UnitType.Fleet, power: Power.Russia, province: 'stp', coast: Coast.South },
+    ];
+    const orders = new Map<string, Order>([
+      ['stp', { type: OrderType.Move, unit: 'stp', destination: 'fin' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'stp')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('fin');
+    expect(result.newPositions[0].coast).toBeUndefined();
+  });
+
+  it('Fleet on STP/SC can move to BOT', () => {
+    const units: Unit[] = [
+      { type: UnitType.Fleet, power: Power.Russia, province: 'stp', coast: Coast.South },
+    ];
+    const orders = new Map<string, Order>([
+      ['stp', { type: OrderType.Move, unit: 'stp', destination: 'bot' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'stp')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('bot');
+  });
+
+  it('Fleet on STP/SC cannot move to BAR (north coast only)', () => {
+    // [Rule 32] Cannot move to a province adjacent only to the other coast.
+    // BAR is adjacent to STP north coast, not south coast.
+    const units: Unit[] = [
+      { type: UnitType.Fleet, power: Power.Russia, province: 'stp', coast: Coast.South },
+    ];
+    const orders = new Map<string, Order>([
+      ['stp', { type: OrderType.Move, unit: 'stp', destination: 'bar' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    // Invalid move becomes Hold
+    expect(res(result, 'stp')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('stp');
+    expect(result.newPositions[0].coast).toBe(Coast.South);
+  });
+
+  it('Fleet on STP/NC can move to BAR but not FIN', () => {
+    // STP north coast is adjacent to: bar, nor, nwg
+    const units: Unit[] = [
+      { type: UnitType.Fleet, power: Power.Russia, province: 'stp', coast: Coast.North },
+    ];
+    const orders = new Map<string, Order>([
+      ['stp', { type: OrderType.Move, unit: 'stp', destination: 'bar' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'stp')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('bar');
+  });
+
+  it('Fleet on STP/NC cannot move to FIN (south coast only)', () => {
+    const units: Unit[] = [
+      { type: UnitType.Fleet, power: Power.Russia, province: 'stp', coast: Coast.North },
+    ];
+    const orders = new Map<string, Order>([
+      ['stp', { type: OrderType.Move, unit: 'stp', destination: 'fin' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'stp')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('stp');
+  });
+
+  // --- Movement into a multi-coast province ---
+
+  it('Fleet moving to SPA must specify a coast', () => {
+    // [Rule 32] "A fleet moving to those provinces must select which coast."
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.France, province: 'mao' }];
+    const orders = new Map<string, Order>([
+      ['mao', { type: OrderType.Move, unit: 'mao', destination: 'spa' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    // No coast specified → invalid → becomes Hold
+    expect(res(result, 'mao')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('mao');
+  });
+
+  it('Fleet from MAO can move to SPA/NC', () => {
+    // MAO is adjacent to SPA north coast: ['por', 'gas', 'mao']
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.France, province: 'mao' }];
+    const orders = new Map<string, Order>([
+      ['mao', { type: OrderType.Move, unit: 'mao', destination: 'spa', coast: Coast.North }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'mao')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('spa');
+    expect(result.newPositions[0].coast).toBe(Coast.North);
+  });
+
+  it('Fleet from MAO can move to SPA/SC', () => {
+    // MAO is adjacent to SPA south coast: ['por', 'mar', 'mao', 'lyo', 'wes']
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.France, province: 'mao' }];
+    const orders = new Map<string, Order>([
+      ['mao', { type: OrderType.Move, unit: 'mao', destination: 'spa', coast: Coast.South }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'mao')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('spa');
+    expect(result.newPositions[0].coast).toBe(Coast.South);
+  });
+
+  it('Fleet from MAR can only move to SPA/SC, not SPA/NC', () => {
+    // MAR is adjacent to SPA south coast only.
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.France, province: 'mar' }];
+    const orders = new Map<string, Order>([
+      ['mar', { type: OrderType.Move, unit: 'mar', destination: 'spa', coast: Coast.North }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    // MAR is not adjacent to SPA/NC → invalid → becomes Hold
+    expect(res(result, 'mar')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('mar');
+  });
+
+  it('Fleet from GAS can only move to SPA/NC, not SPA/SC', () => {
+    // GAS is adjacent to SPA north coast only.
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.France, province: 'gas' }];
+    const orders = new Map<string, Order>([
+      ['gas', { type: OrderType.Move, unit: 'gas', destination: 'spa', coast: Coast.South }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    // GAS is not adjacent to SPA/SC → invalid → becomes Hold
+    expect(res(result, 'gas')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('gas');
+  });
+
+  // --- Bulgaria coasts ---
+
+  it('Fleet from BLA can move to BUL/NC (east coast)', () => {
+    // BLA is adjacent to BUL east coast (mapped to Coast.North): ['rum', 'con', 'bla']
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.Turkey, province: 'bla' }];
+    const orders = new Map<string, Order>([
+      ['bla', { type: OrderType.Move, unit: 'bla', destination: 'bul', coast: Coast.North }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'bla')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('bul');
+    expect(result.newPositions[0].coast).toBe(Coast.North);
+  });
+
+  it('Fleet from AEG can move to BUL/SC but not BUL/NC', () => {
+    // AEG is adjacent to BUL south coast: ['con', 'gre', 'aeg']
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.Turkey, province: 'aeg' }];
+    const orders = new Map<string, Order>([
+      ['aeg', { type: OrderType.Move, unit: 'aeg', destination: 'bul', coast: Coast.North }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    // AEG not adjacent to BUL east coast → invalid
+    expect(res(result, 'aeg')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('aeg');
+  });
+
+  it('Fleet on BUL/SC can move to AEG but not BLA', () => {
+    // BUL south coast adjacent to: con, gre, aeg
+    const units: Unit[] = [
+      { type: UnitType.Fleet, power: Power.Turkey, province: 'bul', coast: Coast.South },
+    ];
+    const orders = new Map<string, Order>([
+      ['bul', { type: OrderType.Move, unit: 'bul', destination: 'bla' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    // BLA is only adjacent to BUL east coast (NC), not south → invalid
+    expect(res(result, 'bul')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('bul');
+  });
+
+  // --- "Fleet occupies the entire province" ---
+
+  it('Fleet on SPA/NC blocks army from entering SPA', () => {
+    // [Rule 32] "The fleet occupies the entire province for all other purposes."
+    const units: Unit[] = [
+      { type: UnitType.Fleet, power: Power.France, province: 'spa', coast: Coast.North },
+      { type: UnitType.Army, power: Power.Italy, province: 'mar' },
+    ];
+    const orders = new Map<string, Order>([
+      ['spa', { type: OrderType.Hold, unit: 'spa' }],
+      ['mar', { type: OrderType.Move, unit: 'mar', destination: 'spa' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'mar')!.status).toBe(OrderStatus.Fails);
+    expect(result.newPositions.find((u) => u.power === Power.France)!.province).toBe('spa');
+  });
+
+  it('Fleet on SPA/SC blocks fleet from entering SPA/NC', () => {
+    // [Rule 32] Province is fully occupied regardless of coast.
+    const units: Unit[] = [
+      { type: UnitType.Fleet, power: Power.France, province: 'spa', coast: Coast.South },
+      { type: UnitType.Fleet, power: Power.England, province: 'mao' },
+    ];
+    const orders = new Map<string, Order>([
+      ['spa', { type: OrderType.Hold, unit: 'spa' }],
+      ['mao', { type: OrderType.Move, unit: 'mao', destination: 'spa', coast: Coast.North }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    // SPA is occupied → move fails
+    expect(res(result, 'mao')!.status).toBe(OrderStatus.Fails);
+  });
+
+  // --- Support involving multi-coast provinces ---
+
+  it('Fleet not adjacent to coast can still support into the province', () => {
+    // [Rule 32] "A fleet can receive support from a second fleet that is
+    //            adjacent to the province yet not adjacent to the coast."
+    // GAS is adjacent to SPA (via fleet list) but only to NC, not SC.
+    // GAS can still support a move to SPA even if the move targets SC.
+    const units: Unit[] = [
+      { type: UnitType.Fleet, power: Power.France, province: 'gas' },
+      { type: UnitType.Fleet, power: Power.France, province: 'mar' },
+      { type: UnitType.Fleet, power: Power.England, province: 'spa', coast: Coast.North },
+    ];
+    const orders = new Map<string, Order>([
+      ['mar', { type: OrderType.Move, unit: 'mar', destination: 'spa', coast: Coast.South }],
+      ['gas', { type: OrderType.Support, unit: 'gas', supportedUnit: 'mar', destination: 'spa' }],
+      ['spa', { type: OrderType.Hold, unit: 'spa' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    // MAR→SPA/SC with support from GAS (strength 2) vs SPA hold (strength 1)
+    expect(res(result, 'mar')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.dislodgedUnits).toHaveLength(1);
+    expect(result.dislodgedUnits[0].unit.province).toBe('spa');
+  });
+
+  it('Fleet on multi-coast province can support an adjacent unit', () => {
+    // Fleet on STP/SC can support a unit in FIN (adjacent to south coast).
+    const units: Unit[] = [
+      { type: UnitType.Fleet, power: Power.Russia, province: 'stp', coast: Coast.South },
+      { type: UnitType.Fleet, power: Power.Russia, province: 'bot' },
+      { type: UnitType.Fleet, power: Power.Germany, province: 'fin' },
+    ];
+    const orders = new Map<string, Order>([
+      ['bot', { type: OrderType.Move, unit: 'bot', destination: 'fin' }],
+      ['stp', { type: OrderType.Support, unit: 'stp', supportedUnit: 'bot', destination: 'fin' }],
+      ['fin', { type: OrderType.Hold, unit: 'fin' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    // BOT→FIN supported by STP/SC (strength 2) vs FIN hold (strength 1)
+    expect(res(result, 'bot')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.dislodgedUnits).toHaveLength(1);
+    expect(result.dislodgedUnits[0].unit.province).toBe('fin');
+  });
+
+  it('Fleet on STP/SC cannot support into BAR (not adjacent to south coast)', () => {
+    // BAR is adjacent to STP/NC, not STP/SC — fleet on SC cannot support there.
+    const units: Unit[] = [
+      { type: UnitType.Fleet, power: Power.Russia, province: 'stp', coast: Coast.South },
+      { type: UnitType.Fleet, power: Power.Russia, province: 'nwg' },
+      { type: UnitType.Fleet, power: Power.England, province: 'bar' },
+    ];
+    const orders = new Map<string, Order>([
+      ['nwg', { type: OrderType.Move, unit: 'nwg', destination: 'bar' }],
+      ['stp', { type: OrderType.Support, unit: 'stp', supportedUnit: 'nwg', destination: 'bar' }],
+      ['bar', { type: OrderType.Hold, unit: 'bar' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    // STP/SC support into BAR is invalid (not adjacent), so NWG attacks alone (1v1) → bounce
+    expect(res(result, 'nwg')!.status).toBe(OrderStatus.Fails);
+  });
+
+  // --- Retreat from multi-coast province ---
+
+  it('Dislodged fleet on STP/SC can only retreat to south coast destinations', () => {
+    // STP/SC adjacent to: fin, lvn, bot. Fleet cannot retreat to bar (NC only).
+    const units: Unit[] = [
+      { type: UnitType.Fleet, power: Power.Russia, province: 'stp', coast: Coast.South },
+      { type: UnitType.Army, power: Power.Germany, province: 'fin' },
+      { type: UnitType.Army, power: Power.Germany, province: 'mos' },
+    ];
+    const orders = new Map<string, Order>([
+      ['stp', { type: OrderType.Hold, unit: 'stp' }],
+      ['fin', { type: OrderType.Move, unit: 'fin', destination: 'stp' }],
+      ['mos', { type: OrderType.Support, unit: 'mos', supportedUnit: 'fin', destination: 'stp' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'fin')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.dislodgedUnits).toHaveLength(1);
+    const retreat = result.dislodgedUnits[0];
+    expect(retreat.unit.province).toBe('stp');
+    expect(retreat.unit.coast).toBe(Coast.South);
+    // Valid retreat destinations should only include SC-adjacent provinces
+    // fin is occupied by attacker, attackedFrom = fin, so lvn and bot remain
+    expect(retreat.validDestinations).not.toContain('bar');
+    expect(retreat.validDestinations).not.toContain('nor');
+    expect(retreat.validDestinations).not.toContain('nwg');
+    expect(retreat.validDestinations).toContain('lvn');
+    expect(retreat.validDestinations).toContain('bot');
+  });
+});
+
+// ============================================================================
+// 11. INLAND WATERWAYS
+// [Rule 33] "Constantinople, Denmark and Kiel do not have split coasts.
+//            They have inland waterways that fleets may use to move to
+//            adjacent provinces. You may not convoy through these (or any
+//            other) coastal provinces."
+// Rules Source: https://www.playdiplomacy.com/help.php?sub_page=Game_Rules
+// ============================================================================
+
+describe('Inland Waterways [Rule 33]', () => {
+  it('Fleet in CON can move to BLA (waterway connects both sides)', () => {
+    // [Rule 33] Constantinople has an inland waterway — no split coasts.
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.Turkey, province: 'con' }];
+    const orders = new Map<string, Order>([
+      ['con', { type: OrderType.Move, unit: 'con', destination: 'bla' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'con')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('bla');
+  });
+
+  it('Fleet in CON can move to AEG (other side of waterway)', () => {
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.Turkey, province: 'con' }];
+    const orders = new Map<string, Order>([
+      ['con', { type: OrderType.Move, unit: 'con', destination: 'aeg' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'con')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('aeg');
+  });
+
+  it('Fleet in KIE can move from BAL side to HEL side', () => {
+    // [Rule 33] Kiel has an inland waterway connecting Baltic and Heligoland.
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.Germany, province: 'kie' }];
+    const orders = new Map<string, Order>([
+      ['kie', { type: OrderType.Move, unit: 'kie', destination: 'hel' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'kie')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('hel');
+  });
+
+  it('Fleet in KIE can move to BAL', () => {
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.Germany, province: 'kie' }];
+    const orders = new Map<string, Order>([
+      ['kie', { type: OrderType.Move, unit: 'kie', destination: 'bal' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'kie')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('bal');
+  });
+
+  it('Fleet in DEN can move from NTH side to BAL side', () => {
+    // [Rule 33] Denmark has an inland waterway.
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.Germany, province: 'den' }];
+    const orders = new Map<string, Order>([
+      ['den', { type: OrderType.Move, unit: 'den', destination: 'bal' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'den')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('bal');
+  });
+
+  it('Fleet in DEN can also move to NTH', () => {
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.Germany, province: 'den' }];
+    const orders = new Map<string, Order>([
+      ['den', { type: OrderType.Move, unit: 'den', destination: 'nth' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'den')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('nth');
+  });
+
+  it('Cannot convoy through Constantinople', () => {
+    // [Rule 33] "You may not convoy through these (or any other) coastal provinces."
+    // Army in SMY trying to convoy to BUL via CON — CON is coastal, not a sea province.
+    const units: Unit[] = [
+      { type: UnitType.Army, power: Power.Turkey, province: 'smy' },
+      { type: UnitType.Fleet, power: Power.Turkey, province: 'con' },
+    ];
+    const orders = new Map<string, Order>([
+      ['smy', { type: OrderType.Move, unit: 'smy', destination: 'bul', viaConvoy: true }],
+      ['con', { type: OrderType.Convoy, unit: 'con', convoyedUnit: 'smy', destination: 'bul' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    // Convoy through a coastal province is invalid
+    expect(res(result, 'smy')!.status).toBe(OrderStatus.Fails);
+  });
+
+  it('Cannot convoy through Kiel', () => {
+    // Army in MUN trying to convoy to HOL via KIE fleet — KIE is coastal.
+    const units: Unit[] = [
+      { type: UnitType.Army, power: Power.Germany, province: 'mun' },
+      { type: UnitType.Fleet, power: Power.Germany, province: 'kie' },
+    ];
+    const orders = new Map<string, Order>([
+      ['mun', { type: OrderType.Move, unit: 'mun', destination: 'hol', viaConvoy: true }],
+      ['kie', { type: OrderType.Convoy, unit: 'kie', convoyedUnit: 'mun', destination: 'hol' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'mun')!.status).toBe(OrderStatus.Fails);
+  });
+});
+
+// ============================================================================
+// 12. SWEDEN-DENMARK CONNECTION
+// [Rule 34] "Denmark connects with Sweden and armies can move between them,
+//            though Sweden does not have a split coast."
+// Rules Source: https://www.playdiplomacy.com/help.php?sub_page=Game_Rules
+// ============================================================================
+
+describe('Sweden-Denmark Connection [Rule 34]', () => {
+  it('Army can move from DEN to SWE', () => {
+    // [Rule 34] Land connection between Denmark and Sweden.
+    const units: Unit[] = [{ type: UnitType.Army, power: Power.Germany, province: 'den' }];
+    const orders = new Map<string, Order>([
+      ['den', { type: OrderType.Move, unit: 'den', destination: 'swe' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'den')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('swe');
+  });
+
+  it('Army can move from SWE to DEN', () => {
+    const units: Unit[] = [{ type: UnitType.Army, power: Power.Russia, province: 'swe' }];
+    const orders = new Map<string, Order>([
+      ['swe', { type: OrderType.Move, unit: 'swe', destination: 'den' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'swe')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('den');
+  });
+
+  it('Fleet can move from DEN to SWE', () => {
+    // Sweden does not have a split coast — fleet can move freely.
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.Germany, province: 'den' }];
+    const orders = new Map<string, Order>([
+      ['den', { type: OrderType.Move, unit: 'den', destination: 'swe' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'den')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('swe');
+  });
+
+  it('Army can move from SWE to NOR (land connection)', () => {
+    // [Rule 34] Sweden connects to Norway by land as well.
+    const units: Unit[] = [{ type: UnitType.Army, power: Power.Russia, province: 'swe' }];
+    const orders = new Map<string, Order>([
+      ['swe', { type: OrderType.Move, unit: 'swe', destination: 'nor' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'swe')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('nor');
+  });
+});
+
+// ============================================================================
+// 13. NON-ADJACENT PROVINCES
+// [Rule 35] "The Baltic Sea is not adjacent to the Helgoland Bight, North
+//            Sea, or Skagerrak."
+//           "The Aegean and Black Seas are not adjacent."
+//           "North Africa and Spain are not adjacent."
+// Rules Source: https://www.playdiplomacy.com/help.php?sub_page=Game_Rules
+// ============================================================================
+
+describe('Non-Adjacent Provinces [Rule 35]', () => {
+  it('Fleet in BAL cannot move to HEL (not adjacent)', () => {
+    // [Rule 35] Baltic Sea is not adjacent to Heligoland Bight.
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.Germany, province: 'bal' }];
+    const orders = new Map<string, Order>([
+      ['bal', { type: OrderType.Move, unit: 'bal', destination: 'hel' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'bal')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('bal'); // stays put — invalid move
+  });
+
+  it('Fleet in BAL cannot move to NTH (not adjacent)', () => {
+    // [Rule 35] Baltic Sea is not adjacent to North Sea.
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.Germany, province: 'bal' }];
+    const orders = new Map<string, Order>([
+      ['bal', { type: OrderType.Move, unit: 'bal', destination: 'nth' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'bal')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('bal');
+  });
+
+  it('Fleet in BAL cannot move to SKA (not adjacent)', () => {
+    // [Rule 35] Baltic Sea is not adjacent to Skagerrak.
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.Germany, province: 'bal' }];
+    const orders = new Map<string, Order>([
+      ['bal', { type: OrderType.Move, unit: 'bal', destination: 'ska' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'bal')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('bal');
+  });
+
+  it('Fleet in BAL can reach NTH via DEN (two moves)', () => {
+    // [Rule 35] "Fleets cannot move between them in one step but must move
+    //            through an adjacent province (e.g. Denmark) first."
+    // Verify BAL→DEN is valid (the first hop).
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.Germany, province: 'bal' }];
+    const orders = new Map<string, Order>([
+      ['bal', { type: OrderType.Move, unit: 'bal', destination: 'den' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'bal')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('den');
+  });
+
+  it('Fleet in AEG cannot move to BLA (not adjacent)', () => {
+    // [Rule 35] Aegean and Black Seas are not adjacent.
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.Turkey, province: 'aeg' }];
+    const orders = new Map<string, Order>([
+      ['aeg', { type: OrderType.Move, unit: 'aeg', destination: 'bla' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'aeg')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('aeg');
+  });
+
+  it('Fleet in BLA cannot move to AEG (not adjacent)', () => {
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.Turkey, province: 'bla' }];
+    const orders = new Map<string, Order>([
+      ['bla', { type: OrderType.Move, unit: 'bla', destination: 'aeg' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'bla')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('bla');
+  });
+
+  it('Army in NAF cannot move to SPA (not adjacent)', () => {
+    // [Rule 35] North Africa and Spain are not adjacent.
+    const units: Unit[] = [{ type: UnitType.Army, power: Power.France, province: 'naf' }];
+    const orders = new Map<string, Order>([
+      ['naf', { type: OrderType.Move, unit: 'naf', destination: 'spa' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'naf')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('naf');
+  });
+
+  it('Fleet in NAF cannot move to SPA (not adjacent)', () => {
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.France, province: 'naf' }];
+    const orders = new Map<string, Order>([
+      ['naf', { type: OrderType.Move, unit: 'naf', destination: 'spa', coast: Coast.South }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'naf')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('naf');
   });
 });
