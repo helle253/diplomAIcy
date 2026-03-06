@@ -46,7 +46,8 @@ type WSMessage =
   | { type: 'new_phase'; snapshotIndex: number; snapshot: PhaseSnapshot }
   | { type: 'message'; message: Message }
   | { type: 'game_end'; result: Record<string, unknown> }
-  | { type: 'game_restarting'; delayMs: number };
+  | { type: 'game_restarting'; delayMs: number }
+  | { type: 'game_waiting' };
 
 // --- Constants ---------------------------------------------------------------
 
@@ -141,6 +142,7 @@ const btnNext = $('#btn-next') as HTMLButtonElement;
 const btnLive = $('#btn-live') as HTMLButtonElement;
 const statusDot = $('#status-dot') as HTMLElement;
 const statusText = $('#status-text') as HTMLElement;
+const btnNewGame = $('#btn-new-game') as HTMLButtonElement;
 
 // --- Helpers -----------------------------------------------------------------
 
@@ -567,6 +569,7 @@ function connect(): void {
         snapshots = data.snapshots;
         currentIndex = Math.max(0, snapshots.length - 1);
         isLive = true;
+        btnNewGame.classList.add('hidden');
         updateAll();
         break;
       }
@@ -606,6 +609,7 @@ function connect(): void {
 
       case 'game_end': {
         phaseDisplay.textContent = 'GAME OVER';
+        btnNewGame.classList.remove('hidden');
         break;
       }
 
@@ -613,9 +617,35 @@ function connect(): void {
         phaseDisplay.textContent = `Restarting in ${Math.round(data.delayMs / 1000)}s...`;
         break;
       }
+
+      case 'game_waiting': {
+        phaseDisplay.textContent = 'GAME OVER';
+        btnNewGame.classList.remove('hidden');
+        break;
+      }
     }
   });
 }
+
+// --- New Game Button ---------------------------------------------------------
+
+btnNewGame.addEventListener('click', async () => {
+  if (!confirm('Start a new game? The current game results will be preserved.')) return;
+  btnNewGame.disabled = true;
+  btnNewGame.textContent = 'Starting…';
+  try {
+    const resp = await fetch('/api/new-game', { method: 'POST' });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({ error: 'Unknown error' }));
+      alert(`Failed to start game: ${body.error ?? resp.statusText}`);
+    }
+  } catch (err) {
+    alert(`Network error: ${err}`);
+  }
+  btnNewGame.disabled = false;
+  btnNewGame.textContent = 'New Game';
+  btnNewGame.classList.add('hidden');
+});
 
 // --- Init --------------------------------------------------------------------
 

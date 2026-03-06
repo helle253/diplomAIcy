@@ -24,7 +24,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const PORT = parseInt(process.env.PORT || '3000');
-const RESTART_DELAY_MS = parseInt(process.env.RESTART_DELAY || '5000');
 const DB_PATH = process.env.DB_PATH || 'diplomaicy.db';
 
 const ALL_POWERS: Power[] = [
@@ -70,101 +69,117 @@ function broadcast(wss: WebSocketServer, data: unknown): void {
   }
 }
 
+let gameRunning = false;
+let startGameTrigger: (() => void) | null = null;
+
+async function startGame(wss: WebSocketServer, storage: GameStorage): Promise<void> {
+  const maxYears = parseInt(process.env.MAX_YEARS || '10');
+  const phaseDelayMs = parseInt(process.env.PHASE_DELAY || '600000');
+  const remoteTimeoutMs = parseInt(process.env.REMOTE_TIMEOUT || '0');
+  const manager = new GameManager(maxYears, phaseDelayMs, remoteTimeoutMs);
+  currentManager = manager;
+  phaseSnapshots = [];
+  allMessages = [];
+  gameRunning = true;
+
+  // Create game record in SQLite
+  const gameId = storage.createGame();
+  currentGameId = gameId;
+
+  // Create and connect agents
+  const gameConfig = loadConfig();
+  for (const power of ALL_POWERS) {
+    const agentCfg = getAgentConfig(gameConfig, power);
+    if (agentCfg.type === 'remote') {
+      logger.info(`  ${power}: Remote (waiting for connection)`);
+      continue;
+    }
+    let agent;
+    if (agentCfg.type === 'llm') {
+      const clientConfig = toLLMClientConfig(agentCfg);
+      const client: LLMClient =
+        agentCfg.provider === 'anthropic'
+          ? new AnthropicClient(clientConfig)
+          : new OpenAICompatibleClient(clientConfig);
+      agent = new LLMAgent(power, client);
+      logger.info(`  ${power}: LLM (${agentCfg.provider ?? 'openai'} / ${clientConfig.model})`);
+    } else {
+      agent = new RandomAgent(power);
+      logger.info(`  ${power}: Random`);
+    }
+
+    // Initialize and connect via adapter
+    await agent.initialize(manager.getState());
+    connectAgent(agent, manager);
+  }
+
+  // Persist and broadcast messages in real-time
+  manager.onMessage((message: Message) => {
+    message.gameId = gameId;
+    storage.saveMessage(gameId, message);
+    allMessages.push(message);
+    broadcast(wss, { type: 'message', message });
+  });
+
+  manager.onEvent((event: GameEvent) => {
+    // Persist turn records
+    if (event.turnRecord) {
+      storage.saveTurnRecord(gameId, event.turnRecord);
+    }
+
+    const snapshot: PhaseSnapshot = {
+      phase: event.phase,
+      gameState: serializeState(event.gameState),
+      turnRecord: event.turnRecord,
+      messages: [...allMessages],
+    };
+    phaseSnapshots.push(snapshot);
+
+    broadcast(wss, {
+      type: 'new_phase',
+      snapshotIndex: phaseSnapshots.length - 1,
+      snapshot,
+    });
+  });
+
+  logger.info(`Starting new Diplomacy game (${gameId})...`);
+
+  try {
+    const result = await manager.run();
+    storage.completeGame(gameId, result);
+    broadcast(wss, {
+      type: 'game_end',
+      result: {
+        ...result,
+        supplyCenters: Object.fromEntries(result.supplyCenters),
+      },
+    });
+    logger.info(
+      result.winner
+        ? `Game over! ${result.winner} wins in ${result.year}.`
+        : `Game ended in a draw in year ${result.year}.`,
+    );
+  } catch (err) {
+    storage.failGame(gameId);
+    logger.error('Game error:', err);
+  }
+
+  gameRunning = false;
+  broadcast(wss, { type: 'game_waiting' });
+  logger.info('Game finished. Waiting for new game request...');
+}
+
 async function runGameLoop(wss: WebSocketServer, storage: GameStorage): Promise<void> {
+  // Auto-start the first game
+  await startGame(wss, storage);
+
+  // Then wait for manual triggers
   while (true) {
-    const maxYears = parseInt(process.env.MAX_YEARS || '10');
-    const phaseDelayMs = parseInt(process.env.PHASE_DELAY || '600000');
-    const remoteTimeoutMs = parseInt(process.env.REMOTE_TIMEOUT || '0');
-    const manager = new GameManager(maxYears, phaseDelayMs, remoteTimeoutMs);
-    currentManager = manager;
-    phaseSnapshots = [];
-    allMessages = [];
-
-    // Create game record in SQLite
-    const gameId = storage.createGame();
-    currentGameId = gameId;
-
-    // Create and connect agents
-    const gameConfig = loadConfig();
-    for (const power of ALL_POWERS) {
-      const agentCfg = getAgentConfig(gameConfig, power);
-      if (agentCfg.type === 'remote') {
-        logger.info(`  ${power}: Remote (waiting for connection)`);
-        continue;
-      }
-      let agent;
-      if (agentCfg.type === 'llm') {
-        const clientConfig = toLLMClientConfig(agentCfg);
-        const client: LLMClient =
-          agentCfg.provider === 'anthropic'
-            ? new AnthropicClient(clientConfig)
-            : new OpenAICompatibleClient(clientConfig);
-        agent = new LLMAgent(power, client);
-        logger.info(`  ${power}: LLM (${agentCfg.provider ?? 'openai'} / ${clientConfig.model})`);
-      } else {
-        agent = new RandomAgent(power);
-        logger.info(`  ${power}: Random`);
-      }
-
-      // Initialize and connect via adapter
-      await agent.initialize(manager.getState());
-      connectAgent(agent, manager);
-    }
-
-    // Persist and broadcast messages in real-time
-    manager.onMessage((message: Message) => {
-      message.gameId = gameId;
-      storage.saveMessage(gameId, message);
-      allMessages.push(message);
-      broadcast(wss, { type: 'message', message });
+    await new Promise<void>((resolve) => {
+      startGameTrigger = resolve;
     });
-
-    manager.onEvent((event: GameEvent) => {
-      // Persist turn records
-      if (event.turnRecord) {
-        storage.saveTurnRecord(gameId, event.turnRecord);
-      }
-
-      const snapshot: PhaseSnapshot = {
-        phase: event.phase,
-        gameState: serializeState(event.gameState),
-        turnRecord: event.turnRecord,
-        messages: [...allMessages],
-      };
-      phaseSnapshots.push(snapshot);
-
-      broadcast(wss, {
-        type: 'new_phase',
-        snapshotIndex: phaseSnapshots.length - 1,
-        snapshot,
-      });
-    });
-
-    logger.info(`Starting new Diplomacy game (${gameId})...`);
-
-    try {
-      const result = await manager.run();
-      storage.completeGame(gameId, result);
-      broadcast(wss, {
-        type: 'game_end',
-        result: {
-          ...result,
-          supplyCenters: Object.fromEntries(result.supplyCenters),
-        },
-      });
-      logger.info(
-        result.winner
-          ? `Game over! ${result.winner} wins in ${result.year}.`
-          : `Game ended in a draw in year ${result.year}.`,
-      );
-    } catch (err) {
-      storage.failGame(gameId);
-      logger.error('Game error:', err);
-    }
-
-    logger.info(`Next game starts in ${RESTART_DELAY_MS / 1000} seconds...`);
-    broadcast(wss, { type: 'game_restarting', delayMs: RESTART_DELAY_MS });
-    await sleep(RESTART_DELAY_MS);
+    startGameTrigger = null;
+    await startGame(wss, storage);
   }
 }
 
@@ -208,6 +223,19 @@ function startServer(): void {
   app.get('/api/games/:id/turns', (req, res) => {
     const turns = storage.getTurnRecords(req.params.id);
     res.json(turns);
+  });
+
+  app.post('/api/new-game', (_req, res) => {
+    if (gameRunning) {
+      res.status(409).json({ error: 'A game is already in progress' });
+      return;
+    }
+    if (startGameTrigger) {
+      startGameTrigger();
+      res.json({ status: 'starting' });
+    } else {
+      res.status(503).json({ error: 'Server not ready' });
+    }
   });
 
   // Mount tRPC router (lazily bound to current game manager)
