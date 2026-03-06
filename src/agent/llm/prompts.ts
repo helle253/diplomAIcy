@@ -74,6 +74,31 @@ function lastTurnSummary(resolutions: OrderResolution[]): string {
     .join('\n');
 }
 
+/**
+ * Formats a message with visibility annotation so the LLM understands
+ * who can see each message and avoids leaking private intel.
+ */
+function formatMessage(m: Message, self: Power): string {
+  const to = typeof m.to === 'string' ? m.to : m.to.join(', ');
+  let tag = '';
+  if (m.to === 'Global') {
+    tag = ' [PUBLIC]';
+  } else if (
+    m.to === self ||
+    (typeof m.to === 'string' && m.from === self) ||
+    (Array.isArray(m.to) && m.to.length === 1)
+  ) {
+    // 1-on-1 private message
+    const other = m.from === self ? (Array.isArray(m.to) ? m.to[0] : m.to) : m.from;
+    tag = ` [PRIVATE - only you and ${other} can see this]`;
+  } else if (Array.isArray(m.to)) {
+    // Multi-recipient: show who can see it
+    const visible = m.from === self ? m.to : [m.from, ...m.to.filter((p) => p !== m.from)];
+    tag = ` [SHARED - visible to: ${visible.join(', ')}]`;
+  }
+  return `${m.from} -> ${to}: ${m.content}${tag}`;
+}
+
 export function serializeGameState(state: GameState, power: Power): string {
   const lines: string[] = [];
   const { phase } = state;
@@ -140,6 +165,12 @@ RULES SUMMARY:
 - Convoys: fleets in sea provinces chain to transport armies across water
 - Multi-coast provinces (spa, stp, bul): fleets must specify coast (nc or sc)
 
+INFORMATION SECURITY:
+- Messages are tagged [PRIVATE], [SHARED], or [PUBLIC] to show who can see them
+- NEVER reveal information from a PRIVATE message when replying to a group or different power
+- When sending to multiple recipients, assume ALL recipients can read the full message
+- Use private 1-on-1 messages for sensitive coordination; use group messages only for shared plans
+
 PROVINCE ABBREVIATIONS:
 ${PROVINCE_LIST}
 
@@ -159,11 +190,7 @@ export function buildOrdersPrompt(
   if (recentMessages.length > 0) {
     msgSection =
       '\n--- Recent Diplomatic Messages ---\n' +
-      recentMessages
-        .map(
-          (m) => `${m.from} -> ${typeof m.to === 'string' ? m.to : m.to.join(', ')}: ${m.content}`,
-        )
-        .join('\n');
+      recentMessages.map((m) => formatMessage(m, power)).join('\n');
   }
 
   const unitList = yours.map(unitStr).join(', ');
@@ -204,12 +231,7 @@ export function buildNegotiationPrompt(
   let msgSection = '';
   if (recentMessages.length > 0) {
     msgSection =
-      '\n--- Recent Messages ---\n' +
-      recentMessages
-        .map(
-          (m) => `${m.from} -> ${typeof m.to === 'string' ? m.to : m.to.join(', ')}: ${m.content}`,
-        )
-        .join('\n');
+      '\n--- Recent Messages ---\n' + recentMessages.map((m) => formatMessage(m, power)).join('\n');
   }
 
   let prompt: string;
@@ -254,19 +276,11 @@ export function buildBatchNegotiationPrompt(
   let msgSection = '';
   if (recentMessages.length > 0) {
     msgSection =
-      '\n--- Recent Messages ---\n' +
-      recentMessages
-        .map(
-          (m) => `${m.from} -> ${typeof m.to === 'string' ? m.to : m.to.join(', ')}: ${m.content}`,
-        )
-        .join('\n');
+      '\n--- Recent Messages ---\n' + recentMessages.map((m) => formatMessage(m, power)).join('\n');
   }
 
   const incomingSection = incomingMessages
-    .map(
-      (m, i) =>
-        `${i + 1}. ${m.from} -> ${typeof m.to === 'string' ? m.to : m.to.join(', ')}: ${m.content}`,
-    )
+    .map((m, i) => `${i + 1}. ${formatMessage(m, power)}`)
     .join('\n');
 
   return `${stateStr}${msgSection}
