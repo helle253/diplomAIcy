@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>diplomAIcy - Spectator</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body class="flex h-screen flex-col overflow-hidden bg-[#1a1a2e] font-sans text-gray-200">
+    <!-- Header -->
+    <header
+      class="flex items-center justify-between border-b border-[#0f3460] bg-[#16213e] px-5 py-2"
+    >
+      <h1 class="text-lg font-bold tracking-wide text-[#e94560]">diplomAIcy</h1>
+      <div class="flex items-center gap-4">
+        <span
+          id="phase-display"
+          class="text-sm font-medium tracking-wider text-indigo-300 uppercase"
+          >-- waiting --</span
+        >
+        <span id="connection-status" class="flex items-center gap-1.5 text-xs text-gray-500">
+          <span id="status-dot" class="inline-block h-2 w-2 rounded-full bg-gray-600"></span>
+          <span id="status-text">disconnected</span>
+        </span>
+      </div>
+    </header>
+
+    <!-- Main two-pane layout -->
+    <div class="flex flex-1 overflow-hidden">
+      <!-- Left: Map panel -->
+      <div id="map-panel" class="flex min-w-0 flex-1 flex-col border-r border-[#0f3460]">
+        <!-- Map container - SVG will be inlined here by JS -->
+        <div
+          id="map-container"
+          class="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-1"
+        ></div>
+
+        <!-- Supply center summary row -->
+        <div
+          id="sc-summary"
+          class="flex flex-wrap gap-2 border-t border-[#0f3460] bg-[#111a30] px-4 py-1.5"
+        ></div>
+
+        <!-- Turn slider bar -->
+        <div class="flex items-center gap-2.5 border-t border-[#0f3460] bg-[#16213e] px-4 py-2">
+          <label class="text-[11px] tracking-wide text-indigo-400 uppercase" for="phase-slider"
+            >Turn</label
+          >
+          <input
+            type="range"
+            id="phase-slider"
+            min="0"
+            max="0"
+            value="0"
+            class="flex-1 cursor-pointer accent-[#e94560]"
+          />
+          <span id="slider-phase-label" class="min-w-[150px] text-right text-xs text-gray-400"
+            >--</span
+          >
+          <div class="flex gap-1">
+            <button id="btn-prev" title="Previous phase" class="slider-btn">&lt;</button>
+            <button id="btn-next" title="Next phase" class="slider-btn">&gt;</button>
+            <button id="btn-live" title="Follow live" class="slider-btn active">LIVE</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Messages panel -->
+      <div id="messages-panel" class="flex w-[360px] shrink-0 flex-col bg-[#16213e]">
+        <!-- Chat selector header with tabs -->
+        <div class="border-b border-[#0f3460] px-3.5 py-2.5">
+          <h2 class="mb-1.5 text-[13px] tracking-wide text-[#e94560] uppercase">
+            Diplomatic Messages
+          </h2>
+          <div id="chat-tabs" class="flex flex-wrap gap-1">
+            <!-- JS will populate: All, England, France, etc. -->
+          </div>
+        </div>
+        <!-- Messages list -->
+        <div id="messages-list" class="flex-1 overflow-y-auto px-3.5 py-2">
+          <div class="py-5 text-center text-sm text-gray-600 italic">No messages yet</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tooltip (for province hover) -->
+    <div
+      id="tooltip"
+      class="pointer-events-none fixed z-50 hidden max-w-[200px] rounded border border-gray-600 bg-gray-900 px-2.5 py-1.5 text-xs"
+    >
+      <div class="tt-name font-bold uppercase"></div>
+      <div class="tt-owner text-gray-400"></div>
+      <div class="tt-unit text-yellow-400"></div>
+    </div>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
