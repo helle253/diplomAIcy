@@ -232,7 +232,8 @@ export async function connectRemoteAgent(
     const key = phaseKey(currentGameState);
     if (
       key !== lastHandledPhase &&
-      (currentGameState.phase.type === PhaseType.Orders ||
+      (currentGameState.phase.type === PhaseType.Diplomacy ||
+        currentGameState.phase.type === PhaseType.Orders ||
         currentGameState.phase.type === PhaseType.Retreats ||
         currentGameState.phase.type === PhaseType.Builds)
     ) {
