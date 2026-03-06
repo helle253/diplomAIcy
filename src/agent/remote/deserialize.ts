@@ -14,6 +14,7 @@ export interface SerializedGameState {
   supplyCenters: Record<string, Power>;
   orderHistory: OrderResolution[][];
   retreatSituations: RetreatSituation[];
+  deadlineMs: number;
 }
 
 /** Converts the serialized tRPC game state back into a proper GameState with Map. */

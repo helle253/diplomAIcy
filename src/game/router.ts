@@ -79,6 +79,7 @@ function serializeState(manager: GameManager) {
     supplyCenters: Object.fromEntries(state.supplyCenters),
     orderHistory: state.orderHistory,
     retreatSituations: state.retreatSituations,
+    deadlineMs: manager.getDeadline(),
   };
 }
 

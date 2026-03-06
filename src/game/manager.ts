@@ -70,6 +70,7 @@ export class GameManager {
   private endYear: number;
   private phaseDelayMs: number;
   private remoteTimeoutMs: number;
+  private _deadlineMs = 0; // unix timestamp when current phase's submission window closes (0 = no deadline)
   readonly bus = new MessageBus();
 
   // Promise gates for collecting agent submissions
@@ -131,6 +132,11 @@ export class GameManager {
 
   sendMessage(message: Message): void {
     this.bus.send(message);
+  }
+
+  /** Unix timestamp (ms) when the current phase's submission window closes. 0 = no deadline. */
+  getDeadline(): number {
+    return this._deadlineMs;
   }
 
   // ── Event subscriptions ──────────────────────────────────────────────
@@ -208,6 +214,18 @@ export class GameManager {
   private async startPhase(phase: Phase): Promise<void> {
     this.state.phase = phase;
     this.bus.phase = phase;
+
+    // Set deadline for phases that require submissions
+    if (
+      this.remoteTimeoutMs > 0 &&
+      (phase.type === PhaseType.Orders ||
+        phase.type === PhaseType.Retreats ||
+        phase.type === PhaseType.Builds)
+    ) {
+      this._deadlineMs = Date.now() + this.remoteTimeoutMs;
+    } else {
+      this._deadlineMs = 0;
+    }
 
     await this.emit({
       type: 'phase_start',
@@ -356,14 +374,20 @@ export class GameManager {
   /** Wraps a promise with an optional timeout. Returns true if timed out. */
   private withTimeout(promise: Promise<void>, power: Power, label: string): Promise<boolean> {
     if (this.remoteTimeoutMs <= 0) return promise.then(() => false);
+    let timer: ReturnType<typeof setTimeout>;
     return Promise.race([
-      promise.then(() => false),
-      new Promise<boolean>((resolve) =>
-        setTimeout(() => {
-          logger.warn(`[${power}] ${label} timed out after ${this.remoteTimeoutMs}ms — using defaults`);
+      promise.then(() => {
+        clearTimeout(timer);
+        return false;
+      }),
+      new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => {
+          logger.warn(
+            `[${power}] ${label} timed out after ${this.remoteTimeoutMs}ms — using defaults`,
+          );
           resolve(true);
-        }, this.remoteTimeoutMs),
-      ),
+        }, this.remoteTimeoutMs);
+      }),
     ]);
   }
 

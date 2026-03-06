@@ -14,7 +14,9 @@
     "lint": "eslint src/",
     "format": "prettier --write 'src/**/*.{ts,js,css,html}'",
     "agent": "tsc && node dist/agent/remote/run.js",
-    "start:remote": "DIPLOMAICY_CONFIG=diplomaicy.config.remote.json yarn start"
+    "start:remote": "DIPLOMAICY_CONFIG=diplomaicy.config.remote.json yarn start",
+    "play:llm": "yarn build && bash scripts/play-llm.sh",
+    "play:random": "AGENT_TYPE=random yarn build && bash scripts/play-llm.sh"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.1",
