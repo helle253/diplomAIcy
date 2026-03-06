@@ -20,7 +20,7 @@
     "ghcr.io/devcontainers/features/github-cli:1": {}
   },
 
-  "forwardPorts": [3000],
+  "forwardPorts": [5173],
 
   // Use 'postCreateCommand' to run commands after the container is created.
   "postCreateCommand": "./.devcontainer/boot.sh",
@@ -28,7 +28,7 @@
   // Configure tool-specific properties.
   "customizations": {
     "vscode": {
-      "extensions": []
+      "extensions": ["esbenp.prettier-vscode"]
     }
   }
 
