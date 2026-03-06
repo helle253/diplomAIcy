@@ -226,6 +226,52 @@ Respond with a JSON array inside a fenced code block:
 Be strategic. Consider who to ally with, who to deceive, and what information to share or withhold.`;
 }
 
+export function buildBatchNegotiationPrompt(
+  state: GameState,
+  power: Power,
+  messageHistory: Message[],
+  incomingMessages: Message[],
+): string {
+  const stateStr = serializeGameState(state, power);
+
+  const recentMessages = messageHistory.slice(-10);
+  let msgSection = '';
+  if (recentMessages.length > 0) {
+    msgSection =
+      '\n--- Recent Messages ---\n' +
+      recentMessages
+        .map(
+          (m) => `${m.from} -> ${typeof m.to === 'string' ? m.to : m.to.join(', ')}: ${m.content}`,
+        )
+        .join('\n');
+  }
+
+  const incomingSection = incomingMessages
+    .map(
+      (m, i) =>
+        `${i + 1}. ${m.from} -> ${typeof m.to === 'string' ? m.to : m.to.join(', ')}: ${m.content}`,
+    )
+    .join('\n');
+
+  return `${stateStr}${msgSection}
+
+You received the following ${incomingMessages.length} message(s):
+${incomingSection}
+
+Decide which messages to respond to and craft your replies. You may respond to all, some, or none. You can also send messages to powers who didn't message you.
+If you choose not to respond to any, return an empty array.
+
+Respond with a JSON array inside a fenced code block:
+\`\`\`json
+[
+  { "to": "England", "content": "Your message here" },
+  { "to": "Global", "content": "Public announcement" }
+]
+\`\`\`
+
+Be strategic. Consider who to ally with, who to deceive, and what information to share or withhold.`;
+}
+
 export function buildRetreatsPrompt(
   state: GameState,
   power: Power,

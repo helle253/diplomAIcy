@@ -35,6 +35,15 @@ export class RandomAgent implements DiplomacyAgent {
     return this.generateMessages(gameState);
   }
 
+  async onMessages(messages: Message[], gameState: GameState): Promise<Message[]> {
+    const replies: Message[] = [];
+    for (const message of messages) {
+      const r = await this.onMessage(message, gameState);
+      replies.push(...r);
+    }
+    return replies;
+  }
+
   async onMessage(message: Message, gameState: GameState): Promise<Message[]> {
     // 40% chance to reply to a direct message
     if (Math.random() < 0.6) return [];

@@ -13,6 +13,7 @@ import { DiplomacyAgent } from '../interface.js';
 import { ChatMessage, LLMClient } from './llm-client.js';
 import { parseBuildOrders, parseMessages, parseOrders, parseRetreats } from './order-parser.js';
 import {
+  buildBatchNegotiationPrompt,
   buildBuildsPrompt,
   buildNegotiationPrompt,
   buildOrdersPrompt,
@@ -86,6 +87,38 @@ export class LLMAgent implements DiplomacyAgent {
     } catch (err) {
       logger.error(`[${this.power}] LLMAgent.onMessage error:`, err);
       logger.warn(`[${this.power}] LLMAgent.onMessage falling back to no replies`);
+      return [];
+    }
+  }
+
+  async onMessages(messages: Message[], gameState: GameState): Promise<Message[]> {
+    logger.info(`[${this.power}] LLMAgent.onMessages batch of ${messages.length}`);
+    this.messageHistory.push(...messages);
+
+    // Rate limit responses per phase
+    if (MAX_RESPONSES_PER_PHASE >= 0 && this.responsesThisPhase >= MAX_RESPONSES_PER_PHASE) {
+      logger.info(
+        `[${this.power}] LLMAgent.onMessages rate-limited (${this.responsesThisPhase}/${MAX_RESPONSES_PER_PHASE})`,
+      );
+      return [];
+    }
+
+    try {
+      const prompt = buildBatchNegotiationPrompt(
+        gameState,
+        this.power,
+        this.recentMessages(),
+        messages,
+      );
+      const response = await this.complete(prompt);
+      const replies = parseMessages(response, this.power, gameState.phase);
+      this.responsesThisPhase += replies.length;
+      this.trackMessages(replies);
+      logger.info(`[${this.power}] LLMAgent.onMessages produced ${replies.length} replies`);
+      return replies;
+    } catch (err) {
+      logger.error(`[${this.power}] LLMAgent.onMessages error:`, err);
+      logger.warn(`[${this.power}] LLMAgent.onMessages falling back to no replies`);
       return [];
     }
   }

@@ -30,20 +30,42 @@ export async function connectRemoteAgent(
   // ── Serialized work queue ──────────────────────────────────────────
   // All async work goes through this queue to prevent concurrent API calls.
   // Phase items take priority over message items.
+  const MESSAGE_BATCH_DELAY = parseInt(process.env.MESSAGE_BATCH_DELAY ?? '5000', 10);
+
   type WorkItem =
     | { kind: 'phase'; gameState: ReturnType<typeof deserializeGameState>; deadlineMs: number }
-    | { kind: 'message'; message: Message };
+    | { kind: 'messageBatch'; messages: Message[] };
 
   const workQueue: WorkItem[] = [];
   let working = false;
 
-  function enqueuePhase(gameState: ReturnType<typeof deserializeGameState>, deadlineMs: number) {
-    // Clear any pending messages — they're stale once a new phase arrives
-    const staleCount = workQueue.filter((w) => w.kind === 'message').length;
-    if (staleCount > 0) {
-      logger.info(`[${agent.power}] Clearing ${staleCount} stale messages from queue`);
+  // ── Message batching ────────────────────────────────────────────────
+  let pendingMessages: Message[] = [];
+  let batchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function flushPendingMessages() {
+    if (batchTimer) {
+      clearTimeout(batchTimer);
+      batchTimer = null;
     }
-    // Remove all pending messages, keep only phase items (shouldn't be any but just in case)
+    if (pendingMessages.length > 0) {
+      const batch = pendingMessages;
+      pendingMessages = [];
+      logger.info(`[${agent.power}] Flushing ${batch.length} batched messages`);
+      workQueue.push({ kind: 'messageBatch', messages: batch });
+    }
+  }
+
+  function enqueuePhase(gameState: ReturnType<typeof deserializeGameState>, deadlineMs: number) {
+    // Flush any pending messages before clearing — they belong to the current phase
+    flushPendingMessages();
+
+    // Clear any queued message batches — they're stale once a new phase arrives
+    const staleCount = workQueue.filter((w) => w.kind === 'messageBatch').length;
+    if (staleCount > 0) {
+      logger.info(`[${agent.power}] Clearing ${staleCount} stale message batches from queue`);
+    }
+    // Remove all pending message batches, keep only phase items
     const kept = workQueue.filter((w) => w.kind === 'phase');
     workQueue.length = 0;
     workQueue.push(...kept);
@@ -52,8 +74,14 @@ export async function connectRemoteAgent(
   }
 
   function enqueueMessage(message: Message) {
-    workQueue.push({ kind: 'message', message });
-    drainWorkQueue();
+    pendingMessages.push(message);
+    // Reset the debounce timer
+    if (batchTimer) clearTimeout(batchTimer);
+    batchTimer = setTimeout(() => {
+      batchTimer = null;
+      flushPendingMessages();
+      drainWorkQueue();
+    }, MESSAGE_BATCH_DELAY);
   }
 
   async function drainWorkQueue() {
@@ -70,7 +98,7 @@ export async function connectRemoteAgent(
           if (item.kind === 'phase') {
             await handlePhase(item.gameState, item.deadlineMs);
           } else {
-            await handleMessage(item.message);
+            await handleMessageBatch(item.messages);
           }
         } catch (err) {
           logger.error(`[${agent.power}] work queue error:`, err);
@@ -146,13 +174,25 @@ export async function connectRemoteAgent(
     }
   }
 
-  // ── Message handler ────────────────────────────────────────────────
+  // ── Message batch handler ─────────────────────────────────────────
 
-  async function handleMessage(message: Message) {
+  async function handleMessageBatch(messages: Message[]) {
     try {
       const state = await client.getState.query();
       const gameState = deserializeGameState(state as SerializedGameState);
-      const replies = await agent.onMessage(message, gameState);
+
+      let replies: Message[];
+      if (agent.onMessages) {
+        replies = await agent.onMessages(messages, gameState);
+      } else {
+        // Fallback: call onMessage sequentially for each message
+        replies = [];
+        for (const msg of messages) {
+          const r = await agent.onMessage(msg, gameState);
+          replies.push(...r);
+        }
+      }
+
       for (const reply of replies) {
         logger.info(`[${agent.power}] -> ${formatTo(reply.to)}: ${reply.content}`);
         await client.sendMessage.mutate({
@@ -162,7 +202,7 @@ export async function connectRemoteAgent(
         });
       }
     } catch (err) {
-      logger.error(`[${agent.power}] onMessage error:`, err);
+      logger.error(`[${agent.power}] onMessageBatch error:`, err);
     }
   }
 

@@ -21,6 +21,10 @@ export interface DiplomacyAgent {
   // Return messages to send in response (pushed back through the bus)
   onMessage(message: Message, gameState: GameState): Promise<Message[]>;
 
+  // Called with a batch of accumulated messages — single LLM call for all
+  // Optional: if not implemented, falls back to calling onMessage per message
+  onMessages?(messages: Message[], gameState: GameState): Promise<Message[]>;
+
   // Submit orders for the current phase
   submitOrders(gameState: GameState): Promise<Order[]>;
 
