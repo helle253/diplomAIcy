@@ -88,6 +88,7 @@ export class GameManager {
       supplyCenters: new Map(STARTING_SUPPLY_CENTERS),
       orderHistory: [],
       retreatSituations: [],
+      endYear: this.endYear,
     };
   }
 

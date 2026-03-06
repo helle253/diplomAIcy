@@ -79,6 +79,12 @@ export function serializeGameState(state: GameState, power: Power): string {
   const { phase } = state;
   lines.push(`=== ${phase.season} ${phase.year} (${phase.type}) ===`);
   lines.push(`YOUR POWER: ${power}`);
+  if (state.endYear) {
+    const remaining = state.endYear - phase.year;
+    lines.push(
+      `GAME ENDS: ${state.endYear} (${remaining} year${remaining !== 1 ? 's' : ''} remaining)`,
+    );
+  }
 
   // Your units
   const grouped = groupUnitsByPower(state.units);
@@ -110,8 +116,17 @@ const PROVINCE_LIST = Object.entries(PROVINCES)
   .map(([id, p]) => `${id} = ${p.name}`)
   .join(', ');
 
-export function buildSystemPrompt(power: Power): string {
-  return `You are playing as ${power} in a game of Diplomacy. You are a skilled and strategic player.
+export function buildSystemPrompt(power: Power, endYear?: number): string {
+  const gameLengthNote = endYear
+    ? `\nGAME LENGTH: This game ends after ${endYear}. ${
+        endYear - 1900 <= 3
+          ? 'This is a SHORT game — be aggressive and expand quickly. There is no time for slow buildups.'
+          : endYear - 1900 <= 10
+            ? 'This is a medium-length game — balance early expansion with alliance-building.'
+            : 'This is a long game — invest in durable alliances and long-term positioning.'
+      }`
+    : '';
+  return `You are playing as ${power} in a game of Diplomacy. You are a skilled and strategic player.${gameLengthNote}
 
 RULES SUMMARY:
 - 7 powers compete to control 18 of 34 supply centers on the map of Europe

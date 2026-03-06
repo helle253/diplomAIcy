@@ -34,6 +34,7 @@ function makeState(overrides?: Partial<GameState>): GameState {
     supplyCenters: new Map(STARTING_SUPPLY_CENTERS),
     orderHistory: [],
     retreatSituations: [],
+    endYear: 1910,
     ...overrides,
   };
 }

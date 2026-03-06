@@ -26,6 +26,7 @@ function makeGameState(units: Unit[], supplyCenters?: Map<string, Power>): GameS
     supplyCenters: supplyCenters ?? new Map(STARTING_SUPPLY_CENTERS),
     orderHistory: [],
     retreatSituations: [],
+    endYear: 1910,
   };
 }
 

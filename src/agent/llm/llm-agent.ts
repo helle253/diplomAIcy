@@ -37,8 +37,9 @@ export class LLMAgent implements DiplomacyAgent {
     this.systemPrompt = buildSystemPrompt(power);
   }
 
-  async initialize(_gameState: GameState): Promise<void> {
+  async initialize(gameState: GameState): Promise<void> {
     logger.info(`[${this.power}] LLMAgent.initialize`);
+    this.systemPrompt = buildSystemPrompt(this.power, gameState.endYear);
     this.messageHistory = [];
     this.responsesThisPhase = 0;
     this.currentPhaseKey = '';

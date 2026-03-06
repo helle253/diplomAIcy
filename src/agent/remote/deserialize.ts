@@ -14,6 +14,7 @@ export interface SerializedGameState {
   supplyCenters: Record<string, Power>;
   orderHistory: OrderResolution[][];
   retreatSituations: RetreatSituation[];
+  endYear: number;
   deadlineMs: number;
 }
 
@@ -25,5 +26,6 @@ export function deserializeGameState(s: SerializedGameState): GameState {
     supplyCenters: new Map(Object.entries(s.supplyCenters)) as Map<string, Power>,
     orderHistory: s.orderHistory,
     retreatSituations: s.retreatSituations,
+    endYear: s.endYear,
   };
 }
