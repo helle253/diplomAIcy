@@ -14,9 +14,8 @@ export interface DiplomacyAgent {
   // Called at the start of a game with game info
   initialize(gameState: GameState): Promise<void>;
 
-  // Generate opening messages at the start of a diplomacy phase
-  // These are sent through the MessageBus to kick off negotiation
-  openNegotiation(gameState: GameState): Promise<Message[]>;
+  // Called at the start of every phase — return messages to send (press is always open)
+  onPhaseStart(gameState: GameState): Promise<Message[]>;
 
   // Called when a message is pushed to this agent via the MessageBus
   // Return messages to send in response (pushed back through the bus)

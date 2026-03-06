@@ -43,9 +43,9 @@ export class LLMAgent implements DiplomacyAgent {
     this.currentPhaseKey = '';
   }
 
-  async openNegotiation(gameState: GameState): Promise<Message[]> {
+  async onPhaseStart(gameState: GameState): Promise<Message[]> {
     logger.info(
-      `[${this.power}] LLMAgent.openNegotiation (${gameState.phase.season} ${gameState.phase.year})`,
+      `[${this.power}] LLMAgent.onPhaseStart (${gameState.phase.season} ${gameState.phase.year} ${gameState.phase.type})`,
     );
     this.resetPhaseCounter(gameState);
 
@@ -54,11 +54,11 @@ export class LLMAgent implements DiplomacyAgent {
       const response = await this.complete(prompt);
       const messages = parseMessages(response, this.power, gameState.phase);
       this.trackMessages(messages);
-      logger.info(`[${this.power}] LLMAgent.openNegotiation produced ${messages.length} messages`);
+      logger.info(`[${this.power}] LLMAgent.onPhaseStart produced ${messages.length} messages`);
       return messages;
     } catch (err) {
-      logger.error(`[${this.power}] LLMAgent.openNegotiation error:`, err);
-      logger.warn(`[${this.power}] LLMAgent.openNegotiation falling back to no messages`);
+      logger.error(`[${this.power}] LLMAgent.onPhaseStart error:`, err);
+      logger.warn(`[${this.power}] LLMAgent.onPhaseStart falling back to no messages`);
       return [];
     }
   }

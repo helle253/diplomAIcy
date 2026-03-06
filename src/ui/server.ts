@@ -1,11 +1,13 @@
 import 'dotenv/config';
 
+import { createExpressMiddleware } from '@trpc/server/adapters/express';
 import express from 'express';
 import { createServer } from 'http';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocket, WebSocketServer } from 'ws';
 
+import { connectAgent } from '../agent/adapter.js';
 import { AnthropicClient } from '../agent/llm/anthropic-client.js';
 import { getAgentConfig, loadConfig, toLLMClientConfig } from '../agent/llm/config.js';
 import { LLMAgent } from '../agent/llm/llm-agent.js';
@@ -14,6 +16,7 @@ import { RandomAgent } from '../agent/random.js';
 import { GameState, Message, Power } from '../engine/types.js';
 import type { GameEvent, TurnRecord } from '../game/manager.js';
 import { GameManager } from '../game/manager.js';
+import { createGameRouter } from '../game/router.js';
 import { GameStorage } from '../game/storage.js';
 import { logger } from '../util/logger.js';
 
@@ -71,7 +74,8 @@ async function runGameLoop(wss: WebSocketServer, storage: GameStorage): Promise<
   while (true) {
     const maxYears = parseInt(process.env.MAX_YEARS || '10');
     const phaseDelayMs = parseInt(process.env.PHASE_DELAY || '600000');
-    const manager = new GameManager(maxYears, phaseDelayMs);
+    const remoteTimeoutMs = parseInt(process.env.REMOTE_TIMEOUT || '0');
+    const manager = new GameManager(maxYears, phaseDelayMs, remoteTimeoutMs);
     currentManager = manager;
     phaseSnapshots = [];
     allMessages = [];
@@ -80,21 +84,31 @@ async function runGameLoop(wss: WebSocketServer, storage: GameStorage): Promise<
     const gameId = storage.createGame();
     currentGameId = gameId;
 
+    // Create and connect agents
     const gameConfig = loadConfig();
     for (const power of ALL_POWERS) {
       const agentCfg = getAgentConfig(gameConfig, power);
+      if (agentCfg.type === 'remote') {
+        logger.info(`  ${power}: Remote (waiting for connection)`);
+        continue;
+      }
+      let agent;
       if (agentCfg.type === 'llm') {
         const clientConfig = toLLMClientConfig(agentCfg);
         const client: LLMClient =
           agentCfg.provider === 'anthropic'
             ? new AnthropicClient(clientConfig)
             : new OpenAICompatibleClient(clientConfig);
-        manager.registerAgent(new LLMAgent(power, client));
+        agent = new LLMAgent(power, client);
         logger.info(`  ${power}: LLM (${agentCfg.provider ?? 'openai'} / ${clientConfig.model})`);
       } else {
-        manager.registerAgent(new RandomAgent(power));
+        agent = new RandomAgent(power);
         logger.info(`  ${power}: Random`);
       }
+
+      // Initialize and connect via adapter
+      await agent.initialize(manager.getState());
+      connectAgent(agent, manager);
     }
 
     // Persist and broadcast messages in real-time
@@ -196,6 +210,19 @@ function startServer(): void {
     res.json(turns);
   });
 
+  // Mount tRPC router (lazily bound to current game manager)
+  app.use(
+    '/trpc',
+    (req, res, next) => {
+      if (!currentManager) {
+        res.status(503).json({ error: 'No game in progress' });
+        return;
+      }
+      const gameRouter = createGameRouter(currentManager);
+      createExpressMiddleware({ router: gameRouter })(req, res, next);
+    },
+  );
+
   // WebSocket connection handler
   wss.on('connection', (ws: WebSocket) => {
     logger.info('Client connected');
@@ -216,6 +243,7 @@ function startServer(): void {
 
   server.listen(PORT, () => {
     logger.info(`Diplomacy game server running at http://localhost:${PORT}`);
+    logger.info(`tRPC endpoint: http://localhost:${PORT}/trpc`);
     logger.info(`Database: ${DB_PATH}`);
   });
 

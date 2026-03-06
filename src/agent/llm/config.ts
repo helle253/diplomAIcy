@@ -6,7 +6,7 @@ import { logger } from '../../util/logger.js';
 import { LLMClientConfig } from './llm-client.js';
 
 export interface AgentConfig {
-  type: 'random' | 'llm';
+  type: 'random' | 'llm' | 'remote';
   provider?: 'openai' | 'anthropic';
   baseUrl?: string;
   apiKey?: string;
@@ -46,7 +46,9 @@ function interpolateConfig(obj: Record<string, unknown>): Record<string, unknown
 }
 
 export function loadConfig(configPath?: string): GameConfig {
-  const path = configPath ?? resolve(process.cwd(), 'diplomaicy.config.json');
+  const path =
+    configPath ??
+    resolve(process.cwd(), process.env.DIPLOMAICY_CONFIG ?? 'diplomaicy.config.json');
   let raw: string;
   try {
     raw = readFileSync(path, 'utf-8');

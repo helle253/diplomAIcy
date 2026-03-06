@@ -30,7 +30,7 @@ export class RandomAgent implements DiplomacyAgent {
     // No-op
   }
 
-  async openNegotiation(gameState: GameState): Promise<Message[]> {
+  async onPhaseStart(gameState: GameState): Promise<Message[]> {
     if (Math.random() < 0.3) return [];
     return this.generateMessages(gameState);
   }

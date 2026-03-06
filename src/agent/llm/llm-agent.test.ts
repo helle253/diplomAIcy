@@ -467,7 +467,7 @@ describe('LLMAgent', () => {
     await agent.initialize(state);
     client.addResponse('```json\n[{"to": "England", "content": "Alliance?"}]\n```');
 
-    const messages = await agent.openNegotiation(state);
+    const messages = await agent.onPhaseStart(state);
     expect(messages).toHaveLength(1);
     expect(messages[0].to).toBe(Power.England);
     expect(messages[0].content).toBe('Alliance?');
@@ -483,7 +483,7 @@ describe('LLMAgent', () => {
     await agent.initialize(state);
     // No response queued
 
-    const messages = await agent.openNegotiation(state);
+    const messages = await agent.onPhaseStart(state);
     expect(messages).toHaveLength(0);
   });
 
@@ -497,7 +497,7 @@ describe('LLMAgent', () => {
     await agent.initialize(state);
 
     client.addResponse('```json\n[]\n```');
-    await agent.openNegotiation(state);
+    await agent.onPhaseStart(state);
 
     // Send 5 messages — all should get LLM calls since limit is disabled
     for (let i = 0; i < 5; i++) {
@@ -514,7 +514,7 @@ describe('LLMAgent', () => {
       );
     }
 
-    // 1 openNegotiation + 5 onMessage = 6 LLM calls
+    // 1 onPhaseStart + 5 onMessage = 6 LLM calls
     expect(client.calls).toHaveLength(6);
   });
 
@@ -603,7 +603,7 @@ describe('LLMAgent', () => {
 
     await agent.initialize(state);
     client.addResponse('```json\n[]\n```');
-    await agent.openNegotiation(state);
+    await agent.onPhaseStart(state);
 
     expect(client.calls).toHaveLength(1);
     expect(client.calls[0][0].role).toBe('system');

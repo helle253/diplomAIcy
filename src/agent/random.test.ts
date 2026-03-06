@@ -39,9 +39,9 @@ describe('RandomAgent — initialize & negotiate', () => {
     await expect(agent.initialize(makeGameState(STARTING_UNITS))).resolves.toBeUndefined();
   });
 
-  it('openNegotiation returns valid messages', async () => {
+  it('onPhaseStart returns valid messages', async () => {
     const agent = new RandomAgent(Power.Germany);
-    const messages = await agent.openNegotiation(makeGameState(STARTING_UNITS));
+    const messages = await agent.onPhaseStart(makeGameState(STARTING_UNITS));
     expect(messages).toBeInstanceOf(Array);
     for (const msg of messages) {
       expect(msg.from).toBe(Power.Germany);

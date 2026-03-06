@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { connectAgent } from '../agent/adapter.js';
 import { DiplomacyAgent } from '../agent/interface.js';
 import { RandomAgent } from '../agent/random.js';
 import { STARTING_UNITS } from '../engine/map.js';
@@ -17,21 +18,22 @@ import {
 } from '../engine/types.js';
 import { GameEvent, GameManager } from './manager.js';
 
+const ALL_POWERS = [
+  Power.England,
+  Power.France,
+  Power.Germany,
+  Power.Italy,
+  Power.Austria,
+  Power.Russia,
+  Power.Turkey,
+];
+
 // ============================================================================
-// Helper: register all 7 random agents
+// Helper: connect all 7 random agents
 // ============================================================================
-function registerAllRandom(manager: GameManager): void {
-  const powers = [
-    Power.England,
-    Power.France,
-    Power.Germany,
-    Power.Italy,
-    Power.Austria,
-    Power.Russia,
-    Power.Turkey,
-  ];
-  for (const power of powers) {
-    manager.registerAgent(new RandomAgent(power));
+function connectAllRandom(manager: GameManager): void {
+  for (const power of ALL_POWERS) {
+    connectAgent(new RandomAgent(power), manager);
   }
 }
 
@@ -44,7 +46,7 @@ class HoldAgent implements DiplomacyAgent {
     this.power = power;
   }
   async initialize(_gs: GameState) {}
-  async openNegotiation(_gs: GameState) {
+  async onPhaseStart(_gs: GameState) {
     return [];
   }
   async onMessage(_msg: Message, _gs: GameState) {
@@ -65,18 +67,9 @@ class HoldAgent implements DiplomacyAgent {
   }
 }
 
-function registerAllHold(manager: GameManager): void {
-  const powers = [
-    Power.England,
-    Power.France,
-    Power.Germany,
-    Power.Italy,
-    Power.Austria,
-    Power.Russia,
-    Power.Turkey,
-  ];
-  for (const power of powers) {
-    manager.registerAgent(new HoldAgent(power));
+function connectAllHold(manager: GameManager): void {
+  for (const power of ALL_POWERS) {
+    connectAgent(new HoldAgent(power), manager);
   }
 }
 
@@ -95,19 +88,6 @@ describe('GameManager — Initialization', () => {
     expect(state.units).toHaveLength(22);
     expect(state.supplyCenters.size).toBe(22);
   });
-
-  it('throws if not all powers have agents', async () => {
-    const manager = new GameManager();
-    manager.registerAgent(new RandomAgent(Power.England));
-    // Missing 6 other powers
-    await expect(manager.run()).rejects.toThrow('No agent registered');
-  });
-
-  it('accepts all 7 agents without error', () => {
-    const manager = new GameManager();
-    registerAllRandom(manager);
-    // No throw expected — just verify it doesn't error
-  });
 });
 
 // ============================================================================
@@ -116,8 +96,8 @@ describe('GameManager — Initialization', () => {
 
 describe('GameManager — All-Hold game', () => {
   it('completes one full year with all units holding', async () => {
-    const manager = new GameManager(1); // 1 year max
-    registerAllHold(manager);
+    const manager = new GameManager(1);
+    connectAllHold(manager);
 
     const events: GameEvent[] = [];
     manager.onEvent((e) => events.push(e));
@@ -144,7 +124,7 @@ describe('GameManager — All-Hold game', () => {
 
   it('emits correct event sequence for one year', async () => {
     const manager = new GameManager(1);
-    registerAllHold(manager);
+    connectAllHold(manager);
 
     const eventTypes: string[] = [];
     manager.onEvent((e) => eventTypes.push(e.type));
@@ -161,7 +141,7 @@ describe('GameManager — All-Hold game', () => {
 
   it('supply centers unchanged after all-hold game', async () => {
     const manager = new GameManager(1);
-    registerAllHold(manager);
+    connectAllHold(manager);
     await manager.run();
 
     const state = manager.getState();
@@ -171,12 +151,12 @@ describe('GameManager — All-Hold game', () => {
 
   it('turn history is recorded', async () => {
     const manager = new GameManager(1);
-    registerAllHold(manager);
+    connectAllHold(manager);
     await manager.run();
 
     const history = manager.getTurnHistory();
-    // At minimum: spring diplomacy, spring orders, fall diplomacy, fall orders, winter builds
-    expect(history.length).toBeGreaterThanOrEqual(5);
+    // At minimum: spring orders, fall orders, winter builds
+    expect(history.length).toBeGreaterThanOrEqual(3);
   });
 });
 
@@ -187,7 +167,7 @@ describe('GameManager — All-Hold game', () => {
 describe('GameManager — Random agent game', () => {
   it('can run a 3-year game without crashing', async () => {
     const manager = new GameManager(3);
-    registerAllRandom(manager);
+    connectAllRandom(manager);
 
     const result = await manager.run();
 
@@ -211,19 +191,18 @@ describe('GameManager — Random agent game', () => {
 
   it('supply center ownership changes over time with random moves', async () => {
     const manager = new GameManager(5);
-    registerAllRandom(manager);
+    connectAllRandom(manager);
 
     await manager.run();
 
     const state = manager.getState();
     // With random moves over 5 years, SOME neutral SCs should be captured
-    // (extremely unlikely that no one moves onto any SC in 5 years)
     expect(state.supplyCenters.size).toBeGreaterThan(22);
   });
 
   it('eliminated powers have no units', async () => {
     const manager = new GameManager(5);
-    registerAllRandom(manager);
+    connectAllRandom(manager);
 
     const result = await manager.run();
 
@@ -242,7 +221,7 @@ describe('GameManager — Random agent game', () => {
 describe('GameManager — Event system', () => {
   it('game_start event fires first', async () => {
     const manager = new GameManager(1);
-    registerAllHold(manager);
+    connectAllHold(manager);
 
     let firstEvent: GameEvent | null = null;
     manager.onEvent((e) => {
@@ -257,7 +236,7 @@ describe('GameManager — Event system', () => {
 
   it('multiple listeners all receive events', async () => {
     const manager = new GameManager(1);
-    registerAllHold(manager);
+    connectAllHold(manager);
 
     let count1 = 0;
     let count2 = 0;
@@ -272,7 +251,7 @@ describe('GameManager — Event system', () => {
 
   it('orders_resolved events include resolutions', async () => {
     const manager = new GameManager(1);
-    registerAllHold(manager);
+    connectAllHold(manager);
 
     const orderEvents: GameEvent[] = [];
     manager.onEvent((e) => {
@@ -297,7 +276,7 @@ describe('GameManager — Event system', () => {
 describe('GameManager — Build phase', () => {
   it('HoldAgent waives all builds (no new units built)', async () => {
     const manager = new GameManager(1);
-    registerAllHold(manager);
+    connectAllHold(manager);
     await manager.run();
 
     // All hold => no one captures SCs => no builds/removals needed
@@ -307,7 +286,7 @@ describe('GameManager — Build phase', () => {
 
   it('build events are emitted in winter', async () => {
     const manager = new GameManager(1);
-    registerAllHold(manager);
+    connectAllHold(manager);
 
     const buildEvents: GameEvent[] = [];
     manager.onEvent((e) => {
@@ -327,10 +306,8 @@ describe('GameManager — Build phase', () => {
 
 describe('GameManager — Victory detection', () => {
   it('detects victory when a power reaches 18 supply centers', async () => {
-    // We'll use a custom agent that somehow gets 18 SCs
-    // Simplest approach: just manipulate state after construction
     const manager = new GameManager(1);
-    registerAllHold(manager);
+    connectAllHold(manager);
 
     // Hack the supply centers to give England 18
     const state = manager.getState();
@@ -363,7 +340,7 @@ describe('GameManager — Victory detection', () => {
 
   it('draw when max years reached with no winner', async () => {
     const manager = new GameManager(1);
-    registerAllHold(manager);
+    connectAllHold(manager);
 
     const result = await manager.run();
 
