@@ -219,26 +219,27 @@ export function buildNegotiationPrompt(
 You received this message:
 ${incomingMessage.from}: "${incomingMessage.content}"
 
-Decide whether and how to respond. You may send messages to any power or to "Global".
+Decide whether and how to respond. You may send messages to any power, to multiple powers at once, or to "Global".
 If you choose not to respond, return an empty array.`;
   } else {
     prompt = `${stateStr}${msgSection}
 
-It is the start of the diplomacy phase. You may send opening messages to other powers to propose alliances, share intelligence, or make threats. You can message individual powers or send a "Global" message.
+It is the start of the diplomacy phase. You may send opening messages to other powers to propose alliances, share intelligence, or make threats. You can message individual powers, multiple powers at once, or send a "Global" message.
 If you prefer to stay silent, return an empty array.`;
   }
 
   return `${prompt}
 
-Respond with a JSON array inside a fenced code block:
+Respond with a JSON array inside a fenced code block. "to" can be a single power, an array of powers, or "Global":
 \`\`\`json
 [
-  { "to": "England", "content": "Your message here" },
-  { "to": "Global", "content": "Public announcement" }
+  { "to": "England", "content": "Private message to one power" },
+  { "to": ["England", "France"], "content": "Shared message to select powers" },
+  { "to": "Global", "content": "Public announcement to everyone" }
 ]
 \`\`\`
 
-Be strategic. Consider who to ally with, who to deceive, and what information to share or withhold.`;
+Be strategic. Consider who to ally with, who to deceive, and what information to share or withhold. Multi-recipient messages let you coordinate between specific allies without broadcasting publicly.`;
 }
 
 export function buildBatchNegotiationPrompt(
@@ -273,7 +274,7 @@ export function buildBatchNegotiationPrompt(
 You received the following ${incomingMessages.length} message(s):
 ${incomingSection}
 
-Decide which messages to respond to and craft your replies. You may respond to all, some, or none. You can also send messages to powers who didn't message you.
+Decide which messages to respond to and craft your replies. You may respond to all, some, or none. You can also send messages to powers who didn't message you. "to" can be a single power, an array of powers, or "Global".
 
 You may also DEFER messages — choosing to wait before responding. Deferred messages will be presented to you again later. This is strategic: a delayed response can signal disinterest, buy time to gather information, or let you see how other negotiations develop before committing. Use "defer" to list the message numbers you want to revisit later.
 
@@ -281,7 +282,8 @@ Respond with a JSON object inside a fenced code block:
 \`\`\`json
 {
   "replies": [
-    { "to": "England", "content": "Your message here" },
+    { "to": "England", "content": "Private message to one power" },
+    { "to": ["England", "France"], "content": "Shared message to select allies" },
     { "to": "Global", "content": "Public announcement" }
   ],
   "defer": [3]
@@ -290,7 +292,7 @@ Respond with a JSON object inside a fenced code block:
 
 Both "replies" and "defer" are optional. Omit "replies" or set it to [] if you don't want to send anything now. Omit "defer" or set it to [] if you want to handle all messages immediately.
 
-Be strategic. Consider who to ally with, who to deceive, what information to share or withhold, and when the timing of your response matters.`;
+Be strategic. Consider who to ally with, who to deceive, what information to share or withhold, and when the timing of your response matters. Multi-recipient messages let you coordinate between specific allies without broadcasting publicly.`;
 }
 
 export function buildRetreatsPrompt(

@@ -16,6 +16,7 @@ import { LLMAgent } from './llm-agent.js';
 import { ChatMessage, LLMClient } from './llm-client.js';
 import {
   extractJSON,
+  parseBatchNegotiationResponse,
   parseBuildOrders,
   parseMessages,
   parseOrders,
@@ -254,6 +255,119 @@ describe('parseMessages', () => {
   it('returns empty on garbage input', () => {
     const msgs = parseMessages('no messages', Power.France, phase);
     expect(msgs).toHaveLength(0);
+  });
+
+  it('parses multi-recipient array', () => {
+    const text = '```json\n[{"to": ["England", "Germany"], "content": "Alliance proposal"}]\n```';
+    const msgs = parseMessages(text, Power.France, phase);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].to).toEqual([Power.England, Power.Germany]);
+    expect(msgs[0].content).toBe('Alliance proposal');
+  });
+
+  it('filters self from multi-recipient array', () => {
+    const text = '```json\n[{"to": ["France", "England", "Germany"], "content": "Hello"}]\n```';
+    const msgs = parseMessages(text, Power.France, phase);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].to).toEqual([Power.England, Power.Germany]);
+  });
+
+  it('collapses single-element array after self-filter', () => {
+    const text = '```json\n[{"to": ["France", "England"], "content": "Hello"}]\n```';
+    const msgs = parseMessages(text, Power.France, phase);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].to).toBe(Power.England);
+  });
+
+  it('drops message if array only contains self', () => {
+    const text = '```json\n[{"to": ["France"], "content": "Talking to myself"}]\n```';
+    const msgs = parseMessages(text, Power.France, phase);
+    expect(msgs).toHaveLength(0);
+  });
+
+  it('handles mixed single and multi-recipient messages', () => {
+    const text = `\`\`\`json
+[
+  {"to": "England", "content": "Private"},
+  {"to": ["Italy", "Austria"], "content": "Shared"},
+  {"to": "Global", "content": "Public"}
+]
+\`\`\``;
+    const msgs = parseMessages(text, Power.France, phase);
+    expect(msgs).toHaveLength(3);
+    expect(msgs[0].to).toBe(Power.England);
+    expect(msgs[1].to).toEqual([Power.Italy, Power.Austria]);
+    expect(msgs[2].to).toBe('Global');
+  });
+});
+
+// ============================================================================
+// parseBatchNegotiationResponse
+// ============================================================================
+
+describe('parseBatchNegotiationResponse', () => {
+  const phase: Phase = { year: 1901, season: Season.Spring, type: PhaseType.Diplomacy };
+
+  it('parses object with replies and defer', () => {
+    const text = `\`\`\`json
+{
+  "replies": [
+    { "to": "England", "content": "Agreed" }
+  ],
+  "defer": [2, 3]
+}
+\`\`\``;
+    const result = parseBatchNegotiationResponse(text, Power.France, phase, 3);
+    expect(result.replies).toHaveLength(1);
+    expect(result.replies[0].to).toBe(Power.England);
+    expect(result.deferredIndices).toEqual([1, 2]); // 1-based → 0-based
+  });
+
+  it('parses object with only replies', () => {
+    const text = '```json\n{"replies": [{"to": "Germany", "content": "Hello"}]}\n```';
+    const result = parseBatchNegotiationResponse(text, Power.France, phase, 2);
+    expect(result.replies).toHaveLength(1);
+    expect(result.deferredIndices).toEqual([]);
+  });
+
+  it('parses object with only defer', () => {
+    const text = '```json\n{"defer": [1]}\n```';
+    const result = parseBatchNegotiationResponse(text, Power.France, phase, 2);
+    expect(result.replies).toHaveLength(0);
+    expect(result.deferredIndices).toEqual([0]);
+  });
+
+  it('falls back to array format (backward compat)', () => {
+    const text = '```json\n[{"to": "England", "content": "Hello"}]\n```';
+    const result = parseBatchNegotiationResponse(text, Power.France, phase, 1);
+    expect(result.replies).toHaveLength(1);
+    expect(result.replies[0].to).toBe(Power.England);
+    expect(result.deferredIndices).toEqual([]);
+  });
+
+  it('ignores out-of-range defer indices', () => {
+    const text = '```json\n{"replies": [], "defer": [0, 5, -1]}\n```';
+    const result = parseBatchNegotiationResponse(text, Power.France, phase, 3);
+    expect(result.deferredIndices).toEqual([]); // 0 is invalid (1-based), 5 > count, -1 invalid
+  });
+
+  it('handles multi-recipient replies in batch response', () => {
+    const text = `\`\`\`json
+{
+  "replies": [
+    { "to": ["England", "Germany"], "content": "Joint proposal" }
+  ]
+}
+\`\`\``;
+    const result = parseBatchNegotiationResponse(text, Power.France, phase, 1);
+    expect(result.replies).toHaveLength(1);
+    expect(result.replies[0].to).toEqual([Power.England, Power.Germany]);
+  });
+
+  it('returns empty on garbage input', () => {
+    const result = parseBatchNegotiationResponse('no json here', Power.France, phase, 2);
+    expect(result.replies).toHaveLength(0);
+    expect(result.deferredIndices).toEqual([]);
   });
 });
 

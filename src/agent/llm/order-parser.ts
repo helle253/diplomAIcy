@@ -34,12 +34,29 @@ function resolveCoast(input: unknown): Coast | undefined {
   return undefined;
 }
 
-function resolvePower(input: unknown): Power | 'Global' | null {
-  if (typeof input !== 'string') return null;
+function resolveSinglePower(input: string): Power | 'Global' | null {
   const val = input.trim();
   if (val.toLowerCase() === 'global') return 'Global';
   for (const p of Object.values(Power)) {
     if (p.toLowerCase() === val.toLowerCase()) return p;
+  }
+  return null;
+}
+
+function resolveRecipient(input: unknown): Power | Power[] | 'Global' | null {
+  if (typeof input === 'string') {
+    return resolveSinglePower(input);
+  }
+  if (Array.isArray(input)) {
+    const powers: Power[] = [];
+    for (const item of input) {
+      if (typeof item !== 'string') continue;
+      const resolved = resolveSinglePower(item);
+      if (resolved && resolved !== 'Global') powers.push(resolved);
+    }
+    if (powers.length === 0) return null;
+    if (powers.length === 1) return powers[0];
+    return powers;
   }
   return null;
 }
@@ -164,6 +181,20 @@ export function parseOrders(text: string, state: GameState, power: Power): Order
   return result;
 }
 
+/** Resolve and sanitize the recipient, filtering out self */
+function sanitizeRecipient(input: unknown, self: Power): Power | Power[] | 'Global' | null {
+  const to = resolveRecipient(input);
+  if (!to) return null;
+  if (to === self) return null;
+  if (Array.isArray(to)) {
+    const filtered = to.filter((p) => p !== self);
+    if (filtered.length === 0) return null;
+    if (filtered.length === 1) return filtered[0];
+    return filtered;
+  }
+  return to;
+}
+
 export function parseMessages(text: string, power: Power, phase: Phase): Message[] {
   const raw = extractJSON(text) as Record<string, unknown>[];
   const messages: Message[] = [];
@@ -171,9 +202,8 @@ export function parseMessages(text: string, power: Power, phase: Phase): Message
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue;
 
-    const to = resolvePower(item.to);
+    const to = sanitizeRecipient(item.to, power);
     if (!to) continue;
-    if (to === power) continue; // can't message yourself
 
     const content = typeof item.content === 'string' ? item.content.trim() : '';
     if (!content) continue;
@@ -247,9 +277,8 @@ function parseMessagesFromArray(raw: unknown[], power: Power, phase: Phase): Mes
   for (const item of raw) {
     if (!item || typeof item !== 'object') continue;
     const rec = item as Record<string, unknown>;
-    const to = resolvePower(rec.to);
+    const to = sanitizeRecipient(rec.to, power);
     if (!to) continue;
-    if (to === power) continue;
     const content = typeof rec.content === 'string' ? rec.content.trim() : '';
     if (!content) continue;
     messages.push({ from: power, to, content, phase, timestamp: Date.now() });
