@@ -70,7 +70,7 @@ export class GameManager {
   private messageListeners: GameMessageListener[] = [];
   private endYear: number;
   private phaseDelayMs: number;
-  private currentBus: MessageBus | null = null;
+  private bus = new MessageBus();
 
   constructor(maxYears = 50, phaseDelayMs = 0) {
     this.endYear = 1900 + maxYears;
@@ -97,11 +97,9 @@ export class GameManager {
     this.messageListeners.push(listener);
   }
 
-  /** Send a message into the current diplomacy phase's bus (for external senders) */
+  /** Send a message into the bus (for external senders) */
   async sendMessage(message: Message): Promise<void> {
-    if (this.currentBus) {
-      await this.currentBus.send(message);
-    }
+    await this.bus.send(message);
   }
 
   getState(): GameState {
@@ -127,6 +125,20 @@ export class GameManager {
       if (!this.agents.has(power)) {
         throw new Error(`No agent registered for ${power}`);
       }
+    }
+
+    // Wire up message listeners and agent handlers on the bus
+    for (const listener of this.messageListeners) {
+      this.bus.onMessage(listener);
+    }
+    for (const power of ALL_POWERS) {
+      const agent = this.agents.get(power)!;
+      this.bus.registerHandler(power, async (msg) => {
+        logger.info(`[${power}] onMessage from ${msg.from}`);
+        const replies = await agent.onMessage(msg, this.state);
+        logger.info(`[${power}] onMessage complete, ${replies.length} replies`);
+        return replies;
+      });
     }
 
     // Initialize all agents
@@ -188,6 +200,7 @@ export class GameManager {
 
   private async runDiplomacyPhase(season: Season): Promise<void> {
     this.state.phase = { year: this.state.phase.year, season, type: PhaseType.Diplomacy };
+    this.bus.phase = this.state.phase;
 
     await this.emit({
       type: 'phase_start',
@@ -195,28 +208,10 @@ export class GameManager {
       gameState: this.state,
     });
 
-    // Create a message bus for this phase
-    const bus = new MessageBus(this.state.phase);
-    this.currentBus = bus;
-
-    // Wire up external message listeners (UI broadcast, etc.)
-    for (const listener of this.messageListeners) {
-      bus.onMessage(listener);
-    }
-
-    // Register each agent as a handler on the bus
+    // Collect opening messages from all active agents and send through the bus
     const activePowers = this.getActivePowers();
-    for (const power of activePowers) {
-      const agent = this.agents.get(power)!;
-      bus.registerHandler(power, async (msg) => {
-        logger.info(`[${power}] onMessage from ${msg.from}`);
-        const replies = await agent.onMessage(msg, this.state);
-        logger.info(`[${power}] onMessage complete, ${replies.length} replies`);
-        return replies;
-      });
-    }
+    const messagesBefore = this.bus.getMessages().length;
 
-    // Collect opening messages from all agents and send through the bus
     const openingMessages = await Promise.all(
       activePowers.map(async (power) => {
         const agent = this.agents.get(power)!;
@@ -227,14 +222,11 @@ export class GameManager {
       }),
     );
 
-    await bus.sendAll(openingMessages.flat());
-
-    // Close the bus for this phase
-    this.currentBus = null;
+    await this.bus.sendAll(openingMessages.flat());
 
     this.turnHistory.push({
       phase: { ...this.state.phase },
-      messages: bus.getMessages(),
+      messages: this.bus.getMessages().slice(messagesBefore),
     });
   }
 

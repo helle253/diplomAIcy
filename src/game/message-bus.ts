@@ -18,12 +18,12 @@ export class MessageBus {
   private handlers: Map<Power, MessageHandler> = new Map();
   private listeners: MessageListener[] = [];
   private messages: Message[] = [];
-  private phase: Phase;
+  private _phase: Phase | null = null;
   private processing = false;
   private queue: Message[] = [];
 
-  constructor(phase: Phase) {
-    this.phase = phase;
+  set phase(phase: Phase) {
+    this._phase = { ...phase };
   }
 
   /** Register a power's handler — called when a message is addressed to them */
@@ -59,7 +59,8 @@ export class MessageBus {
   }
 
   private stamp(msg: Message): void {
-    msg.phase = { ...this.phase };
+    if (!this._phase) throw new Error('MessageBus: phase not set');
+    msg.phase = { ...this._phase };
     msg.timestamp = Date.now();
   }
 
