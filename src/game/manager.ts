@@ -14,6 +14,7 @@ import {
   RetreatOrder,
   Season,
 } from '../engine/types.js';
+import { logger } from '../util/logger.js';
 import { MessageBus } from './message-bus.js';
 
 const VICTORY_THRESHOLD = 18;
@@ -129,7 +130,14 @@ export class GameManager {
     }
 
     // Initialize all agents
-    await Promise.all(ALL_POWERS.map((p) => this.agents.get(p)!.initialize(this.state)));
+    logger.info('Initializing all agents...');
+    await Promise.all(
+      ALL_POWERS.map(async (p) => {
+        logger.info(`[${p}] Agent initializing`);
+        await this.agents.get(p)!.initialize(this.state);
+        logger.info(`[${p}] Agent initialized`);
+      }),
+    );
 
     await this.emit({
       type: 'game_start',
@@ -200,14 +208,22 @@ export class GameManager {
     const activePowers = this.getActivePowers();
     for (const power of activePowers) {
       const agent = this.agents.get(power)!;
-      bus.registerHandler(power, (msg) => agent.onMessage(msg, this.state));
+      bus.registerHandler(power, async (msg) => {
+        logger.info(`[${power}] onMessage from ${msg.from}`);
+        const replies = await agent.onMessage(msg, this.state);
+        logger.info(`[${power}] onMessage complete, ${replies.length} replies`);
+        return replies;
+      });
     }
 
     // Collect opening messages from all agents and send through the bus
     const openingMessages = await Promise.all(
       activePowers.map(async (power) => {
         const agent = this.agents.get(power)!;
-        return agent.openNegotiation(this.state);
+        logger.info(`[${power}] openNegotiation`);
+        const msgs = await agent.openNegotiation(this.state);
+        logger.info(`[${power}] openNegotiation complete, ${msgs.length} messages`);
+        return msgs;
       }),
     );
 
@@ -238,7 +254,9 @@ export class GameManager {
     await Promise.all(
       activePowers.map(async (power) => {
         const agent = this.agents.get(power)!;
+        logger.info(`[${power}] submitOrders`);
         const orders = await agent.submitOrders(this.state);
+        logger.info(`[${power}] submitOrders complete, ${orders.length} orders`);
         for (const order of orders) {
           // Verify the order is for this power's unit
           const unit = this.state.units.find((u) => u.province === order.unit && u.power === power);
@@ -299,10 +317,12 @@ export class GameManager {
     await Promise.all(
       [...affectedPowers].map(async (power) => {
         const agent = this.agents.get(power)!;
+        logger.info(`[${power}] submitRetreats`);
         const retreatOrders = await agent.submitRetreats(
           this.state,
           resolutionResult.dislodgedUnits,
         );
+        logger.info(`[${power}] submitRetreats complete, ${retreatOrders.length} orders`);
         allRetreatOrders.push(...retreatOrders);
       }),
     );
@@ -397,7 +417,9 @@ export class GameManager {
         if (buildCount === 0) return;
 
         const agent = this.agents.get(power)!;
+        logger.info(`[${power}] submitBuilds (buildCount=${buildCount})`);
         const buildOrders = await agent.submitBuilds(this.state, buildCount);
+        logger.info(`[${power}] submitBuilds complete, ${buildOrders.length} orders`);
         allBuildOrders.push(...buildOrders);
 
         // Process build orders

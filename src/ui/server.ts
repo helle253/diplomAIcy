@@ -15,6 +15,7 @@ import { GameState, Message, Power } from '../engine/types.js';
 import type { GameEvent, TurnRecord } from '../game/manager.js';
 import { GameManager } from '../game/manager.js';
 import { GameStorage } from '../game/storage.js';
+import { logger } from '../util/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -89,10 +90,10 @@ async function runGameLoop(wss: WebSocketServer, storage: GameStorage): Promise<
             ? new AnthropicClient(clientConfig)
             : new OpenAICompatibleClient(clientConfig);
         manager.registerAgent(new LLMAgent(power, client));
-        console.log(`  ${power}: LLM (${agentCfg.provider ?? 'openai'} / ${clientConfig.model})`);
+        logger.info(`  ${power}: LLM (${agentCfg.provider ?? 'openai'} / ${clientConfig.model})`);
       } else {
         manager.registerAgent(new RandomAgent(power));
-        console.log(`  ${power}: Random`);
+        logger.info(`  ${power}: Random`);
       }
     }
 
@@ -125,7 +126,7 @@ async function runGameLoop(wss: WebSocketServer, storage: GameStorage): Promise<
       });
     });
 
-    console.log(`Starting new Diplomacy game (${gameId})...`);
+    logger.info(`Starting new Diplomacy game (${gameId})...`);
 
     try {
       const result = await manager.run();
@@ -137,17 +138,17 @@ async function runGameLoop(wss: WebSocketServer, storage: GameStorage): Promise<
           supplyCenters: Object.fromEntries(result.supplyCenters),
         },
       });
-      console.log(
+      logger.info(
         result.winner
           ? `Game over! ${result.winner} wins in ${result.year}.`
           : `Game ended in a draw in year ${result.year}.`,
       );
     } catch (err) {
       storage.failGame(gameId);
-      console.error('Game error:', err);
+      logger.error('Game error:', err);
     }
 
-    console.log(`Next game starts in ${RESTART_DELAY_MS / 1000} seconds...`);
+    logger.info(`Next game starts in ${RESTART_DELAY_MS / 1000} seconds...`);
     broadcast(wss, { type: 'game_restarting', delayMs: RESTART_DELAY_MS });
     await sleep(RESTART_DELAY_MS);
   }
@@ -197,7 +198,7 @@ function startServer(): void {
 
   // WebSocket connection handler
   wss.on('connection', (ws: WebSocket) => {
-    console.log('Client connected');
+    logger.info('Client connected');
 
     // Send all accumulated snapshots on connect so client can build slider
     ws.send(
@@ -209,18 +210,18 @@ function startServer(): void {
     );
 
     ws.on('close', () => {
-      console.log('Client disconnected');
+      logger.info('Client disconnected');
     });
   });
 
   server.listen(PORT, () => {
-    console.log(`Diplomacy game server running at http://localhost:${PORT}`);
-    console.log(`Database: ${DB_PATH}`);
+    logger.info(`Diplomacy game server running at http://localhost:${PORT}`);
+    logger.info(`Database: ${DB_PATH}`);
   });
 
   // Graceful shutdown
   process.on('SIGINT', () => {
-    console.log('Shutting down...');
+    logger.info('Shutting down...');
     storage.close();
     process.exit(0);
   });
