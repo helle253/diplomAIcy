@@ -108,12 +108,12 @@ const UNIT_OFFSETS: Record<string, { dx: number; dy: number }> = {
 // Pixel offsets for fleet placement on multi-coast provinces.
 // Keys are "province/coast", values are {dx, dy} relative to the province text label.
 const COAST_OFFSETS: Record<string, { dx: number; dy: number }> = {
-  'stp/nc': { dx: 30, dy: -50 }, // toward Barents Sea (north/right)
-  'stp/sc': { dx: -40, dy: 30 }, // toward Gulf of Bothnia (south/left)
+  'stp/nc': { dx: 40, dy: -25 }, // toward Barents Sea (northeast)
+  'stp/sc': { dx: -30, dy: 20 }, // toward Gulf of Bothnia (southwest)
   'spa/nc': { dx: -15, dy: -25 }, // toward Bay of Biscay (north)
-  'spa/sc': { dx: 25, dy: 25 }, // toward Mediterranean (south/east)
-  'bul/nc': { dx: 20, dy: -15 }, // east coast toward Black Sea (right)
-  'bul/sc': { dx: -15, dy: 20 }, // south coast toward Aegean (down/left)
+  'spa/sc': { dx: 25, dy: 30 }, // toward Western Med (south/east)
+  'bul/nc': { dx: 40, dy: -20 }, // east coast toward Black Sea (northeast)
+  'bul/sc': { dx: -20, dy: 30 }, // south coast toward Aegean (south)
 };
 
 // --- State -------------------------------------------------------------------
@@ -320,14 +320,19 @@ function updateUnits(): void {
 
     const color = POWER_COLORS[unit.power] || '#888';
 
-    // Apply per-province offset to center unit in territory
-    const provOffset = UNIT_OFFSETS[unit.province];
-
-    // Apply coast offset for fleets on multi-coast provinces
+    // Coast-specific fleets use COAST_OFFSETS from raw text position;
+    // all other units use UNIT_OFFSETS for province-center nudging.
     const coastKey = unit.coast ? `${unit.province}/${unit.coast}` : '';
     const coastOffset = COAST_OFFSETS[coastKey];
-    const cx = pos.x + (provOffset?.dx ?? 0) + (coastOffset?.dx ?? 0);
-    const cy = pos.y - 15 + (provOffset?.dy ?? 0) + (coastOffset?.dy ?? 0);
+    let cx: number, cy: number;
+    if (coastOffset) {
+      cx = pos.x + coastOffset.dx;
+      cy = pos.y - 15 + coastOffset.dy;
+    } else {
+      const provOffset = UNIT_OFFSETS[unit.province];
+      cx = pos.x + (provOffset?.dx ?? 0);
+      cy = pos.y - 15 + (provOffset?.dy ?? 0);
+    }
 
     const g = document.createElementNS(ns, 'g');
     g.classList.add('unit-marker');
