@@ -4,6 +4,10 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocket, WebSocketServer } from 'ws';
 
+import { AnthropicClient } from '../agent/llm/anthropic-client.js';
+import { getAgentConfig, loadConfig, toLLMClientConfig } from '../agent/llm/config.js';
+import { LLMAgent } from '../agent/llm/llm-agent.js';
+import { LLMClient, OpenAICompatibleClient } from '../agent/llm/llm-client.js';
 import { RandomAgent } from '../agent/random.js';
 import { GameState, Message, Power } from '../engine/types.js';
 import type { GameEvent, TurnRecord } from '../game/manager.js';
@@ -63,7 +67,7 @@ function broadcast(wss: WebSocketServer, data: unknown): void {
 async function runGameLoop(wss: WebSocketServer, storage: GameStorage): Promise<void> {
   while (true) {
     const maxYears = parseInt(process.env.MAX_YEARS || '10');
-    const phaseDelayMs = parseInt(process.env.PHASE_DELAY || '60000');
+    const phaseDelayMs = parseInt(process.env.PHASE_DELAY || '600000');
     const manager = new GameManager(maxYears, phaseDelayMs);
     currentManager = manager;
     phaseSnapshots = [];
@@ -73,8 +77,21 @@ async function runGameLoop(wss: WebSocketServer, storage: GameStorage): Promise<
     const gameId = storage.createGame();
     currentGameId = gameId;
 
+    const gameConfig = loadConfig();
     for (const power of ALL_POWERS) {
-      manager.registerAgent(new RandomAgent(power));
+      const agentCfg = getAgentConfig(gameConfig, power);
+      if (agentCfg.type === 'llm') {
+        const clientConfig = toLLMClientConfig(agentCfg);
+        const client: LLMClient =
+          agentCfg.provider === 'anthropic'
+            ? new AnthropicClient(clientConfig)
+            : new OpenAICompatibleClient(clientConfig);
+        manager.registerAgent(new LLMAgent(power, client));
+        console.log(`  ${power}: LLM (${agentCfg.provider ?? 'openai'} / ${clientConfig.model})`);
+      } else {
+        manager.registerAgent(new RandomAgent(power));
+        console.log(`  ${power}: Random`);
+      }
     }
 
     // Persist and broadcast messages in real-time
