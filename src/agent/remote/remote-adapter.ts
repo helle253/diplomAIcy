@@ -113,6 +113,12 @@ export async function connectRemoteAgent(
 
   // ── Phase handler ──────────────────────────────────────────────────
 
+  // Random per-agent stagger so agents don't all fire opening messages simultaneously.
+  // This creates natural turn-taking: early agents' messages arrive before later agents compose theirs.
+  const PHASE_STAGGER_MAX = parseInt(process.env.PHASE_STAGGER ?? '15000', 10);
+  const agentStagger = Math.floor(Math.random() * PHASE_STAGGER_MAX);
+  logger.info(`[${agent.power}] Phase stagger: ${(agentStagger / 1000).toFixed(1)}s`);
+
   async function handlePhase(
     gameState: ReturnType<typeof deserializeGameState>,
     deadlineMs: number,
@@ -160,7 +166,15 @@ export async function connectRemoteAgent(
       logger.error(`[${agent.power}] phase action error:`, err);
     }
 
-    // Send press AFTER orders are submitted
+    // Stagger before sending press so agents naturally take turns in diplomacy.
+    // Without this, all agents compose opening messages simultaneously and
+    // "talk past" each other since none see each other's messages.
+    if (agentStagger > 0) {
+      logger.info(`[${agent.power}] Staggering diplomacy by ${(agentStagger / 1000).toFixed(1)}s`);
+      await new Promise((r) => setTimeout(r, agentStagger));
+    }
+
+    // Send press AFTER orders are submitted (and stagger)
     try {
       const messages = await agent.onPhaseStart(gameState);
       for (const msg of messages) {
