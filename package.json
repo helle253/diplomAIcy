@@ -6,6 +6,8 @@
   "scripts": {
     "build": "tsc && vite build",
     "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:update": "playwright test --update-snapshots",
     "test:watch": "vitest",
     "start": "tsc && vite build && node --env-file=.env dist/ui/server.js",
     "dev": "tsc && concurrently -k -n tsc,vite,server \"tsc --watch --preserveWatchOutput\" \"vite\" \"node --watch --env-file=.env dist/ui/server.js\"",
@@ -20,6 +22,7 @@
     "play:mixed": "AGENT_CONFIG=diplomaicy.config.mixed.json AGENT_TYPE= yarn build && bash scripts/play-llm.sh"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@tailwindcss/vite": "^4.2.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/eventsource": "^3.0.0",
