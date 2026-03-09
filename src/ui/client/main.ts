@@ -96,7 +96,7 @@ const UNIT_OFFSETS: Record<string, { dx: number; dy: number }> = {
   naf: { dx: -28, dy: -9 },
   nap: { dx: -6, dy: -14 },
   nor: { dx: 30, dy: -25 },
-  par: { dx: -3, dy: 12 },
+  par: { dx: 2, dy: -12 },
   pic: { dx: 2, dy: -20 },
   pie: { dx: 9, dy: -20 },
   por: { dx: 13, dy: -25 },
