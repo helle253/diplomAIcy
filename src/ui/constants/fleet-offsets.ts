@@ -43,7 +43,7 @@ export const FLEET_OFFSETS: Record<string, { dx: number; dy: number }> = {
   ion: { dx: -10, dy: 10 },
   iri: { dx: 4, dy: 11 },
   lyo: { dx: 4, dy: -21 },
-  mao: { dx: 14, dy: 42 },
+  mao: { dx: -16, dy: -16 },
   nat: { dx: 9, dy: 17 },
   nth: { dx: 4, dy: 11 },
   nwg: { dx: 35, dy: 29 },
