@@ -70,7 +70,7 @@ const UNIT_OFFSETS: Record<string, { dx: number; dy: number }> = {
   ank: { dx: -10, dy: -7 },
   apu: { dx: 0, dy: -10 },
   arm: { dx: -12, dy: -17 },
-  bel: { dx: 5, dy: -2 },
+  bel: { dx: 8, dy: -4 },
   ber: { dx: 7, dy: -20 },
   boh: { dx: 10, dy: -22 },
   bre: { dx: -5, dy: -20 },
