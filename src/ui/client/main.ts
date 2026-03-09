@@ -94,7 +94,7 @@ const UNIT_OFFSETS: Record<string, { dx: number; dy: number }> = {
   mos: { dx: 34, dy: -41 },
   mun: { dx: 14, dy: -22 },
   naf: { dx: -28, dy: -9 },
-  nap: { dx: -2, dy: -25 },
+  nap: { dx: -6, dy: -14 },
   nor: { dx: 30, dy: -25 },
   par: { dx: -3, dy: 12 },
   pic: { dx: 2, dy: -20 },
