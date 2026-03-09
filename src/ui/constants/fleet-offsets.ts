@@ -12,7 +12,7 @@ export const FLEET_OFFSETS: Record<string, { dx: number; dy: number }> = {
   fin: { dx: -10, dy: -35 }, // near BOT coast
   gas: { dx: -8, dy: -20 },
   gre: { dx: 15, dy: 10 }, // near ION/AEG coast
-  hol: { dx: -5, dy: -20 }, // near NTH coast
+  hol: { dx: -10, dy: 4 }, // near NTH coast
   kie: { dx: 10, dy: -20 }, // near HEL/BAL coast
   lvn: { dx: -15, dy: -25 }, // near BAL coast
   mar: { dx: -8, dy: 8 },
