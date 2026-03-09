@@ -478,6 +478,187 @@ test.describe('region shading', () => {
 });
 
 // ===========================================================================
+// Regional screenshot tests — zoomed views for debugging unit positions
+// ===========================================================================
+
+const REGIONAL_UNITS: TestUnit[] = [
+  // England
+  { type: 'Fleet', power: 'England', province: 'lon' },
+  { type: 'Fleet', power: 'England', province: 'edi' },
+  { type: 'Army', power: 'England', province: 'lvp' },
+  { type: 'Army', power: 'England', province: 'yor' },
+  { type: 'Army', power: 'England', province: 'wal' },
+  { type: 'Army', power: 'England', province: 'cly' },
+  // France
+  { type: 'Fleet', power: 'France', province: 'bre' },
+  { type: 'Army', power: 'France', province: 'par' },
+  { type: 'Army', power: 'France', province: 'mar' },
+  { type: 'Army', power: 'France', province: 'bur' },
+  { type: 'Army', power: 'France', province: 'gas' },
+  { type: 'Army', power: 'France', province: 'pic' },
+  { type: 'Fleet', power: 'France', province: 'por' },
+  { type: 'Army', power: 'France', province: 'spa' },
+  // Germany
+  { type: 'Fleet', power: 'Germany', province: 'kie' },
+  { type: 'Army', power: 'Germany', province: 'ber' },
+  { type: 'Army', power: 'Germany', province: 'mun' },
+  { type: 'Army', power: 'Germany', province: 'ruh' },
+  { type: 'Army', power: 'Germany', province: 'sil' },
+  { type: 'Army', power: 'Germany', province: 'pru' },
+  // Italy
+  { type: 'Fleet', power: 'Italy', province: 'nap' },
+  { type: 'Army', power: 'Italy', province: 'rom' },
+  { type: 'Army', power: 'Italy', province: 'ven' },
+  { type: 'Army', power: 'Italy', province: 'pie' },
+  { type: 'Army', power: 'Italy', province: 'tus' },
+  { type: 'Army', power: 'Italy', province: 'apu' },
+  // Austria
+  { type: 'Fleet', power: 'Austria', province: 'tri' },
+  { type: 'Army', power: 'Austria', province: 'vie' },
+  { type: 'Army', power: 'Austria', province: 'bud' },
+  { type: 'Army', power: 'Austria', province: 'boh' },
+  { type: 'Army', power: 'Austria', province: 'tyr' },
+  { type: 'Army', power: 'Austria', province: 'gal' },
+  { type: 'Army', power: 'Austria', province: 'ser' },
+  // Russia
+  { type: 'Fleet', power: 'Russia', province: 'stp', coast: 'sc' },
+  { type: 'Fleet', power: 'Russia', province: 'sev' },
+  { type: 'Army', power: 'Russia', province: 'mos' },
+  { type: 'Army', power: 'Russia', province: 'war' },
+  { type: 'Army', power: 'Russia', province: 'ukr' },
+  { type: 'Army', power: 'Russia', province: 'lvn' },
+  { type: 'Army', power: 'Russia', province: 'fin' },
+  // Turkey
+  { type: 'Fleet', power: 'Turkey', province: 'ank' },
+  { type: 'Army', power: 'Turkey', province: 'con' },
+  { type: 'Army', power: 'Turkey', province: 'smy' },
+  { type: 'Army', power: 'Turkey', province: 'arm' },
+  { type: 'Army', power: 'Turkey', province: 'syr' },
+  // Balkans
+  { type: 'Fleet', power: 'Russia', province: 'bul', coast: 'sc' },
+  { type: 'Army', power: 'Turkey', province: 'rum' },
+  { type: 'Army', power: 'Turkey', province: 'alb' },
+  { type: 'Army', power: 'Turkey', province: 'gre' },
+  // Scandinavia
+  { type: 'Army', power: 'England', province: 'nor' },
+  { type: 'Army', power: 'Russia', province: 'swe' },
+  { type: 'Army', power: 'Germany', province: 'den' },
+  // Low countries
+  { type: 'Army', power: 'France', province: 'bel' },
+  { type: 'Army', power: 'Germany', province: 'hol' },
+  // North Africa
+  { type: 'Army', power: 'France', province: 'naf' },
+  { type: 'Fleet', power: 'Italy', province: 'tun' },
+  // Sea zones
+  { type: 'Fleet', power: 'England', province: 'nth' },
+  { type: 'Fleet', power: 'England', province: 'nwg' },
+  { type: 'Fleet', power: 'England', province: 'nat' },
+  { type: 'Fleet', power: 'England', province: 'iri' },
+  { type: 'Fleet', power: 'England', province: 'eng' },
+  { type: 'Fleet', power: 'France', province: 'mao' },
+  { type: 'Fleet', power: 'France', province: 'wes' },
+  { type: 'Fleet', power: 'France', province: 'lyo' },
+  { type: 'Fleet', power: 'Italy', province: 'tys' },
+  { type: 'Fleet', power: 'Italy', province: 'ion' },
+  { type: 'Fleet', power: 'Italy', province: 'adr' },
+  { type: 'Fleet', power: 'Germany', province: 'ska' },
+  { type: 'Fleet', power: 'Germany', province: 'hel' },
+  { type: 'Fleet', power: 'Germany', province: 'bal' },
+  { type: 'Fleet', power: 'Russia', province: 'bot' },
+  { type: 'Fleet', power: 'Russia', province: 'bar' },
+  { type: 'Fleet', power: 'Turkey', province: 'bla' },
+  { type: 'Fleet', power: 'Turkey', province: 'aeg' },
+  { type: 'Fleet', power: 'Turkey', province: 'eas' },
+];
+
+async function screenshotRegion(
+  page: import('@playwright/test').Page,
+  cx: number,
+  cy: number,
+  size: number,
+) {
+  const coords = await page.evaluate(
+    ({ cx, cy }) => {
+      const svg = document.querySelector('#map-container svg') as SVGSVGElement;
+      const pt = svg.createSVGPoint();
+      pt.x = cx;
+      pt.y = cy;
+      const ctm = svg.getScreenCTM();
+      if (!ctm) return null;
+      const sp = pt.matrixTransform(ctm);
+      return { x: sp.x, y: sp.y };
+    },
+    { cx, cy },
+  );
+  if (!coords) throw new Error('Could not compute screen coords');
+  return page.screenshot({
+    clip: {
+      x: Math.max(0, coords.x - size),
+      y: Math.max(0, coords.y - size),
+      width: size * 2,
+      height: size * 2,
+    },
+  });
+}
+
+test.describe('regional screenshots — unit positions', () => {
+  test.beforeEach(async ({ page }) => {
+    server.setSnapshot(makeSnapshot(REGIONAL_UNITS, STARTING_SC));
+    await waitForMap(page);
+  });
+
+  test('england', async ({ page }) => {
+    const buf = await screenshotRegion(page, 150, 250, 100);
+    expect(buf).toMatchSnapshot('region-england.png', { maxDiffPixelRatio: 0.01 });
+  });
+
+  test('france + iberia', async ({ page }) => {
+    const buf = await screenshotRegion(page, 130, 400, 130);
+    expect(buf).toMatchSnapshot('region-france.png', { maxDiffPixelRatio: 0.01 });
+  });
+
+  test('germany', async ({ page }) => {
+    const buf = await screenshotRegion(page, 260, 310, 100);
+    expect(buf).toMatchSnapshot('region-germany.png', { maxDiffPixelRatio: 0.01 });
+  });
+
+  test('italy', async ({ page }) => {
+    const buf = await screenshotRegion(page, 290, 440, 100);
+    expect(buf).toMatchSnapshot('region-italy.png', { maxDiffPixelRatio: 0.01 });
+  });
+
+  test('austria + balkans', async ({ page }) => {
+    const buf = await screenshotRegion(page, 360, 410, 130);
+    expect(buf).toMatchSnapshot('region-austria.png', { maxDiffPixelRatio: 0.01 });
+  });
+
+  test('russia', async ({ page }) => {
+    const buf = await screenshotRegion(page, 470, 250, 180);
+    expect(buf).toMatchSnapshot('region-russia.png', { maxDiffPixelRatio: 0.01 });
+  });
+
+  test('turkey', async ({ page }) => {
+    const buf = await screenshotRegion(page, 480, 480, 120);
+    expect(buf).toMatchSnapshot('region-turkey.png', { maxDiffPixelRatio: 0.01 });
+  });
+
+  test('scandinavia + north sea', async ({ page }) => {
+    const buf = await screenshotRegion(page, 300, 170, 130);
+    expect(buf).toMatchSnapshot('region-scandinavia.png', { maxDiffPixelRatio: 0.01 });
+  });
+
+  test('north atlantic + barents', async ({ page }) => {
+    const buf = await screenshotRegion(page, 250, 60, 170);
+    expect(buf).toMatchSnapshot('region-north.png', { maxDiffPixelRatio: 0.01 });
+  });
+
+  test('mediterranean', async ({ page }) => {
+    const buf = await screenshotRegion(page, 300, 510, 140);
+    expect(buf).toMatchSnapshot('region-med.png', { maxDiffPixelRatio: 0.01 });
+  });
+});
+
+// ===========================================================================
 // Constants
 // ===========================================================================
 
@@ -554,6 +735,7 @@ const ALL_PROVINCES = [
   'aeg',
   'eas',
   'bla',
+  'nat',
 ];
 
 const POWERS_CYCLE = ['England', 'France', 'Germany', 'Italy', 'Austria', 'Russia', 'Turkey'];
@@ -577,4 +759,5 @@ const SEA_PROVINCES = new Set([
   'aeg',
   'eas',
   'bla',
+  'nat',
 ]);
