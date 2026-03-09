@@ -20,7 +20,7 @@ export const FLEET_OFFSETS: Record<string, { dx: number; dy: number }> = {
   nor: { dx: 12, dy: 20 }, // near NWG coast
   pie: { dx: 6, dy: 2 },
   por: { dx: 2, dy: -20 },
-  pru: { dx: -10, dy: -20 }, // near BAL coast
+  pru: { dx: -4, dy: -16 }, // near BAL coast
   rom: { dx: 0, dy: 5 },
   rum: { dx: 5, dy: -5 }, // near BLA coast
   sev: { dx: -24, dy: 10 }, // near BLA coast
