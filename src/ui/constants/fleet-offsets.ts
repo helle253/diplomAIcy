@@ -17,7 +17,7 @@ export const FLEET_OFFSETS: Record<string, { dx: number; dy: number }> = {
   lvn: { dx: -15, dy: -25 }, // near BAL coast
   mar: { dx: -8, dy: 8 },
   naf: { dx: -15, dy: -20 }, // near WES/MAO coast
-  nor: { dx: 15, dy: -30 }, // near NWG coast
+  nor: { dx: 12, dy: 20 }, // near NWG coast
   pru: { dx: -10, dy: -20 }, // near BAL coast
   rom: { dx: 0, dy: 6 },
   rum: { dx: 5, dy: -5 }, // near BLA coast
