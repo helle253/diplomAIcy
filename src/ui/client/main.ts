@@ -156,7 +156,7 @@ const FLEET_OFFSETS: Record<string, { dx: number; dy: number }> = {
   bot: { dx: 15, dy: 35 },
   eas: { dx: -16, dy: 12 },
   eng: { dx: -16, dy: 16 },
-  hel: { dx: 8, dy: -7 },
+  hel: { dx: 8, dy: 0 },
   ion: { dx: -10, dy: 25 },
   iri: { dx: 4, dy: 26 },
   lyo: { dx: 4, dy: -6 },
