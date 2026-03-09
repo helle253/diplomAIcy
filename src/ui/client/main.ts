@@ -173,12 +173,12 @@ const FLEET_OFFSETS: Record<string, { dx: number; dy: number }> = {
 // Keys are "province/coast", values are {dx, dy} relative to the province text label.
 // Positions are chosen near the relevant coastline rather than at the province center.
 const COAST_OFFSETS: Record<string, { dx: number; dy: number }> = {
-  'stp/nc': { dx: 15, dy: -34 }, // toward Barents Sea (bottom of bay)
-  'stp/sc': { dx: -65, dy: 56 }, // toward Gulf of Bothnia (south coast)
-  'spa/nc': { dx: 15, dy: -22 }, // toward Bay of Biscay / Gascony (north coast)
-  'spa/sc': { dx: -5, dy: 40 }, // toward Western Med (south coast)
+  'stp/nc': { dx: 0, dy: -42 }, // toward Barents Sea (bottom of bay)
+  'stp/sc': { dx: -65, dy: 46 }, // toward Gulf of Bothnia (south coast)
+  'spa/nc': { dx: 15, dy: -52 }, // toward Bay of Biscay / Gascony (north coast)
+  'spa/sc': { dx: 32, dy: 0 }, // toward Western Med (south coast)
   'bul/nc': { dx: 30, dy: -3 }, // northeast corner toward Black Sea
-  'bul/sc': { dx: 0, dy: 40 }, // southern edge toward Aegean
+  'bul/sc': { dx: 4, dy: 28 }, // southern edge toward Aegean
 };
 
 // --- State -------------------------------------------------------------------
