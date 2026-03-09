@@ -172,7 +172,7 @@ const FLEET_OFFSETS: Record<string, { dx: number; dy: number }> = {
   lyo: { dx: 4, dy: -6 },
   tys: { dx: 11, dy: -7 },
   ion: { dx: -10, dy: 25 },
-  adr: { dx: -8, dy: -7 },
+  adr: { dx: -16, dy: -7 },
   aeg: { dx: 10, dy: 27 },
   eas: { dx: 11, dy: -6 },
   bla: { dx: -25, dy: 12 },
