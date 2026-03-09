@@ -114,7 +114,7 @@ const UNIT_OFFSETS: Record<string, { dx: number; dy: number }> = {
   syr: { dx: -10, dy: -25 },
   tri: { dx: 1, dy: -25 },
   tun: { dx: -3, dy: -22 },
-  tus: { dx: 8, dy: -20 },
+  tus: { dx: 4, dy: 6 },
   tyr: { dx: -10, dy: -5 },
   ukr: { dx: 7, dy: -22 },
   ven: { dx: 5, dy: 0 },
@@ -171,6 +171,7 @@ const FLEET_OFFSETS: Record<string, { dx: number; dy: number }> = {
   nwg: { dx: 35, dy: 29 },
   ska: { dx: 12, dy: -8 },
   tun: { dx: 4, dy: -36 },
+  tus: { dx: 0, dy: 4 },
   tys: { dx: 11, dy: -22 },
   wes: { dx: -32, dy: 3 },
 };
