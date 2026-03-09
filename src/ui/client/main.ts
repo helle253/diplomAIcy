@@ -164,7 +164,7 @@ const FLEET_OFFSETS: Record<string, { dx: number; dy: number }> = {
   nat: { dx: 9, dy: 17 },
   nth: { dx: 4, dy: 11 },
   nwg: { dx: 35, dy: 29 },
-  ska: { dx: 7, dy: 11 },
+  ska: { dx: 12, dy: -8 },
   tys: { dx: 11, dy: -22 },
   wes: { dx: -32, dy: 3 },
 };
