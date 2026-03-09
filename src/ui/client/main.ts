@@ -90,7 +90,7 @@ const UNIT_OFFSETS: Record<string, { dx: number; dy: number }> = {
   lon: { dx: 6, dy: 2 },
   lvn: { dx: -10, dy: -20 },
   lvp: { dx: 6, dy: 12 },
-  mar: { dx: 20, dy: -22 },
+  mar: { dx: 18, dy: -20 },
   mos: { dx: 34, dy: -41 },
   mun: { dx: 14, dy: -22 },
   naf: { dx: -28, dy: -9 },
@@ -140,6 +140,7 @@ const FLEET_OFFSETS: Record<string, { dx: number; dy: number }> = {
   hol: { dx: -5, dy: -20 }, // near NTH coast
   kie: { dx: 10, dy: -20 }, // near HEL/BAL coast
   lvn: { dx: -15, dy: -25 }, // near BAL coast
+  mar: { dx: -8, dy: 8 },
   naf: { dx: -15, dy: -20 }, // near WES/MAO coast
   nor: { dx: 15, dy: -30 }, // near NWG coast
   pru: { dx: -10, dy: -20 }, // near BAL coast
