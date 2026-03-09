@@ -22,7 +22,7 @@ export const FLEET_OFFSETS: Record<string, { dx: number; dy: number }> = {
   por: { dx: 2, dy: -20 },
   pru: { dx: -4, dy: -16 }, // near BAL coast
   rom: { dx: 0, dy: 5 },
-  rum: { dx: 5, dy: -5 }, // near BLA coast
+  rum: { dx: 24, dy: -5 }, // near BLA coast
   sev: { dx: -24, dy: 10 }, // near BLA coast
   smy: { dx: -20, dy: 12 },
   swe: { dx: 10, dy: -40 }, // near BOT/SKA coast
