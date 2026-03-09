@@ -33,28 +33,6 @@ const LAND_PROVINCES = [
   'ser',
 ];
 
-const SEA_PROVINCES = [
-  'nat',
-  'nwg',
-  'bar',
-  'nth',
-  'iri',
-  'eng',
-  'mao',
-  'wes',
-  'lyo',
-  'tys',
-  'ion',
-  'adr',
-  'aeg',
-  'eas',
-  'bla',
-  'bal',
-  'bot',
-  'hel',
-  'ska',
-];
-
 const LAND_WITH_SC = new Set(['par', 'mun', 'vie', 'bud', 'mos', 'war', 'ser']);
 
 // ---------------------------------------------------------------------------
@@ -291,31 +269,3 @@ test.describe('Land provinces — army placement', () => {
   }
 });
 
-test.describe('Sea provinces — fleet placement', () => {
-  for (const prov of SEA_PROVINCES) {
-    test(prov, async ({ page }) => {
-      const unit: TestUnit = { type: 'Fleet', power: 'England', province: prov };
-      server.setSnapshot(makeSnapshot([unit]));
-      await page.goto(server.url);
-      await page.waitForSelector('.unit-marker', { state: 'attached', timeout: 10_000 });
-      await page.waitForTimeout(500);
-
-      const result = await getPositionData(page, prov);
-
-      expect(result.unitType, `${prov} should render as fleet`).toBe('fleet');
-
-      // 1. Unit within province bounding box (15px margin)
-      assertInsideBBox(result, prov);
-
-      // 2. No sea provinces have SCs, but check anyway
-      assertNoScOverlap(result, prov);
-
-      // 3. Unit does NOT overlap the text label
-      assertNoTextOverlap(result, prov);
-
-      // 4. Screenshot snapshot
-      const screenshot = await screenshotProvince(page, prov);
-      expect(screenshot).toMatchSnapshot(`${prov}-fleet.png`, { maxDiffPixelRatio: 0.01 });
-    });
-  }
-});

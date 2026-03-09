@@ -81,19 +81,19 @@ const UNIT_OFFSETS: Record<string, { dx: number; dy: number }> = {
   bur: { dx: 0, dy: -12 },
   mar: { dx: 20, dy: -7 },
   // Low Countries / Germany
-  bel: { dx: -14, dy: 13 },
-  hol: { dx: 0, dy: 30 },
+  bel: { dx: 5, dy: 13 },
+  hol: { dx: 8, dy: 5 },
   ruh: { dx: 9, dy: -5 },
   kie: { dx: 3, dy: 5 },
   ber: { dx: 7, dy: -5 },
   mun: { dx: 14, dy: -7 },
   // Italy
   pie: { dx: 9, dy: -5 },
-  ven: { dx: 0, dy: 38 },
+  ven: { dx: 5, dy: 15 },
   tus: { dx: 8, dy: -5 },
   rom: { dx: 8, dy: -4 },
   nap: { dx: -2, dy: -10 },
-  apu: { dx: 7, dy: -5 },
+  apu: { dx: 0, dy: 5 },
   // Austria-Hungary / Balkans
   tyr: { dx: -10, dy: 10 },
   boh: { dx: 10, dy: -7 },
@@ -120,9 +120,9 @@ const UNIT_OFFSETS: Record<string, { dx: number; dy: number }> = {
   sev: { dx: -24, dy: 20 },
   // Turkey
   con: { dx: 20, dy: -13 },
-  ank: { dx: 1, dy: -5 },
+  ank: { dx: -10, dy: 8 },
   smy: { dx: 30, dy: -10 },
-  arm: { dx: -3, dy: -15 },
+  arm: { dx: -12, dy: -2 },
   syr: { dx: -10, dy: -10 },
   // Iberia / North Africa
   spa: { dx: 8, dy: 25 },
@@ -132,25 +132,50 @@ const UNIT_OFFSETS: Record<string, { dx: number; dy: number }> = {
   // Neutral / misc
   sil: { dx: -6, dy: -5 },
   pru: { dx: -15, dy: 2 },
-  // Sea zones
+};
+
+// Per-province fleet position overrides. Falls back to UNIT_OFFSETS if not specified.
+// Used to place fleets near coastlines while armies stay inland.
+const FLEET_OFFSETS: Record<string, { dx: number; dy: number }> = {
+  // Coastal provinces where fleet should differ from army
+  ank: { dx: 1, dy: -5 }, // near BLA coast
+  arm: { dx: -15, dy: -20 }, // near BLA coast (northwest edge)
+  sev: { dx: -24, dy: 25 }, // near BLA coast
+  ven: { dx: 10, dy: 25 }, // near ADR coast
+  apu: { dx: 7, dy: -5 }, // near ADR coast
+  tri: { dx: 10, dy: 5 }, // near ADR coast
+  kie: { dx: 10, dy: -5 }, // near HEL/BAL coast
+  hol: { dx: -5, dy: -5 }, // near NTH coast
+  bel: { dx: -10, dy: 13 }, // near ENG coast
+  nor: { dx: 15, dy: -15 }, // near NWG coast
+  swe: { dx: 10, dy: -25 }, // near BOT/SKA coast
+  den: { dx: -5, dy: 20 }, // near SKA/HEL coast
+  rum: { dx: 5, dy: 10 }, // near BLA coast
+  gre: { dx: 15, dy: 25 }, // near ION/AEG coast
+  con: { dx: 15, dy: 5 }, // near AEG/BLA coast
+  naf: { dx: -15, dy: -5 }, // near WES/MAO coast
+  fin: { dx: -10, dy: -20 }, // near BOT coast
+  pru: { dx: -10, dy: -5 }, // near BAL coast
+  lvn: { dx: -15, dy: -10 }, // near BAL coast
+  // Sea zones (fleet-only provinces)
   nth: { dx: 4, dy: 26 },
   nwg: { dx: 35, dy: 44 },
   bar: { dx: 11, dy: 30 },
   ska: { dx: 7, dy: 26 },
   hel: { dx: 8, dy: -7 },
-  bal: { dx: -18, dy: 3 },
-  bot: { dx: -5, dy: -15 },
+  bal: { dx: 12, dy: -5 },
+  bot: { dx: 15, dy: 35 },
   iri: { dx: 4, dy: 26 },
   eng: { dx: -4, dy: 26 },
   mao: { dx: 14, dy: 57 },
   wes: { dx: -32, dy: 18 },
   lyo: { dx: 4, dy: -6 },
   tys: { dx: 11, dy: -7 },
-  ion: { dx: -15, dy: 15 },
-  adr: { dx: -10, dy: -6 },
+  ion: { dx: -10, dy: 25 },
+  adr: { dx: -8, dy: -7 },
   aeg: { dx: 10, dy: 27 },
   eas: { dx: 11, dy: -6 },
-  bla: { dx: -2, dy: -15 },
+  bla: { dx: -25, dy: 12 },
   nat: { dx: 9, dy: 32 },
 };
 
@@ -381,7 +406,8 @@ function updateUnits(): void {
       cx = pos.x + coastOffset.dx;
       cy = pos.y - 15 + coastOffset.dy;
     } else {
-      const provOffset = UNIT_OFFSETS[unit.province];
+      const fleetOv = unit.type === 'Fleet' ? FLEET_OFFSETS[unit.province] : undefined;
+      const provOffset = fleetOv ?? UNIT_OFFSETS[unit.province];
       cx = pos.x + (provOffset?.dx ?? 0);
       cy = pos.y - 15 + (provOffset?.dy ?? 0);
     }
