@@ -101,7 +101,7 @@ const UNIT_OFFSETS: Record<string, { dx: number; dy: number }> = {
   pie: { dx: 9, dy: -10 },
   por: { dx: 13, dy: -25 },
   pru: { dx: -20, dy: 4 },
-  rom: { dx: 8, dy: -19 },
+  rom: { dx: 6, dy: 0 },
   ruh: { dx: 9, dy: -20 },
   rum: { dx: -8, dy: -21 },
   ser: { dx: 4, dy: 10 },
@@ -144,6 +144,7 @@ const FLEET_OFFSETS: Record<string, { dx: number; dy: number }> = {
   naf: { dx: -15, dy: -20 }, // near WES/MAO coast
   nor: { dx: 15, dy: -30 }, // near NWG coast
   pru: { dx: -10, dy: -20 }, // near BAL coast
+  rom: { dx: 0, dy: 6 },
   rum: { dx: 5, dy: -5 }, // near BLA coast
   sev: { dx: -24, dy: 10 }, // near BLA coast
   swe: { dx: 10, dy: -40 }, // near BOT/SKA coast
