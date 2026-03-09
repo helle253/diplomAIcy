@@ -140,15 +140,11 @@ test.describe('Coastal provinces — fleet placement', () => {
       expect(d.unitCX, `${prov} Fleet x within bounds`).toBeGreaterThanOrEqual(
         d.bbox.minX - margin,
       );
-      expect(d.unitCX, `${prov} Fleet x within bounds`).toBeLessThanOrEqual(
-        d.bbox.maxX + margin,
-      );
+      expect(d.unitCX, `${prov} Fleet x within bounds`).toBeLessThanOrEqual(d.bbox.maxX + margin);
       expect(d.unitCY, `${prov} Fleet y within bounds`).toBeGreaterThanOrEqual(
         d.bbox.minY - margin,
       );
-      expect(d.unitCY, `${prov} Fleet y within bounds`).toBeLessThanOrEqual(
-        d.bbox.maxY + margin,
-      );
+      expect(d.unitCY, `${prov} Fleet y within bounds`).toBeLessThanOrEqual(d.bbox.maxY + margin);
 
       const screenshot = await screenshotProvince(page, prov);
       expect(screenshot).toMatchSnapshot(`${prov}-fleet.png`, {
