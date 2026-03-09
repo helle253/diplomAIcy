@@ -311,7 +311,7 @@ async function screenshotProvince(page: import('@playwright/test').Page, provinc
 // Tests
 // ---------------------------------------------------------------------------
 
-test.describe('Land provinces — army placement', () => {
+test.describe('Army placement', () => {
   for (const prov of LAND_PROVINCES) {
     test(prov, async ({ page }) => {
       const unit: TestUnit = { type: 'Army', power: 'England', province: prov };
