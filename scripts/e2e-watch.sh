@@ -10,4 +10,4 @@ else
   CMD="vite build && playwright test --update-snapshots"
 fi
 
-exec npx chokidar "src/ui/client/**/*" -c "$CMD" --initial
+exec npx chokidar "src/ui/client/**/*" -c "$CMD" --initial --kill
