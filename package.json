@@ -4,6 +4,7 @@
   "description": "Agent-oriented Diplomacy client with spectator UI",
   "type": "module",
   "scripts": {
+    "postinstall": "playwright install --with-deps chromium",
     "build": "tsc && vite build",
     "test": "vitest run",
     "test:e2e": "playwright test",

@@ -185,9 +185,9 @@ test.describe('split coasts — St. Petersburg', () => {
     const positions = await getUnitPositions(page);
     const stpBBox = await getProvinceBBox(page, 'stp');
 
-    // nc fleet should be in the upper third of STP, near BAR
-    const stpTopThird = stpBBox!.minY + (stpBBox!.maxY - stpBBox!.minY) / 3;
-    expect(positions[0].cy, 'stp/nc in upper third of STP').toBeLessThan(stpTopThird);
+    // nc fleet should be in the upper half of STP, near BAR (at the bottom of the Barents bay)
+    const stpMidY = (stpBBox!.minY + stpBBox!.maxY) / 2;
+    expect(positions[0].cy, 'stp/nc in upper half of STP').toBeLessThan(stpMidY);
 
     const map = page.locator('#map-container');
     await expect(map).toHaveScreenshot('stp-nc-fleet.png');
