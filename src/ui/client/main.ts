@@ -84,7 +84,7 @@ const UNIT_OFFSETS: Record<string, { dx: number; dy: number }> = {
   bel: { dx: -14, dy: 13 },
   hol: { dx: 0, dy: 30 },
   ruh: { dx: 9, dy: -5 },
-  kie: { dx: 3, dy: -12 },
+  kie: { dx: 3, dy: 5 },
   ber: { dx: 7, dy: -5 },
   mun: { dx: 14, dy: -7 },
   // Italy
@@ -98,7 +98,7 @@ const UNIT_OFFSETS: Record<string, { dx: number; dy: number }> = {
   tyr: { dx: -10, dy: 10 },
   boh: { dx: 10, dy: -7 },
   vie: { dx: 8, dy: -8 },
-  tri: { dx: 1, dy: -20 },
+  tri: { dx: 1, dy: -10 },
   bud: { dx: 20, dy: -8 },
   gal: { dx: 20, dy: 20 },
   ser: { dx: 4, dy: 25 },
@@ -117,7 +117,7 @@ const UNIT_OFFSETS: Record<string, { dx: number; dy: number }> = {
   war: { dx: 5, dy: 20 },
   lvn: { dx: -10, dy: -5 },
   ukr: { dx: 7, dy: -7 },
-  sev: { dx: -80, dy: 65 },
+  sev: { dx: -24, dy: 20 },
   // Turkey
   con: { dx: 20, dy: -13 },
   ank: { dx: 1, dy: -5 },
