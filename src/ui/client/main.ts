@@ -1,3 +1,6 @@
+import { COAST_OFFSETS, FLEET_OFFSETS } from '../constants/fleet-offsets';
+import { UNIT_OFFSETS } from '../constants/unit-offsets';
+
 // ============================================================================
 // diplomAIcy — Spectator UI Main Module
 // ============================================================================
@@ -61,109 +64,6 @@ const POWER_COLORS: Record<string, string> = {
   Austria: '#e53935',
   Russia: '#8e24aa',
   Turkey: '#ef6c00',
-};
-
-// Per-province unit position offsets (dx, dy) relative to the default text-based position.
-// Computed from SVG path bounding-box centers, with manual tweaks for irregular shapes.
-const UNIT_OFFSETS: Record<string, { dx: number; dy: number }> = {
-  // British Isles
-  cly: { dx: 13, dy: 10 },
-  edi: { dx: -8, dy: -5 },
-  lvp: { dx: 0, dy: 35 },
-  yor: { dx: 5, dy: 10 },
-  wal: { dx: -3, dy: 19 },
-  lon: { dx: 8, dy: 25 },
-  // France
-  bre: { dx: -5, dy: -5 },
-  pic: { dx: 2, dy: 11 },
-  par: { dx: 12, dy: -10 },
-  gas: { dx: 10, dy: 5 },
-  bur: { dx: 0, dy: -12 },
-  mar: { dx: 20, dy: 6 },
-  // Low Countries / Germany
-  bel: { dx: -2, dy: 9 },
-  hol: { dx: -1, dy: 20 },
-  ruh: { dx: 9, dy: 9 },
-  kie: { dx: 3, dy: -12 },
-  ber: { dx: 7, dy: -5 },
-  mun: { dx: 14, dy: -7 },
-  // Italy
-  pie: { dx: 9, dy: 8 },
-  ven: { dx: 25, dy: 10 },
-  tus: { dx: 8, dy: -5 },
-  rom: { dx: 0, dy: -3 },
-  nap: { dx: -2, dy: -10 },
-  apu: { dx: 7, dy: 9 },
-  // Austria-Hungary / Balkans
-  tyr: { dx: 10, dy: 12 },
-  boh: { dx: 10, dy: 7 },
-  vie: { dx: 8, dy: -8 },
-  tri: { dx: 1, dy: -20 },
-  bud: { dx: 20, dy: -8 },
-  gal: { dx: 20, dy: -5 },
-  ser: { dx: -1, dy: -12 },
-  alb: { dx: 7, dy: 21 },
-  gre: { dx: 14, dy: 24 },
-  rum: { dx: -8, dy: -6 },
-  bul: { dx: 3, dy: 18 },
-  // Scandinavia
-  nor: { dx: 30, dy: -10 },
-  swe: { dx: 19, dy: -20 },
-  den: { dx: 12, dy: 21 },
-  fin: { dx: 3, dy: -25 },
-  // Russia / Eastern
-  stp: { dx: 29, dy: -19 },
-  mos: { dx: 34, dy: -26 },
-  war: { dx: -2, dy: -5 },
-  lvn: { dx: -2, dy: 1 },
-  ukr: { dx: 7, dy: 9 },
-  sev: { dx: -30, dy: -10 },
-  // Turkey
-  con: { dx: -15, dy: -10 },
-  ank: { dx: 1, dy: -5 },
-  smy: { dx: 30, dy: 2 },
-  arm: { dx: -3, dy: -15 },
-  syr: { dx: -3, dy: -1 },
-  // Iberia / North Africa
-  spa: { dx: 8, dy: 18 },
-  por: { dx: 13, dy: 7 },
-  naf: { dx: -28, dy: 6 },
-  tun: { dx: 6, dy: -2 },
-  // Neutral / misc
-  sil: { dx: 5, dy: 10 },
-  pru: { dx: -5, dy: 5 },
-  // Sea zones
-  nth: { dx: 4, dy: 13 },
-  nwg: { dx: 35, dy: 44 },
-  bar: { dx: 11, dy: 30 },
-  ska: { dx: 7, dy: 13 },
-  hel: { dx: 8, dy: 7 },
-  bal: { dx: -1, dy: 3 },
-  bot: { dx: -5, dy: -15 },
-  iri: { dx: 4, dy: 10 },
-  eng: { dx: -4, dy: 18 },
-  mao: { dx: 14, dy: 57 },
-  wes: { dx: -32, dy: 18 },
-  lyo: { dx: 4, dy: -2 },
-  tys: { dx: 11, dy: -1 },
-  ion: { dx: -2, dy: 15 },
-  adr: { dx: -10, dy: -6 },
-  aeg: { dx: 10, dy: 14 },
-  eas: { dx: 11, dy: -1 },
-  bla: { dx: -2, dy: -15 },
-  nat: { dx: 9, dy: 32 },
-};
-
-// Pixel offsets for fleet placement on multi-coast provinces.
-// Keys are "province/coast", values are {dx, dy} relative to the province text label.
-// Positions are chosen near the relevant coastline rather than at the province center.
-const COAST_OFFSETS: Record<string, { dx: number; dy: number }> = {
-  'stp/nc': { dx: 15, dy: -79 }, // toward Barents Sea (north coast)
-  'stp/sc': { dx: -65, dy: 56 }, // toward Gulf of Bothnia (south coast)
-  'spa/nc': { dx: 15, dy: -22 }, // toward Bay of Biscay / Gascony (north coast)
-  'spa/sc': { dx: -5, dy: 40 }, // toward Western Med (south coast)
-  'bul/nc': { dx: 30, dy: -3 }, // northeast corner toward Black Sea
-  'bul/sc': { dx: 0, dy: 40 }, // southern edge toward Aegean
 };
 
 // --- State -------------------------------------------------------------------
@@ -354,6 +254,28 @@ function getTextPosition(group: Element): { x: number; y: number } | null {
   return { x, y };
 }
 
+/** Compute the pixel position for a unit token given the province text position. */
+function unitPosition(
+  pos: { x: number; y: number },
+  province: string,
+  unitType: 'Army' | 'Fleet',
+  coast?: string,
+): { cx: number; cy: number } {
+  // 1. Coast-specific fleets use COAST_OFFSETS from raw text position.
+  // 2. Otherwise fall back to text + UNIT_OFFSETS.
+  const coastKey = coast ? `${province}/${coast}` : '';
+  const coastOffset = COAST_OFFSETS[coastKey];
+  if (coastOffset) {
+    return { cx: pos.x + coastOffset.dx, cy: pos.y + coastOffset.dy };
+  }
+  const fleetOv = unitType === 'Fleet' ? FLEET_OFFSETS[province] : undefined;
+  const provOffset = fleetOv ?? UNIT_OFFSETS[province];
+  return {
+    cx: pos.x + (provOffset?.dx ?? 0),
+    cy: pos.y + (provOffset?.dy ?? 0),
+  };
+}
+
 function updateUnits(): void {
   if (!unitsLayer) return;
   unitsLayer.innerHTML = '';
@@ -372,19 +294,7 @@ function updateUnits(): void {
 
     const color = POWER_COLORS[unit.power] || '#888';
 
-    // 1. Coast-specific fleets use COAST_OFFSETS from raw text position.
-    // 2. Otherwise fall back to text + UNIT_OFFSETS.
-    const coastKey = unit.coast ? `${unit.province}/${unit.coast}` : '';
-    const coastOffset = COAST_OFFSETS[coastKey];
-    let cx: number, cy: number;
-    if (coastOffset) {
-      cx = pos.x + coastOffset.dx;
-      cy = pos.y - 15 + coastOffset.dy;
-    } else {
-      const provOffset = UNIT_OFFSETS[unit.province];
-      cx = pos.x + (provOffset?.dx ?? 0);
-      cy = pos.y - 15 + (provOffset?.dy ?? 0);
-    }
+    const { cx, cy } = unitPosition(pos, unit.province, unit.type, unit.coast);
 
     const g = document.createElementNS(ns, 'g');
     g.classList.add('unit-marker');

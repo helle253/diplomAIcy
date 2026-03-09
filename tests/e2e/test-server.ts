@@ -3,7 +3,7 @@
  * Serves the built UI static files and injects controlled game state via WebSocket.
  */
 import express from 'express';
-import { createServer, type Server } from 'http';
+import { createServer } from 'http';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocket, WebSocketServer } from 'ws';
@@ -65,13 +65,28 @@ export const STARTING_UNITS: TestUnit[] = [
 
 /** Starting supply center ownership. */
 export const STARTING_SC: Record<string, string> = {
-  lon: 'England', edi: 'England', lvp: 'England',
-  bre: 'France', par: 'France', mar: 'France',
-  kie: 'Germany', ber: 'Germany', mun: 'Germany',
-  nap: 'Italy', rom: 'Italy', ven: 'Italy',
-  tri: 'Austria', vie: 'Austria', bud: 'Austria',
-  stp: 'Russia', sev: 'Russia', mos: 'Russia', war: 'Russia',
-  ank: 'Turkey', con: 'Turkey', smy: 'Turkey',
+  lon: 'England',
+  edi: 'England',
+  lvp: 'England',
+  bre: 'France',
+  par: 'France',
+  mar: 'France',
+  kie: 'Germany',
+  ber: 'Germany',
+  mun: 'Germany',
+  nap: 'Italy',
+  rom: 'Italy',
+  ven: 'Italy',
+  tri: 'Austria',
+  vie: 'Austria',
+  bud: 'Austria',
+  stp: 'Russia',
+  sev: 'Russia',
+  mos: 'Russia',
+  war: 'Russia',
+  ank: 'Turkey',
+  con: 'Turkey',
+  smy: 'Turkey',
 };
 
 export function makeSnapshot(
