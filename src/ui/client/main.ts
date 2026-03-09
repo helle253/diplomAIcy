@@ -130,7 +130,7 @@ const FLEET_OFFSETS: Record<string, { dx: number; dy: number }> = {
   // Coastal provinces where fleet should differ from army
   ank: { dx: 1, dy: -20 }, // near BLA coast
   apu: { dx: 3, dy: -16 }, // near ADR coast
-  arm: { dx: -15, dy: -35 }, // near BLA coast (northwest edge)
+  arm: { dx: -22, dy: -33 }, // near BLA coast (northwest edge)
   bel: { dx: -10, dy: -2 }, // near ENG coast
   con: { dx: 15, dy: -10 }, // near AEG/BLA coast
   den: { dx: -5, dy: 5 }, // near SKA/HEL coast
