@@ -174,7 +174,7 @@ const FLEET_OFFSETS: Record<string, { dx: number; dy: number }> = {
   ion: { dx: -10, dy: 25 },
   adr: { dx: -16, dy: -7 },
   aeg: { dx: 10, dy: 27 },
-  eas: { dx: 11, dy: -6 },
+  eas: { dx: -16, dy: 12 },
   bla: { dx: -25, dy: 12 },
   nat: { dx: 9, dy: 32 },
 };
