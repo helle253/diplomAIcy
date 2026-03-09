@@ -138,7 +138,9 @@ for (const prov of BICOASTAL) {
         expect(dist, 'army should not overlap SC').toBeGreaterThanOrEqual(11);
       }
       const screenshot = await screenshotProvince(page, prov);
-      expect(screenshot).toMatchSnapshot(`${prov}-army.png`, { maxDiffPixelRatio: 0.001 });
+      expect(screenshot).toMatchSnapshot(`${prov}-army.png`, {
+        maxDiffPixels: 12,
+      });
     });
 
     // Test 2: Fleet on north coast
@@ -158,7 +160,9 @@ for (const prov of BICOASTAL) {
         expect(dist, 'fleet/nc should not overlap SC').toBeGreaterThanOrEqual(12);
       }
       const screenshot = await screenshotProvince(page, prov);
-      expect(screenshot).toMatchSnapshot(`${prov}-fleet-nc.png`, { maxDiffPixelRatio: 0.001 });
+      expect(screenshot).toMatchSnapshot(`${prov}-fleet-nc.png`, {
+        maxDiffPixels: 12,
+      });
     });
 
     // Test 3: Fleet on south coast
@@ -178,7 +182,9 @@ for (const prov of BICOASTAL) {
         expect(dist, 'fleet/sc should not overlap SC').toBeGreaterThanOrEqual(12);
       }
       const screenshot = await screenshotProvince(page, prov);
-      expect(screenshot).toMatchSnapshot(`${prov}-fleet-sc.png`, { maxDiffPixelRatio: 0.001 });
+      expect(screenshot).toMatchSnapshot(`${prov}-fleet-sc.png`, {
+        maxDiffPixels: 12,
+      });
     });
 
     // Test 4: nc fleet is north of sc fleet
