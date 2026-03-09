@@ -103,7 +103,7 @@ const UNIT_OFFSETS: Record<string, { dx: number; dy: number }> = {
   pru: { dx: -20, dy: 4 },
   rom: { dx: 6, dy: 0 },
   ruh: { dx: 9, dy: -20 },
-  rum: { dx: -8, dy: -21 },
+  rum: { dx: 6, dy: -18 },
   ser: { dx: 4, dy: 10 },
   sev: { dx: -24, dy: 5 },
   sil: { dx: -6, dy: -20 },
