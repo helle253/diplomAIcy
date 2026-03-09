@@ -265,7 +265,7 @@ test.describe('Sea provinces — fleet placement', () => {
 
       // 4. Screenshot snapshot
       const screenshot = await screenshotProvince(page, prov);
-      expect(screenshot).toMatchSnapshot(`${prov}-fleet.png`, { maxDiffPixelRatio: 0.01 });
+      expect(screenshot).toMatchSnapshot(`${prov}-fleet.png`, { maxDiffPixelRatio: 0.001 });
     });
   }
 });

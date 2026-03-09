@@ -218,7 +218,7 @@ test.describe('Coastal provinces', () => {
 
           const screenshot = await screenshotProvince(page, prov);
           expect(screenshot).toMatchSnapshot(`${prov}-${unitType.toLowerCase()}.png`, {
-            maxDiffPixelRatio: 0.01,
+            maxDiffPixelRatio: 0.001,
           });
         });
       }

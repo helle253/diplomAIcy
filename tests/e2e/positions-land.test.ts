@@ -264,7 +264,7 @@ test.describe('Land provinces — army placement', () => {
 
       // 4. Screenshot snapshot
       const screenshot = await screenshotProvince(page, prov);
-      expect(screenshot).toMatchSnapshot(`${prov}-army.png`, { maxDiffPixelRatio: 0.01 });
+      expect(screenshot).toMatchSnapshot(`${prov}-army.png`, { maxDiffPixelRatio: 0.001 });
     });
   }
 });
