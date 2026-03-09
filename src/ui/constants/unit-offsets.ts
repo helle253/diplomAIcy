@@ -54,7 +54,7 @@ export const UNIT_OFFSETS: Record<string, { dx: number; dy: number }> = {
   ukr: { dx: 7, dy: -22 },
   ven: { dx: 5, dy: 0 },
   vie: { dx: 8, dy: -12 },
-  wal: { dx: -10, dy: 8 },
+  wal: { dx: 4, dy: -2 },
   war: { dx: 5, dy: 5 },
   yor: { dx: 5, dy: -21 },
 };

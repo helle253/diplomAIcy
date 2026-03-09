@@ -47,6 +47,7 @@ export const FLEET_OFFSETS: Record<string, { dx: number; dy: number }> = {
   tun: { dx: 4, dy: -36 },
   tus: { dx: 0, dy: 4 },
   tys: { dx: 11, dy: -22 },
+  wal: { dx: -2, dy: 6 },
   wes: { dx: -32, dy: 3 },
 };
 
