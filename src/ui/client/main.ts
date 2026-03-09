@@ -85,7 +85,7 @@ const UNIT_OFFSETS: Record<string, { dx: number; dy: number }> = {
   gal: { dx: 24, dy: 5 },
   gas: { dx: 10, dy: -20 },
   gre: { dx: 8, dy: 15 },
-  hol: { dx: 8, dy: -10 },
+  hol: { dx: -8, dy: 4 },
   kie: { dx: 3, dy: -10 },
   lon: { dx: -8, dy: -8 },
   lvn: { dx: -10, dy: -20 },
