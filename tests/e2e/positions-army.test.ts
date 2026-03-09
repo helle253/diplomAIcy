@@ -72,6 +72,10 @@ const LAND_PROVINCES = [
   'naf',
   'alb',
   'pru',
+  // Bicoastal
+  'stp',
+  'spa',
+  'bul',
 ];
 
 const LAND_WITH_SC = new Set([
@@ -106,6 +110,9 @@ const LAND_WITH_SC = new Set([
   'tun',
   'rum',
   'gre',
+  'stp',
+  'spa',
+  'bul',
 ]);
 
 // ---------------------------------------------------------------------------

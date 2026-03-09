@@ -119,31 +119,7 @@ const BICOASTAL = ['stp', 'spa', 'bul'] as const;
 
 for (const prov of BICOASTAL) {
   test.describe(`Bicoastal — ${prov}`, () => {
-    // Test 1: Army (no coast)
-    test('Army', async ({ page }) => {
-      const unit: TestUnit = { type: 'Army', power: 'England', province: prov };
-      server.setSnapshot(makeSnapshot([unit]));
-      await page.goto(server.url);
-      await page.waitForSelector('.unit-marker', { state: 'attached', timeout: 10_000 });
-      await page.waitForTimeout(500);
-      const d = await getUnitPositionData(page, prov);
-      // Bounds check
-      expect(d.unitCX).toBeGreaterThanOrEqual(d.bbox.minX - 15);
-      expect(d.unitCX).toBeLessThanOrEqual(d.bbox.maxX + 15);
-      expect(d.unitCY).toBeGreaterThanOrEqual(d.bbox.minY - 15);
-      expect(d.unitCY).toBeLessThanOrEqual(d.bbox.maxY + 15);
-      // SC check
-      if (d.sc) {
-        const dist = Math.sqrt((d.unitCX - d.sc.x) ** 2 + (d.unitCY - d.sc.y) ** 2);
-        expect(dist, 'army should not overlap SC').toBeGreaterThanOrEqual(11);
-      }
-      const screenshot = await screenshotProvince(page, prov);
-      expect(screenshot).toMatchSnapshot(`${prov}-army.png`, {
-        maxDiffPixels: 12,
-      });
-    });
-
-    // Test 2: Fleet on north coast
+    // Test 1: Fleet on north coast
     test('Fleet/nc', async ({ page }) => {
       const unit: TestUnit = { type: 'Fleet', power: 'England', province: prov, coast: 'nc' };
       server.setSnapshot(makeSnapshot([unit]));

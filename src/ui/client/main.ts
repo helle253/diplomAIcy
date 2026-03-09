@@ -71,11 +71,11 @@ const UNIT_OFFSETS: Record<string, { dx: number; dy: number }> = {
   apu: { dx: 0, dy: -10 },
   arm: { dx: -12, dy: -17 },
   bel: { dx: 8, dy: -4 },
-  ber: { dx: 7, dy: -15 },
-  boh: { dx: 10, dy: -22 },
-  bre: { dx: -5, dy: -20 },
-  bud: { dx: 20, dy: -23 },
-  bul: { dx: 3, dy: 17 },
+  ber: { dx: 7, dy: -12 },
+  boh: { dx: 10, dy: -12 },
+  bre: { dx: 4, dy: 0 },
+  bud: { dx: -4, dy: -23 },
+  bul: { dx: -3, dy: 8 },
   bur: { dx: 0, dy: -27 },
   cly: { dx: 13, dy: -21 },
   con: { dx: 20, dy: -28 },
@@ -132,6 +132,7 @@ const FLEET_OFFSETS: Record<string, { dx: number; dy: number }> = {
   apu: { dx: 3, dy: -16 }, // near ADR coast
   arm: { dx: -22, dy: -33 }, // near BLA coast (northwest edge)
   bel: { dx: -14, dy: -18 }, // near ENG coast
+  bre: { dx: -5, dy: -20 },
   con: { dx: 15, dy: -10 }, // near AEG/BLA coast
   den: { dx: -5, dy: 5 }, // near SKA/HEL coast
   fin: { dx: -10, dy: -35 }, // near BOT coast
