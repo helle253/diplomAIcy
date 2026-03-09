@@ -78,7 +78,7 @@ const UNIT_OFFSETS: Record<string, { dx: number; dy: number }> = {
   bul: { dx: -3, dy: 8 },
   bur: { dx: 10, dy: -22 },
   cly: { dx: 13, dy: -21 },
-  con: { dx: 20, dy: -28 },
+  con: { dx: -10, dy: -8 },
   den: { dx: 5, dy: 13 },
   edi: { dx: -8, dy: -20 },
   fin: { dx: 3, dy: -40 },
