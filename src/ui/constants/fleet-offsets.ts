@@ -28,7 +28,7 @@ export const FLEET_OFFSETS: Record<string, { dx: number; dy: number }> = {
   swe: { dx: 12, dy: 40 }, // near BOT/SKA coast
   syr: { dx: -40, dy: 4 }, // near BOT/SKA coast
   tri: { dx: -4, dy: 4 }, // near ADR coast
-  ven: { dx: 10, dy: 10 }, // near ADR coast
+  ven: { dx: 20, dy: 10 }, // near ADR coast
   // Sea zones (fleet-only provinces)
   adr: { dx: -16, dy: -22 },
   aeg: { dx: 10, dy: 12 },
