@@ -100,7 +100,7 @@ const UNIT_OFFSETS: Record<string, { dx: number; dy: number }> = {
   pic: { dx: -6, dy: -4 },
   pie: { dx: 9, dy: -10 },
   por: { dx: 13, dy: -25 },
-  pru: { dx: -15, dy: -13 },
+  pru: { dx: -20, dy: 4 },
   rom: { dx: 8, dy: -19 },
   ruh: { dx: 9, dy: -20 },
   rum: { dx: -8, dy: -21 },
