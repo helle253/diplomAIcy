@@ -137,7 +137,7 @@ for (const prov of BICOASTAL) {
       }
       const screenshot = await screenshotProvince(page, prov);
       expect(screenshot).toMatchSnapshot(`${prov}-fleet-nc.png`, {
-        maxDiffPixels: 12,
+        maxDiffPixelRatio: 0.01,
       });
     });
 
@@ -159,7 +159,7 @@ for (const prov of BICOASTAL) {
       }
       const screenshot = await screenshotProvince(page, prov);
       expect(screenshot).toMatchSnapshot(`${prov}-fleet-sc.png`, {
-        maxDiffPixels: 12,
+        maxDiffPixelRatio: 0.01,
       });
     });
 

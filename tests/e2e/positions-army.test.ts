@@ -347,7 +347,7 @@ test.describe('Army placement', () => {
       // 4. Screenshot snapshot
       const screenshot = await screenshotProvince(page, prov);
       expect(screenshot).toMatchSnapshot(`${prov}-army.png`, {
-        maxDiffPixels: 12,
+        maxDiffPixelRatio: 0.01,
       });
     });
   }

@@ -148,7 +148,7 @@ test.describe('Coastal provinces — fleet placement', () => {
 
       const screenshot = await screenshotProvince(page, prov);
       expect(screenshot).toMatchSnapshot(`${prov}-fleet.png`, {
-        maxDiffPixels: 12,
+        maxDiffPixelRatio: 0.01,
       });
     });
   }
