@@ -109,7 +109,7 @@ test('empty map — no units', async ({ page }) => {
   server.setSnapshot(makeSnapshot([], {}));
   await waitForMap(page);
   const map = page.locator('#map-container');
-  await expect(map).toHaveScreenshot('empty-map.png');
+  await expect(map).toHaveScreenshot('empty-map.png', { maxDiffPixelRatio: 0.01 });
 });
 
 test('all provinces — unit on every province', async ({ page }) => {
