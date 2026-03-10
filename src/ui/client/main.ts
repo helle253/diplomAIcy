@@ -87,6 +87,8 @@ let currentWs: WebSocket | null = null;
 let lobbyPollTimer: ReturnType<typeof setInterval> | null = null;
 let currentLobbyId: string | null = null;
 
+const creatorTokens = new Map<string, string>();
+
 // --- DOM refs ----------------------------------------------------------------
 
 const $ = (sel: string) => document.querySelector(sel);
@@ -686,10 +688,13 @@ lobbyList.addEventListener('click', async (e) => {
     startBtn.textContent = 'Starting...';
     (startBtn as HTMLButtonElement).disabled = true;
     try {
+      const token = creatorTokens.get(id);
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
       const resp = await fetch('/trpc/lobby.start?batch=1', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 0: { json: { id } } }),
+        headers,
+        body: JSON.stringify({ 0: { json: undefined } }),
       });
       if (!resp.ok) {
         const body = await resp.json().catch(() => ({ error: 'Unknown error' }));
@@ -759,6 +764,12 @@ createLobbyForm.addEventListener('submit', async (e) => {
       const body = await resp.json().catch(() => ({ error: 'Unknown error' }));
       alert(`Failed to create lobby: ${JSON.stringify(body)}`);
       return;
+    }
+    const body = await resp.json();
+    const lobbyId = body[0]?.result?.data?.json?.lobbyId;
+    const creatorToken = body[0]?.result?.data?.json?.creatorToken;
+    if (lobbyId && creatorToken) {
+      creatorTokens.set(lobbyId, creatorToken);
     }
     createLobbyModal.classList.add('hidden');
     createLobbyForm.reset();
