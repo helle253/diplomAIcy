@@ -9,7 +9,11 @@ import { RandomAgent } from '../random.js';
 import { createGameClient } from './client.js';
 import { connectRemoteAgent } from './remote-adapter.js';
 
-const VALID_POWERS = new Set(Object.values(Power));
+const VALID_POWERS = new Set<string>(Object.values(Power));
+
+function isPower(value: string): value is Power {
+  return VALID_POWERS.has(value);
+}
 
 function parseArgs(): { power: Power; server: string; type?: string } {
   const args = process.argv.slice(2);
@@ -27,7 +31,7 @@ function parseArgs(): { power: Power; server: string; type?: string } {
     }
   }
 
-  if (!power || !VALID_POWERS.has(power as Power)) {
+  if (!power || !isPower(power)) {
     console.error(
       `Usage: node run.js --power <Power> [--server <url>] [--type random|llm]\n` +
         `  Valid powers: ${[...VALID_POWERS].join(', ')}`,
@@ -35,7 +39,7 @@ function parseArgs(): { power: Power; server: string; type?: string } {
     process.exit(1);
   }
 
-  return { power: power as Power, server, type };
+  return { power, server, type };
 }
 
 function createLLMClient(cfg: AgentConfig): LLMClient {
