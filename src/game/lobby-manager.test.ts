@@ -183,8 +183,13 @@ describe('LobbyManager', () => {
 
   describe('autostart', () => {
     const ALL_POWERS: Power[] = [
-      Power.England, Power.France, Power.Germany, Power.Italy,
-      Power.Austria, Power.Russia, Power.Turkey,
+      Power.England,
+      Power.France,
+      Power.Germany,
+      Power.Italy,
+      Power.Austria,
+      Power.Russia,
+      Power.Turkey,
     ];
 
     it('triggers startLobby when last seat is filled and autostart is true', async () => {
