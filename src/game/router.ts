@@ -1,7 +1,8 @@
-import { tracked } from '@trpc/server';
+import { tracked, TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { Coast, OrderType, Phase, Power, UnitType } from '../engine/types.js';
+import type { LobbyManager } from './lobby-manager.js';
 import type { GameManager } from './manager.js';
 import { publicProcedure, router } from './trpc.js';
 
@@ -84,84 +85,118 @@ function serializeState(manager: GameManager) {
   };
 }
 
+// ── Lobby resolution ──────────────────────────────────────────────────
+
+const lobbyIdInput = z.object({ lobbyId: z.string() });
+
+function resolveManager(lobbyManager: LobbyManager, lobbyId: string): GameManager {
+  const lobby = lobbyManager.getLobby(lobbyId);
+  if (!lobby || !lobby.manager) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: `No active game for lobby ${lobbyId}` });
+  }
+  return lobby.manager;
+}
+
 // ── Router factory ─────────────────────────────────────────────────────
 
-export function createGameRouter(manager: GameManager) {
+export function createGameRouter(lobbyManager: LobbyManager) {
   const gameRouter = router({
     // Queries
-    getState: publicProcedure.query(() => serializeState(manager)),
+    getState: publicProcedure.input(lobbyIdInput).query(({ input }) => {
+      const manager = resolveManager(lobbyManager, input.lobbyId);
+      return serializeState(manager);
+    }),
 
-    getPhase: publicProcedure.query(() => manager.getState().phase),
+    getPhase: publicProcedure.input(lobbyIdInput).query(({ input }) => {
+      const manager = resolveManager(lobbyManager, input.lobbyId);
+      return manager.getState().phase;
+    }),
 
     getBuildCount: publicProcedure
-      .input(z.object({ power: powerEnum }))
-      .query(({ input }) => ({ buildCount: manager.getBuildCount(input.power) })),
+      .input(lobbyIdInput.extend({ power: powerEnum }))
+      .query(({ input }) => {
+        const manager = resolveManager(lobbyManager, input.lobbyId);
+        return { buildCount: manager.getBuildCount(input.power) };
+      }),
 
-    getActivePowers: publicProcedure.query(() => manager.getActivePowers()),
+    getActivePowers: publicProcedure.input(lobbyIdInput).query(({ input }) => {
+      const manager = resolveManager(lobbyManager, input.lobbyId);
+      return manager.getActivePowers();
+    }),
 
     // Mutations
     submitOrders: publicProcedure
-      .input(z.object({ power: powerEnum, orders: z.array(orderSchema) }))
+      .input(lobbyIdInput.extend({ power: powerEnum, orders: z.array(orderSchema) }))
       .mutation(({ input }) => {
+        const manager = resolveManager(lobbyManager, input.lobbyId);
         manager.submitOrders(input.power, input.orders);
         return { ok: true };
       }),
 
     submitRetreats: publicProcedure
-      .input(z.object({ power: powerEnum, retreats: z.array(retreatOrderSchema) }))
+      .input(lobbyIdInput.extend({ power: powerEnum, retreats: z.array(retreatOrderSchema) }))
       .mutation(({ input }) => {
+        const manager = resolveManager(lobbyManager, input.lobbyId);
         manager.submitRetreats(input.power, input.retreats);
         return { ok: true };
       }),
 
     submitBuilds: publicProcedure
-      .input(z.object({ power: powerEnum, builds: z.array(buildOrderSchema) }))
+      .input(lobbyIdInput.extend({ power: powerEnum, builds: z.array(buildOrderSchema) }))
       .mutation(({ input }) => {
+        const manager = resolveManager(lobbyManager, input.lobbyId);
         manager.submitBuilds(input.power, input.builds);
         return { ok: true };
       }),
 
-    sendMessage: publicProcedure.input(messageInputSchema).mutation(({ input }) => {
-      manager.sendMessage({
-        from: input.from,
-        to: input.to,
-        content: input.content,
-        phase: manager.getState().phase,
-        timestamp: Date.now(),
-      });
-      return { ok: true };
-    }),
+    sendMessage: publicProcedure
+      .input(lobbyIdInput.extend(messageInputSchema.shape))
+      .mutation(({ input }) => {
+        const manager = resolveManager(lobbyManager, input.lobbyId);
+        manager.sendMessage({
+          from: input.from,
+          to: input.to,
+          content: input.content,
+          phase: manager.getState().phase,
+          timestamp: Date.now(),
+        });
+        return { ok: true };
+      }),
 
     // Subscriptions
-    onPhaseChange: publicProcedure.subscription(async function* ({ signal }) {
-      let id = 0;
-      const queue: { phase: Phase; gameState: ReturnType<typeof serializeState> }[] = [];
-      let resolve: (() => void) | null = null;
+    onPhaseChange: publicProcedure
+      .input(lobbyIdInput)
+      .subscription(async function* ({ input, signal }) {
+        const manager = resolveManager(lobbyManager, input.lobbyId);
+        let id = 0;
+        const queue: { phase: Phase; gameState: ReturnType<typeof serializeState> }[] = [];
+        let resolve: (() => void) | null = null;
 
-      const listener = () => {
-        queue.push({ phase: manager.getState().phase, gameState: serializeState(manager) });
-        if (resolve) {
-          resolve();
-          resolve = null;
-        }
-      };
-      manager.onPhaseChange(listener);
+        const listener = () => {
+          queue.push({ phase: manager.getState().phase, gameState: serializeState(manager) });
+          if (resolve) {
+            resolve();
+            resolve = null;
+          }
+        };
+        manager.onPhaseChange(listener);
 
-      while (!signal?.aborted) {
-        if (queue.length > 0) {
-          const event = queue.shift()!;
-          yield tracked(String(id++), event);
-        } else {
-          await new Promise<void>((r) => {
-            resolve = r;
-          });
+        while (!signal?.aborted) {
+          if (queue.length > 0) {
+            const event = queue.shift()!;
+            yield tracked(String(id++), event);
+          } else {
+            await new Promise<void>((r) => {
+              resolve = r;
+            });
+          }
         }
-      }
-    }),
+      }),
 
     onMessage: publicProcedure
-      .input(z.object({ power: powerEnum }).optional())
+      .input(lobbyIdInput.extend({ power: powerEnum }).partial({ power: true }))
       .subscription(async function* ({ input, signal }) {
+        const manager = resolveManager(lobbyManager, input.lobbyId);
         let id = 0;
         type Msg = {
           from: string;
