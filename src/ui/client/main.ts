@@ -48,9 +48,7 @@ type WSMessage =
   | { type: 'full_history'; snapshots: PhaseSnapshot[]; gameId: string }
   | { type: 'new_phase'; snapshotIndex: number; snapshot: PhaseSnapshot }
   | { type: 'message'; message: Message }
-  | { type: 'game_end'; result: Record<string, unknown> }
-  | { type: 'game_restarting'; delayMs: number }
-  | { type: 'game_waiting' };
+  | { type: 'game_end'; result: Record<string, unknown> };
 
 interface LobbyInfo {
   id: string;
@@ -607,39 +605,14 @@ function connect(lobbyId: string): void {
         btnNewGame.classList.remove('hidden');
         break;
       }
-
-      case 'game_restarting': {
-        phaseDisplay.textContent = `Restarting in ${Math.round(data.delayMs / 1000)}s...`;
-        break;
-      }
-
-      case 'game_waiting': {
-        phaseDisplay.textContent = 'GAME OVER';
-        btnNewGame.classList.remove('hidden');
-        break;
-      }
     }
   });
 }
 
 // --- New Game Button ---------------------------------------------------------
 
-btnNewGame.addEventListener('click', async () => {
-  if (!confirm('Start a new game? The current game results will be preserved.')) return;
-  btnNewGame.disabled = true;
-  btnNewGame.textContent = 'Starting...';
-  try {
-    const resp = await fetch('/api/new-game', { method: 'POST' });
-    if (!resp.ok) {
-      const body = await resp.json().catch(() => ({ error: 'Unknown error' }));
-      alert(`Failed to start game: ${body.error ?? resp.statusText}`);
-    }
-  } catch (err) {
-    alert(`Network error: ${err}`);
-  }
-  btnNewGame.disabled = false;
-  btnNewGame.textContent = 'New Game';
-  btnNewGame.classList.add('hidden');
+btnNewGame.addEventListener('click', () => {
+  location.hash = '#/';
 });
 
 // --- Back to Lobbies ---------------------------------------------------------

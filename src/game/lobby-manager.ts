@@ -54,7 +54,7 @@ export class LobbyManager {
     return Array.from(this.lobbies.values());
   }
 
-  startLobby(id: string): GameManager {
+  async startLobby(id: string): Promise<GameManager> {
     const lobby = this.lobbies.get(id);
     if (!lobby) throw new Error(`Lobby ${id} not found`);
     if (lobby.status !== 'waiting') throw new Error(`Lobby ${id} is ${lobby.status}, not waiting`);
@@ -74,7 +74,7 @@ export class LobbyManager {
     lobby.status = 'playing';
 
     // Notify server to wire agents and start the game loop
-    if (this._onStart) this._onStart(id, manager);
+    if (this._onStart) await this._onStart(id, manager);
 
     return manager;
   }

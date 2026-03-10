@@ -55,17 +55,17 @@ describe('LobbyManager', () => {
     expect(() => lm.deleteLobby('nonexistent')).toThrow('not found');
   });
 
-  it('deleteLobby throws for playing lobby', () => {
+  it('deleteLobby throws for playing lobby', async () => {
     const lm = new LobbyManager();
     const id = lm.createLobby(DEFAULT_CONFIG);
-    lm.startLobby(id);
+    await lm.startLobby(id);
     expect(() => lm.deleteLobby(id)).toThrow('Cannot delete a playing lobby');
   });
 
-  it('deleteLobby works for finished lobby and calls bus.destroy()', () => {
+  it('deleteLobby works for finished lobby and calls bus.destroy()', async () => {
     const lm = new LobbyManager();
     const id = lm.createLobby(DEFAULT_CONFIG);
-    const manager = lm.startLobby(id);
+    const manager = await lm.startLobby(id);
     const destroySpy = vi.spyOn(manager.bus, 'destroy');
 
     lm.finishLobby(id);
@@ -75,7 +75,7 @@ describe('LobbyManager', () => {
     expect(lm.getLobby(id)).toBeUndefined();
   });
 
-  it('startLobby creates a GameManager with correct config', () => {
+  it('startLobby creates a GameManager with correct config', async () => {
     const lm = new LobbyManager();
     const config: LobbyConfig = {
       ...DEFAULT_CONFIG,
@@ -84,50 +84,49 @@ describe('LobbyManager', () => {
       startYear: 1905,
     };
     const id = lm.createLobby(config);
-    const manager = lm.startLobby(id);
+    const manager = await lm.startLobby(id);
 
     expect(manager).toBeInstanceOf(GameManager);
-    // Verify the manager used the config by checking the game state start year
     const state = manager.getState();
     expect(state.phase.year).toBe(1905);
   });
 
-  it('startLobby changes status to playing', () => {
+  it('startLobby changes status to playing', async () => {
     const lm = new LobbyManager();
     const id = lm.createLobby(DEFAULT_CONFIG);
-    lm.startLobby(id);
+    await lm.startLobby(id);
 
     const lobby = lm.getLobby(id);
     expect(lobby!.status).toBe('playing');
   });
 
-  it('startLobby throws for non-existent lobby', () => {
+  it('startLobby throws for non-existent lobby', async () => {
     const lm = new LobbyManager();
-    expect(() => lm.startLobby('nonexistent')).toThrow('not found');
+    await expect(lm.startLobby('nonexistent')).rejects.toThrow('not found');
   });
 
-  it('startLobby throws for already-playing lobby', () => {
+  it('startLobby throws for already-playing lobby', async () => {
     const lm = new LobbyManager();
     const id = lm.createLobby(DEFAULT_CONFIG);
-    lm.startLobby(id);
-    expect(() => lm.startLobby(id)).toThrow('playing, not waiting');
+    await lm.startLobby(id);
+    await expect(lm.startLobby(id)).rejects.toThrow('playing, not waiting');
   });
 
-  it('startLobby calls onStart handler', () => {
+  it('startLobby calls onStart handler', async () => {
     const lm = new LobbyManager();
     const handler = vi.fn();
     lm.onStart(handler);
 
     const id = lm.createLobby(DEFAULT_CONFIG);
-    const manager = lm.startLobby(id);
+    const manager = await lm.startLobby(id);
 
     expect(handler).toHaveBeenCalledWith(id, manager);
   });
 
-  it('finishLobby changes status to finished', () => {
+  it('finishLobby changes status to finished', async () => {
     const lm = new LobbyManager();
     const id = lm.createLobby(DEFAULT_CONFIG);
-    lm.startLobby(id);
+    await lm.startLobby(id);
     lm.finishLobby(id);
 
     const lobby = lm.getLobby(id);

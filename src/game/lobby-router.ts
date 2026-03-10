@@ -78,8 +78,8 @@ export function createLobbyRouter(lobbyManager: LobbyManager, defaults: LobbyDef
 
     start: publicProcedure
       .input(z.object({ id: z.string() }))
-      .mutation(({ input }) => {
-        lobbyManager.startLobby(input.id);
+      .mutation(async ({ input }) => {
+        await lobbyManager.startLobby(input.id);
         return { ok: true };
       }),
 
