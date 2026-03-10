@@ -64,12 +64,6 @@ const buildOrderSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('Waive') }),
 ]);
 
-const messageInputSchema = z.object({
-  from: powerEnum,
-  to: z.union([powerEnum, z.array(powerEnum), z.literal('Global')]),
-  content: z.string(),
-});
-
 // ── Serialization helpers ──────────────────────────────────────────────
 
 function serializeState(manager: GameManager) {
@@ -152,10 +146,12 @@ export function createGameRouter(lobbyManager: LobbyManager) {
       }),
 
     sendMessage: playerProcedure
-      .input(z.object({
-        to: z.union([powerEnum, z.array(powerEnum), z.literal('Global')]),
-        content: z.string(),
-      }))
+      .input(
+        z.object({
+          to: z.union([powerEnum, z.array(powerEnum), z.literal('Global')]),
+          content: z.string(),
+        }),
+      )
       .mutation(({ ctx, input }) => {
         const manager = resolveManager(lobbyManager, ctx.lobbyId);
         manager.sendMessage({
@@ -169,89 +165,92 @@ export function createGameRouter(lobbyManager: LobbyManager) {
       }),
 
     // Subscriptions
-    onPhaseChange: publicProcedure
-      .input(lobbyIdInput)
-      .subscription(async function* ({ input, signal }) {
-        const manager = resolveManager(lobbyManager, input.lobbyId);
-        let id = 0;
-        const queue: { phase: Phase; gameState: ReturnType<typeof serializeState> }[] = [];
-        let resolve: (() => void) | null = null;
+    onPhaseChange: publicProcedure.input(lobbyIdInput).subscription(async function* ({
+      input,
+      signal,
+    }) {
+      const manager = resolveManager(lobbyManager, input.lobbyId);
+      let id = 0;
+      const queue: { phase: Phase; gameState: ReturnType<typeof serializeState> }[] = [];
+      let resolve: (() => void) | null = null;
 
-        const listener = () => {
-          queue.push({ phase: manager.getState().phase, gameState: serializeState(manager) });
-          if (resolve) {
-            resolve();
-            resolve = null;
-          }
-        };
-        manager.onPhaseChange(listener);
-
-        while (!signal?.aborted) {
-          if (queue.length > 0) {
-            const event = queue.shift()!;
-            yield tracked(String(id++), event);
-          } else {
-            await new Promise<void>((r) => {
-              resolve = r;
-            });
-          }
+      const listener = () => {
+        queue.push({ phase: manager.getState().phase, gameState: serializeState(manager) });
+        if (resolve) {
+          resolve();
+          resolve = null;
         }
-      }),
+      };
+      manager.onPhaseChange(listener);
 
-    onMessage: publicProcedure
-      .input(lobbyIdInput)
-      .subscription(async function* ({ input, signal, ctx }) {
-        const manager = resolveManager(lobbyManager, input.lobbyId);
-        // Resolve power from token if present
-        let filterPower: Power | undefined;
-        if (ctx.token) {
-          const identity = lobbyManager.validateToken(ctx.token);
-          if (identity && 'power' in identity) {
-            filterPower = identity.power;
-          }
+      while (!signal?.aborted) {
+        if (queue.length > 0) {
+          const event = queue.shift()!;
+          yield tracked(String(id++), event);
+        } else {
+          await new Promise<void>((r) => {
+            resolve = r;
+          });
         }
+      }
+    }),
 
-        let id = 0;
-        type Msg = {
-          from: string;
-          to: string | string[];
-          content: string;
-          phase: Phase;
-          timestamp: number;
-        };
-        const queue: Msg[] = [];
-        let resolve: (() => void) | null = null;
-
-        manager.onMessage((message) => {
-          if (filterPower) {
-            // Authenticated: receive messages addressed to this power or broadcast
-            const isRecipient =
-              message.to === 'Global' ||
-              message.to === filterPower ||
-              (Array.isArray(message.to) && message.to.includes(filterPower));
-            if (!isRecipient) return;
-          } else {
-            // Spectator: only broadcast messages
-            if (message.to !== 'Global') return;
-          }
-          queue.push(message);
-          if (resolve) {
-            resolve();
-            resolve = null;
-          }
-        });
-
-        while (!signal?.aborted) {
-          if (queue.length > 0) {
-            const msg = queue.shift()!;
-            yield tracked(String(id++), msg);
-          } else {
-            await new Promise<void>((r) => {
-              resolve = r;
-            });
-          }
+    onMessage: publicProcedure.input(lobbyIdInput).subscription(async function* ({
+      input,
+      signal,
+      ctx,
+    }) {
+      const manager = resolveManager(lobbyManager, input.lobbyId);
+      // Resolve power from token if present
+      let filterPower: Power | undefined;
+      if (ctx.token) {
+        const identity = lobbyManager.validateToken(ctx.token);
+        if (identity && 'power' in identity) {
+          filterPower = identity.power;
         }
-      }),
+      }
+
+      let id = 0;
+      type Msg = {
+        from: string;
+        to: string | string[];
+        content: string;
+        phase: Phase;
+        timestamp: number;
+      };
+      const queue: Msg[] = [];
+      let resolve: (() => void) | null = null;
+
+      manager.onMessage((message) => {
+        if (filterPower) {
+          // Authenticated: receive messages addressed to this power or broadcast
+          const isRecipient =
+            message.to === 'Global' ||
+            message.to === filterPower ||
+            (Array.isArray(message.to) && message.to.includes(filterPower));
+          if (!isRecipient) return;
+        } else {
+          // Spectator: only broadcast messages
+          if (message.to !== 'Global') return;
+        }
+        queue.push(message);
+        if (resolve) {
+          resolve();
+          resolve = null;
+        }
+      });
+
+      while (!signal?.aborted) {
+        if (queue.length > 0) {
+          const msg = queue.shift()!;
+          yield tracked(String(id++), msg);
+        } else {
+          await new Promise<void>((r) => {
+            resolve = r;
+          });
+        }
+      }
+    }),
   });
 
   return gameRouter;

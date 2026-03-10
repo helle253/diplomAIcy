@@ -10,8 +10,8 @@ import { WebSocket, WebSocketServer } from 'ws';
 
 import { connectAgent } from '../agent/adapter.js';
 import { AnthropicClient } from '../agent/llm/anthropic-client.js';
-import { getAgentConfig, loadConfig, toLLMClientConfig } from '../agent/llm/config.js';
 import type { GameConfig } from '../agent/llm/config.js';
+import { getAgentConfig, loadConfig, toLLMClientConfig } from '../agent/llm/config.js';
 import { LLMAgent } from '../agent/llm/llm-agent.js';
 import { LLMClient, OpenAICompatibleClient } from '../agent/llm/llm-client.js';
 import { RandomAgent } from '../agent/random.js';
@@ -101,7 +101,14 @@ function startServer(): void {
   const pressDelayMin = parseInt(process.env.PRESS_DELAY_MIN || '0');
   const pressDelayMax = parseInt(process.env.PRESS_DELAY_MAX || '0');
   const defaultAgentConfig: GameConfig = loadConfig();
-  const defaults = { maxYears, phaseDelayMs, remoteTimeoutMs, pressDelayMin, pressDelayMax, agentConfig: defaultAgentConfig };
+  const defaults = {
+    maxYears,
+    phaseDelayMs,
+    remoteTimeoutMs,
+    pressDelayMin,
+    pressDelayMax,
+    agentConfig: defaultAgentConfig,
+  };
 
   // Create LobbyManager
   const lobbyManager = new LobbyManager();
@@ -186,28 +193,31 @@ function startServer(): void {
     logger.info(`Starting new Diplomacy game (${gameId}) for lobby ${id}...`);
 
     // Run game loop asynchronously (non-blocking)
-    manager.run().then((result) => {
-      storage.completeGame(gameId, result);
-      broadcastToLobby(id, {
-        type: 'game_end',
-        result: {
-          ...result,
-          supplyCenters: Object.fromEntries(result.supplyCenters),
-        },
+    manager
+      .run()
+      .then((result) => {
+        storage.completeGame(gameId, result);
+        broadcastToLobby(id, {
+          type: 'game_end',
+          result: {
+            ...result,
+            supplyCenters: Object.fromEntries(result.supplyCenters),
+          },
+        });
+        lobbyManager.finishLobby(id);
+        cleanupLobbyRuntime(id);
+        logger.info(
+          result.winner
+            ? `Game over! ${result.winner} wins in ${result.year}.`
+            : `Game ended in a draw in year ${result.year}.`,
+        );
+      })
+      .catch((err) => {
+        storage.failGame(gameId);
+        lobbyManager.finishLobby(id);
+        cleanupLobbyRuntime(id);
+        logger.error('Game error:', err);
       });
-      lobbyManager.finishLobby(id);
-      cleanupLobbyRuntime(id);
-      logger.info(
-        result.winner
-          ? `Game over! ${result.winner} wins in ${result.year}.`
-          : `Game ended in a draw in year ${result.year}.`,
-      );
-    }).catch((err) => {
-      storage.failGame(gameId);
-      lobbyManager.finishLobby(id);
-      cleanupLobbyRuntime(id);
-      logger.error('Game error:', err);
-    });
   });
 
   // Create merged AppRouter
@@ -220,10 +230,7 @@ function startServer(): void {
   app.use(express.static(publicDir));
 
   // Mount tRPC router
-  app.use(
-    '/trpc',
-    createExpressMiddleware({ router: appRouter, createContext }),
-  );
+  app.use('/trpc', createExpressMiddleware({ router: appRouter, createContext }));
 
   // WebSocket with noServer: true
   const wss = new WebSocketServer({ noServer: true });
@@ -266,7 +273,9 @@ function startServer(): void {
     }
 
     runtime.clients.set(ws, clientPower);
-    logger.info(`Client connected to lobby ${lobbyId}${clientPower ? ` as ${clientPower}` : ' (spectator)'}`);
+    logger.info(
+      `Client connected to lobby ${lobbyId}${clientPower ? ` as ${clientPower}` : ' (spectator)'}`,
+    );
 
     // Filter press messages in full_history per connection's auth level
     const filteredSnapshots = runtime.phaseSnapshots.map((s) => ({
@@ -274,8 +283,11 @@ function startServer(): void {
       messages: s.messages.filter((msg) => {
         if (msg.to === 'Global') return true;
         if (!clientPower) return false;
-        return msg.to === clientPower || msg.from === clientPower ||
-          (Array.isArray(msg.to) && msg.to.includes(clientPower));
+        return (
+          msg.to === clientPower ||
+          msg.from === clientPower ||
+          (Array.isArray(msg.to) && msg.to.includes(clientPower))
+        );
       }),
     }));
 
@@ -309,7 +321,9 @@ function startServer(): void {
 
 startServer();
 
-export type AppRouter = ReturnType<typeof router<{
-  lobby: ReturnType<typeof createLobbyRouter>;
-  game: ReturnType<typeof createGameRouter>;
-}>>;
+export type AppRouter = ReturnType<
+  typeof router<{
+    lobby: ReturnType<typeof createLobbyRouter>;
+    game: ReturnType<typeof createGameRouter>;
+  }>
+>;

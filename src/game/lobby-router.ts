@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 import type { GameConfig } from '../agent/llm/config.js';
 import { Power } from '../engine/types.js';
-import type { LobbyManager, Lobby } from './lobby-manager.js';
+import type { Lobby, LobbyManager } from './lobby-manager.js';
 import { createProtectedProcedures, publicProcedure, router } from './trpc.js';
 
 const powerEnum = z.enum([
@@ -74,22 +74,18 @@ export function createLobbyRouter(lobbyManager: LobbyManager, defaults: LobbyDef
       return lobbyManager.listLobbies().map(serializeLobby);
     }),
 
-    get: publicProcedure
-      .input(z.object({ id: z.string() }))
-      .query(({ input }) => {
-        const lobby = lobbyManager.getLobby(input.id);
-        if (!lobby) throw new Error(`Lobby ${input.id} not found`);
-        return {
-          ...serializeLobby(lobby),
-          config: lobby.config,
-        };
-      }),
+    get: publicProcedure.input(z.object({ id: z.string() })).query(({ input }) => {
+      const lobby = lobbyManager.getLobby(input.id);
+      if (!lobby) throw new Error(`Lobby ${input.id} not found`);
+      return {
+        ...serializeLobby(lobby),
+        config: lobby.config,
+      };
+    }),
 
-    create: publicProcedure
-      .input(lobbyConfigSchema)
-      .mutation(({ input }) => {
-        return lobbyManager.createLobby(input);
-      }),
+    create: publicProcedure.input(lobbyConfigSchema).mutation(({ input }) => {
+      return lobbyManager.createLobby(input);
+    }),
 
     join: publicProcedure
       .input(z.object({ lobbyId: z.string(), power: powerEnum }))
@@ -132,12 +128,10 @@ export function createLobbyRouter(lobbyManager: LobbyManager, defaults: LobbyDef
       return { ok: true };
     }),
 
-    kick: creatorProcedure
-      .input(z.object({ power: powerEnum }))
-      .mutation(({ ctx, input }) => {
-        lobbyManager.kickPlayer(ctx.lobbyId, input.power);
-        return { ok: true };
-      }),
+    kick: creatorProcedure.input(z.object({ power: powerEnum })).mutation(({ ctx, input }) => {
+      lobbyManager.kickPlayer(ctx.lobbyId, input.power);
+      return { ok: true };
+    }),
 
     getDefaults: publicProcedure.query(() => ({
       maxYears: defaults.maxYears,
