@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { Power } from '../engine/types.js';
 import { LobbyConfig, LobbyManager } from './lobby-manager.js';
 import { GameManager } from './manager.js';
 
@@ -18,7 +19,7 @@ const DEFAULT_CONFIG: LobbyConfig = {
 describe('LobbyManager', () => {
   it('createLobby creates a waiting lobby with correct config', () => {
     const lm = new LobbyManager();
-    const id = lm.createLobby(DEFAULT_CONFIG);
+    const { lobbyId: id } = lm.createLobby(DEFAULT_CONFIG);
     const lobby = lm.getLobby(id);
 
     expect(lobby).toBeDefined();
@@ -27,6 +28,16 @@ describe('LobbyManager', () => {
     expect(lobby!.manager).toBeNull();
     expect(lobby!.id).toBe(id);
     expect(typeof lobby!.createdAt).toBe('number');
+  });
+
+  it('createLobby returns lobbyId and creatorToken', () => {
+    const lm = new LobbyManager();
+    const result = lm.createLobby(DEFAULT_CONFIG);
+    expect(result).toHaveProperty('lobbyId');
+    expect(result).toHaveProperty('creatorToken');
+    expect(typeof result.lobbyId).toBe('string');
+    expect(typeof result.creatorToken).toBe('string');
+    expect(result.creatorToken.length).toBeGreaterThan(0);
   });
 
   it('listLobbies returns all lobbies', () => {
@@ -45,7 +56,7 @@ describe('LobbyManager', () => {
 
   it('deleteLobby removes a waiting lobby', () => {
     const lm = new LobbyManager();
-    const id = lm.createLobby(DEFAULT_CONFIG);
+    const { lobbyId: id } = lm.createLobby(DEFAULT_CONFIG);
     lm.deleteLobby(id);
     expect(lm.getLobby(id)).toBeUndefined();
   });
@@ -57,14 +68,14 @@ describe('LobbyManager', () => {
 
   it('deleteLobby throws for playing lobby', async () => {
     const lm = new LobbyManager();
-    const id = lm.createLobby(DEFAULT_CONFIG);
+    const { lobbyId: id } = lm.createLobby(DEFAULT_CONFIG);
     await lm.startLobby(id);
     expect(() => lm.deleteLobby(id)).toThrow('Cannot delete a playing lobby');
   });
 
   it('deleteLobby works for finished lobby and calls bus.destroy()', async () => {
     const lm = new LobbyManager();
-    const id = lm.createLobby(DEFAULT_CONFIG);
+    const { lobbyId: id } = lm.createLobby(DEFAULT_CONFIG);
     const manager = await lm.startLobby(id);
     const destroySpy = vi.spyOn(manager.bus, 'destroy');
 
@@ -83,7 +94,7 @@ describe('LobbyManager', () => {
       victoryThreshold: 12,
       startYear: 1905,
     };
-    const id = lm.createLobby(config);
+    const { lobbyId: id } = lm.createLobby(config);
     const manager = await lm.startLobby(id);
 
     expect(manager).toBeInstanceOf(GameManager);
@@ -93,7 +104,7 @@ describe('LobbyManager', () => {
 
   it('startLobby changes status to playing', async () => {
     const lm = new LobbyManager();
-    const id = lm.createLobby(DEFAULT_CONFIG);
+    const { lobbyId: id } = lm.createLobby(DEFAULT_CONFIG);
     await lm.startLobby(id);
 
     const lobby = lm.getLobby(id);
@@ -107,7 +118,7 @@ describe('LobbyManager', () => {
 
   it('startLobby throws for already-playing lobby', async () => {
     const lm = new LobbyManager();
-    const id = lm.createLobby(DEFAULT_CONFIG);
+    const { lobbyId: id } = lm.createLobby(DEFAULT_CONFIG);
     await lm.startLobby(id);
     await expect(lm.startLobby(id)).rejects.toThrow('playing, not waiting');
   });
@@ -117,7 +128,7 @@ describe('LobbyManager', () => {
     const handler = vi.fn();
     lm.onStart(handler);
 
-    const id = lm.createLobby(DEFAULT_CONFIG);
+    const { lobbyId: id } = lm.createLobby(DEFAULT_CONFIG);
     const manager = await lm.startLobby(id);
 
     expect(handler).toHaveBeenCalledWith(id, manager);
@@ -125,11 +136,48 @@ describe('LobbyManager', () => {
 
   it('finishLobby changes status to finished', async () => {
     const lm = new LobbyManager();
-    const id = lm.createLobby(DEFAULT_CONFIG);
+    const { lobbyId: id } = lm.createLobby(DEFAULT_CONFIG);
     await lm.startLobby(id);
     lm.finishLobby(id);
 
     const lobby = lm.getLobby(id);
     expect(lobby!.status).toBe('finished');
+  });
+
+  describe('joinLobby', () => {
+    it('returns a seatToken for a valid join', () => {
+      const lm = new LobbyManager();
+      const { lobbyId } = lm.createLobby(DEFAULT_CONFIG);
+      const result = lm.joinLobby(lobbyId, Power.England);
+      expect(result).toHaveProperty('seatToken');
+      expect(typeof result.seatToken).toBe('string');
+    });
+
+    it('records the seat in the lobby', () => {
+      const lm = new LobbyManager();
+      const { lobbyId } = lm.createLobby(DEFAULT_CONFIG);
+      lm.joinLobby(lobbyId, Power.England);
+      const lobby = lm.getLobby(lobbyId)!;
+      expect(lobby.seats.has(Power.England)).toBe(true);
+    });
+
+    it('throws if power already claimed', () => {
+      const lm = new LobbyManager();
+      const { lobbyId } = lm.createLobby(DEFAULT_CONFIG);
+      lm.joinLobby(lobbyId, Power.England);
+      expect(() => lm.joinLobby(lobbyId, Power.England)).toThrow('already claimed');
+    });
+
+    it('throws if lobby not found', () => {
+      const lm = new LobbyManager();
+      expect(() => lm.joinLobby('nope', Power.England)).toThrow('not found');
+    });
+
+    it('throws if lobby is not waiting', async () => {
+      const lm = new LobbyManager();
+      const { lobbyId } = lm.createLobby(DEFAULT_CONFIG);
+      await lm.startLobby(lobbyId);
+      expect(() => lm.joinLobby(lobbyId, Power.England)).toThrow('not accepting players');
+    });
   });
 });
