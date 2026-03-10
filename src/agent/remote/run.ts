@@ -15,11 +15,12 @@ function isPower(value: string): value is Power {
   return VALID_POWERS.has(value);
 }
 
-function parseArgs(): { power: Power; server: string; type?: string } {
+function parseArgs(): { power: Power; server: string; type?: string; lobbyId: string } {
   const args = process.argv.slice(2);
   let power: string | undefined;
   let server = process.env.GAME_SERVER ?? 'http://localhost:3000/trpc';
   let type: string | undefined;
+  let lobbyId: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--power' && args[i + 1]) {
@@ -28,18 +29,28 @@ function parseArgs(): { power: Power; server: string; type?: string } {
       server = args[++i];
     } else if (args[i] === '--type' && args[i + 1]) {
       type = args[++i];
+    } else if (args[i] === '--lobby' && args[i + 1]) {
+      lobbyId = args[++i];
     }
   }
 
   if (!power || !isPower(power)) {
     console.error(
-      `Usage: node run.js --power <Power> [--server <url>] [--type random|llm]\n` +
+      `Usage: node run.js --power <Power> --lobby <lobbyId> [--server <url>] [--type random|llm]\n` +
         `  Valid powers: ${[...VALID_POWERS].join(', ')}`,
     );
     process.exit(1);
   }
 
-  return { power, server, type };
+  if (!lobbyId) {
+    console.error(
+      `Usage: node run.js --power <Power> --lobby <lobbyId> [--server <url>] [--type random|llm]\n` +
+        `  --lobby is required`,
+    );
+    process.exit(1);
+  }
+
+  return { power, server, type, lobbyId };
 }
 
 function createLLMClient(cfg: AgentConfig): LLMClient {
@@ -76,7 +87,7 @@ function resolveAgentConfig(power: Power, typeOverride?: string): AgentConfig {
 }
 
 async function main() {
-  const { power, server, type } = parseArgs();
+  const { power, server, type, lobbyId } = parseArgs();
   const cfg = resolveAgentConfig(power, type);
 
   let agent;
@@ -99,7 +110,7 @@ async function main() {
   }
 
   const trpcClient = createGameClient(server);
-  await connectRemoteAgent(agent, trpcClient);
+  await connectRemoteAgent(agent, trpcClient, lobbyId);
 
   // Keep the process alive
   await new Promise(() => {});

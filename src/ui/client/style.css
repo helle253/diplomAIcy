@@ -140,6 +140,80 @@
   stroke-width: 1;
 }
 
+/* ── Lobby Browser ── */
+
+.lobby-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.75rem;
+}
+
+.lobby-card {
+  background-color: #16213e;
+  border: 1px solid #0f3460;
+  border-radius: 0.375rem;
+  padding: 0.75rem 1rem;
+}
+
+.lobby-card-clickable {
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.lobby-card-clickable:hover {
+  border-color: #3a5a90;
+}
+
+.lobby-start-btn {
+  display: inline-block;
+  background-color: #e94560;
+  color: #fff;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.25rem;
+  border: none;
+  cursor: pointer;
+}
+
+.lobby-start-btn:hover {
+  background-color: #d63851;
+}
+
+.lobby-start-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ── Lobby Form ── */
+
+.lobby-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.lobby-label {
+  font-size: 0.6875rem;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.lobby-input {
+  background-color: #111a30;
+  border: 1px solid #0f3460;
+  border-radius: 0.25rem;
+  padding: 0.375rem 0.5rem;
+  font-size: 0.8125rem;
+  color: #e5e7eb;
+  outline: none;
+}
+
+.lobby-input:focus {
+  border-color: #3a5a90;
+}
+
 /* ── Custom Scrollbar (Dark Theme) ── */
 
 ::-webkit-scrollbar {

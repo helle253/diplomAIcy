@@ -4,20 +4,24 @@ import { createExpressMiddleware } from '@trpc/server/adapters/express';
 import express from 'express';
 import { createServer } from 'http';
 import { dirname, join } from 'path';
+import { parse as parseUrl } from 'url';
 import { fileURLToPath } from 'url';
 import { WebSocket, WebSocketServer } from 'ws';
 
 import { connectAgent } from '../agent/adapter.js';
 import { AnthropicClient } from '../agent/llm/anthropic-client.js';
 import { getAgentConfig, loadConfig, toLLMClientConfig } from '../agent/llm/config.js';
+import type { GameConfig } from '../agent/llm/config.js';
 import { LLMAgent } from '../agent/llm/llm-agent.js';
 import { LLMClient, OpenAICompatibleClient } from '../agent/llm/llm-client.js';
 import { RandomAgent } from '../agent/random.js';
-import { GameState, Message, Power } from '../engine/types.js';
+import { Message, Power } from '../engine/types.js';
+import { LobbyManager } from '../game/lobby-manager.js';
+import { createLobbyRouter } from '../game/lobby-router.js';
 import type { GameEvent, TurnRecord } from '../game/manager.js';
-import { GameManager } from '../game/manager.js';
 import { createGameRouter } from '../game/router.js';
 import { GameStorage } from '../game/storage.js';
+import { router } from '../game/trpc.js';
 import { logger } from '../util/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -36,11 +40,7 @@ const ALL_POWERS: Power[] = [
   Power.Turkey,
 ];
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function serializeState(state: GameState) {
+function serializeState(state: import('../engine/types.js').GameState) {
   return {
     ...state,
     supplyCenters: Object.fromEntries(state.supplyCenters),
@@ -55,219 +55,206 @@ interface PhaseSnapshot {
   messages: Message[]; // cumulative messages up to this phase
 }
 
-let currentManager: GameManager | null = null;
-let currentGameId: string | null = null;
-let phaseSnapshots: PhaseSnapshot[] = [];
-let allMessages: Message[] = [];
+// Per-lobby runtime state
+interface LobbyRuntime {
+  phaseSnapshots: PhaseSnapshot[];
+  allMessages: Message[];
+  gameId: string;
+  clients: Set<WebSocket>;
+}
 
-function broadcast(wss: WebSocketServer, data: unknown): void {
+const lobbyRuntimes = new Map<string, LobbyRuntime>();
+
+function cleanupLobbyRuntime(lobbyId: string): void {
+  const runtime = lobbyRuntimes.get(lobbyId);
+  if (!runtime) return;
+  for (const client of runtime.clients) {
+    client.close();
+  }
+  lobbyRuntimes.delete(lobbyId);
+}
+
+function broadcastToLobby(lobbyId: string, data: unknown): void {
+  const runtime = lobbyRuntimes.get(lobbyId);
+  if (!runtime) return;
   const message = JSON.stringify(data);
-  for (const client of wss.clients) {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(message);
-    }
-  }
-}
-
-let gameRunning = false;
-let startGameTrigger: (() => void) | null = null;
-
-async function startGame(wss: WebSocketServer, storage: GameStorage): Promise<void> {
-  const maxYears = parseInt(process.env.MAX_YEARS || '10');
-  const phaseDelayMs = parseInt(process.env.PHASE_DELAY || '600000');
-  const remoteTimeoutMs = parseInt(process.env.REMOTE_TIMEOUT || '0');
-  const pressDelayMin = parseInt(process.env.PRESS_DELAY_MIN || '0');
-  const pressDelayMax = parseInt(process.env.PRESS_DELAY_MAX || '0');
-  const manager = new GameManager(maxYears, phaseDelayMs, remoteTimeoutMs, pressDelayMin, pressDelayMax);
-  currentManager = manager;
-  phaseSnapshots = [];
-  allMessages = [];
-  gameRunning = true;
-
-  // Create game record in SQLite
-  const gameId = storage.createGame();
-  currentGameId = gameId;
-
-  // Create and connect agents
-  const gameConfig = loadConfig();
-  for (const power of ALL_POWERS) {
-    const agentCfg = getAgentConfig(gameConfig, power);
-    if (agentCfg.type === 'remote') {
-      logger.info(`  ${power}: Remote (waiting for connection)`);
-      continue;
-    }
-    let agent;
-    if (agentCfg.type === 'llm') {
-      const clientConfig = toLLMClientConfig(agentCfg);
-      const client: LLMClient =
-        agentCfg.provider === 'anthropic'
-          ? new AnthropicClient(clientConfig)
-          : new OpenAICompatibleClient(clientConfig);
-      agent = new LLMAgent(power, client);
-      logger.info(`  ${power}: LLM (${agentCfg.provider ?? 'openai'} / ${clientConfig.model})`);
-    } else {
-      agent = new RandomAgent(power);
-      logger.info(`  ${power}: Random`);
-    }
-
-    // Initialize and connect via adapter
-    await agent.initialize(manager.getState());
-    connectAgent(agent, manager);
-  }
-
-  // Persist and broadcast messages in real-time
-  manager.onMessage((message: Message) => {
-    message.gameId = gameId;
-    storage.saveMessage(gameId, message);
-    allMessages.push(message);
-    broadcast(wss, { type: 'message', message });
-  });
-
-  manager.onEvent((event: GameEvent) => {
-    // Persist turn records
-    if (event.turnRecord) {
-      storage.saveTurnRecord(gameId, event.turnRecord);
-    }
-
-    const snapshot: PhaseSnapshot = {
-      phase: event.phase,
-      gameState: serializeState(event.gameState),
-      turnRecord: event.turnRecord,
-      messages: [...allMessages],
-    };
-    phaseSnapshots.push(snapshot);
-
-    broadcast(wss, {
-      type: 'new_phase',
-      snapshotIndex: phaseSnapshots.length - 1,
-      snapshot,
-    });
-  });
-
-  logger.info(`Starting new Diplomacy game (${gameId})...`);
-
-  try {
-    const result = await manager.run();
-    storage.completeGame(gameId, result);
-    broadcast(wss, {
-      type: 'game_end',
-      result: {
-        ...result,
-        supplyCenters: Object.fromEntries(result.supplyCenters),
-      },
-    });
-    logger.info(
-      result.winner
-        ? `Game over! ${result.winner} wins in ${result.year}.`
-        : `Game ended in a draw in year ${result.year}.`,
-    );
-  } catch (err) {
-    storage.failGame(gameId);
-    logger.error('Game error:', err);
-  }
-
-  gameRunning = false;
-  broadcast(wss, { type: 'game_waiting' });
-  logger.info('Game finished. Waiting for new game request...');
-}
-
-async function runGameLoop(wss: WebSocketServer, storage: GameStorage): Promise<void> {
-  // Auto-start the first game
-  await startGame(wss, storage);
-
-  // Then wait for manual triggers
-  while (true) {
-    await new Promise<void>((resolve) => {
-      startGameTrigger = resolve;
-    });
-    startGameTrigger = null;
-    await startGame(wss, storage);
+  for (const client of runtime.clients) {
+    if (client.readyState === WebSocket.OPEN) client.send(message);
   }
 }
 
 function startServer(): void {
   const app = express();
   const server = createServer(app);
-  const wss = new WebSocketServer({ server, path: '/ws' });
   const storage = new GameStorage(DB_PATH);
+
+  // Load defaults from env vars + config file
+  const maxYears = parseInt(process.env.MAX_YEARS || '10');
+  const phaseDelayMs = parseInt(process.env.PHASE_DELAY || '600000');
+  const remoteTimeoutMs = parseInt(process.env.REMOTE_TIMEOUT || '0');
+  const pressDelayMin = parseInt(process.env.PRESS_DELAY_MIN || '0');
+  const pressDelayMax = parseInt(process.env.PRESS_DELAY_MAX || '0');
+  const defaultAgentConfig: GameConfig = loadConfig();
+  const defaults = { maxYears, phaseDelayMs, remoteTimeoutMs, pressDelayMin, pressDelayMax, agentConfig: defaultAgentConfig };
+
+  // Create LobbyManager
+  const lobbyManager = new LobbyManager();
+
+  // Register onStart callback to wire agents and game events
+  lobbyManager.onStart(async (id, manager) => {
+    const lobby = lobbyManager.getLobby(id)!;
+
+    // Create game record in SQLite
+    const gameId = storage.createGame();
+
+    // Create LobbyRuntime
+    const runtime: LobbyRuntime = {
+      phaseSnapshots: [],
+      allMessages: [],
+      gameId,
+      clients: new Set(),
+    };
+    lobbyRuntimes.set(id, runtime);
+
+    // Wire agents
+    for (const power of ALL_POWERS) {
+      const agentCfg = getAgentConfig(lobby.config.agentConfig, power);
+      if (agentCfg.type === 'remote') {
+        logger.info(`  ${power}: Remote (waiting for connection)`);
+        continue;
+      }
+      let agent;
+      if (agentCfg.type === 'llm') {
+        const clientConfig = toLLMClientConfig(agentCfg);
+        const client: LLMClient =
+          agentCfg.provider === 'anthropic'
+            ? new AnthropicClient(clientConfig)
+            : new OpenAICompatibleClient(clientConfig);
+        agent = new LLMAgent(power, client);
+        logger.info(`  ${power}: LLM (${agentCfg.provider ?? 'openai'} / ${clientConfig.model})`);
+      } else {
+        agent = new RandomAgent(power);
+        logger.info(`  ${power}: Random`);
+      }
+
+      await agent.initialize(manager.getState());
+      connectAgent(agent, manager);
+    }
+
+    // Persist and broadcast messages in real-time
+    manager.onMessage((message: Message) => {
+      message.gameId = gameId;
+      storage.saveMessage(gameId, message);
+      runtime.allMessages.push(message);
+      broadcastToLobby(id, { type: 'message', message });
+    });
+
+    // Wire phase events for snapshots + broadcast
+    manager.onEvent((event: GameEvent) => {
+      if (event.turnRecord) {
+        storage.saveTurnRecord(gameId, event.turnRecord);
+      }
+
+      const snapshot: PhaseSnapshot = {
+        phase: event.phase,
+        gameState: serializeState(event.gameState),
+        turnRecord: event.turnRecord,
+        messages: [...runtime.allMessages],
+      };
+      runtime.phaseSnapshots.push(snapshot);
+
+      broadcastToLobby(id, {
+        type: 'new_phase',
+        snapshotIndex: runtime.phaseSnapshots.length - 1,
+        snapshot,
+      });
+    });
+
+    logger.info(`Starting new Diplomacy game (${gameId}) for lobby ${id}...`);
+
+    // Run game loop asynchronously (non-blocking)
+    manager.run().then((result) => {
+      storage.completeGame(gameId, result);
+      broadcastToLobby(id, {
+        type: 'game_end',
+        result: {
+          ...result,
+          supplyCenters: Object.fromEntries(result.supplyCenters),
+        },
+      });
+      lobbyManager.finishLobby(id);
+      cleanupLobbyRuntime(id);
+      logger.info(
+        result.winner
+          ? `Game over! ${result.winner} wins in ${result.year}.`
+          : `Game ended in a draw in year ${result.year}.`,
+      );
+    }).catch((err) => {
+      storage.failGame(gameId);
+      lobbyManager.finishLobby(id);
+      cleanupLobbyRuntime(id);
+      logger.error('Game error:', err);
+    });
+  });
+
+  // Create merged AppRouter
+  const lobbyRouter = createLobbyRouter(lobbyManager, defaults);
+  const gameRouter = createGameRouter(lobbyManager);
+  const appRouter = router({ lobby: lobbyRouter, game: gameRouter });
 
   // Serve static files from Vite build output
   const publicDir = join(__dirname, 'public');
   app.use(express.static(publicDir));
 
-  // REST endpoints
-  app.get('/api/state', (_req, res) => {
-    if (currentManager) {
-      res.json(serializeState(currentManager.getState()));
-    } else {
-      res.status(503).json({ error: 'No game in progress' });
+  // Mount tRPC router
+  app.use(
+    '/trpc',
+    createExpressMiddleware({ router: appRouter }),
+  );
+
+  // WebSocket with noServer: true
+  const wss = new WebSocketServer({ noServer: true });
+
+  server.on('upgrade', (request, socket, head) => {
+    const { pathname } = parseUrl(request.url || '');
+    const match = pathname?.match(/^\/ws\/(.+)$/);
+    if (!match) {
+      socket.destroy();
+      return;
     }
-  });
-
-  app.get('/api/snapshots', (_req, res) => {
-    res.json(phaseSnapshots);
-  });
-
-  app.get('/api/games', (_req, res) => {
-    const games = storage.listGames();
-    res.json({
-      liveGameId: currentGameId,
-      games,
+    const lobbyId = match[1];
+    const lobby = lobbyManager.getLobby(lobbyId);
+    if (!lobby || lobby.status === 'waiting') {
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit('connection', ws, request, lobbyId);
     });
   });
 
-  app.get('/api/games/:id/messages', (req, res) => {
-    const power = req.query.power as Power | undefined;
-    const messages = storage.getMessages(req.params.id, { power });
-    res.json(messages);
-  });
-
-  app.get('/api/games/:id/turns', (req, res) => {
-    const turns = storage.getTurnRecords(req.params.id);
-    res.json(turns);
-  });
-
-  app.post('/api/new-game', (_req, res) => {
-    if (gameRunning) {
-      res.status(409).json({ error: 'A game is already in progress' });
+  wss.on('connection', (ws: WebSocket, _request: unknown, lobbyId: string) => {
+    const runtime = lobbyRuntimes.get(lobbyId);
+    if (!runtime) {
+      ws.close();
       return;
     }
-    if (startGameTrigger) {
-      startGameTrigger();
-      res.json({ status: 'starting' });
-    } else {
-      res.status(503).json({ error: 'Server not ready' });
-    }
-  });
 
-  // Mount tRPC router (lazily bound to current game manager)
-  app.use(
-    '/trpc',
-    (req, res, next) => {
-      if (!currentManager) {
-        res.status(503).json({ error: 'No game in progress' });
-        return;
-      }
-      const gameRouter = createGameRouter(currentManager);
-      createExpressMiddleware({ router: gameRouter })(req, res, next);
-    },
-  );
-
-  // WebSocket connection handler
-  wss.on('connection', (ws: WebSocket) => {
-    logger.info('Client connected');
+    runtime.clients.add(ws);
+    logger.info(`Client connected to lobby ${lobbyId}`);
 
     // Send all accumulated snapshots on connect so client can build slider
     ws.send(
       JSON.stringify({
         type: 'full_history',
-        snapshots: phaseSnapshots,
-        gameId: currentGameId,
+        snapshots: runtime.phaseSnapshots,
+        gameId: runtime.gameId,
       }),
     );
 
     ws.on('close', () => {
-      logger.info('Client disconnected');
+      runtime.clients.delete(ws);
+      logger.info(`Client disconnected from lobby ${lobbyId}`);
     });
   });
 
@@ -283,9 +270,11 @@ function startServer(): void {
     storage.close();
     process.exit(0);
   });
-
-  // Start game loop (runs in background)
-  runGameLoop(wss, storage);
 }
 
 startServer();
+
+export type AppRouter = ReturnType<typeof router<{
+  lobby: ReturnType<typeof createLobbyRouter>;
+  game: ReturnType<typeof createGameRouter>;
+}>>;

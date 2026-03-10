@@ -114,7 +114,19 @@ export async function startTestServer(snapshots: TestSnapshot[]): Promise<TestSe
   app.use(express.static(PUBLIC_DIR));
 
   const server = createServer(app);
-  const wss = new WebSocketServer({ server, path: '/ws' });
+  const wss = new WebSocketServer({ noServer: true });
+
+  // Accept WebSocket upgrades at /ws/:lobbyId (any lobbyId)
+  server.on('upgrade', (request, socket, head) => {
+    const { pathname } = new URL(request.url || '', 'http://localhost');
+    if (pathname?.startsWith('/ws/')) {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit('connection', ws);
+      });
+    } else {
+      socket.destroy();
+    }
+  });
 
   let currentSnapshots = [...snapshots];
 
@@ -147,7 +159,7 @@ export async function startTestServer(snapshots: TestSnapshot[]): Promise<TestSe
       const addr = server.address();
       const port = typeof addr === 'object' && addr ? addr.port : 0;
       resolve({
-        url: `http://localhost:${port}`,
+        url: `http://localhost:${port}#/game/test`,
         port,
         setSnapshot,
         close: () =>
