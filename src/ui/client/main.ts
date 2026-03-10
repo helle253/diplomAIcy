@@ -686,10 +686,10 @@ lobbyList.addEventListener('click', async (e) => {
     startBtn.textContent = 'Starting...';
     (startBtn as HTMLButtonElement).disabled = true;
     try {
-      const resp = await fetch('/trpc/lobby.start', {
+      const resp = await fetch('/trpc/lobby.start?batch=1', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
+        body: JSON.stringify({ 0: { json: { id } } }),
       });
       if (!resp.ok) {
         const body = await resp.json().catch(() => ({ error: 'Unknown error' }));
@@ -750,10 +750,10 @@ createLobbyForm.addEventListener('submit', async (e) => {
   };
 
   try {
-    const resp = await fetch('/trpc/lobby.create', {
+    const resp = await fetch('/trpc/lobby.create?batch=1', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ 0: { json: payload } }),
     });
     if (!resp.ok) {
       const body = await resp.json().catch(() => ({ error: 'Unknown error' }));

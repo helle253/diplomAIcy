@@ -65,6 +65,15 @@ interface LobbyRuntime {
 
 const lobbyRuntimes = new Map<string, LobbyRuntime>();
 
+function cleanupLobbyRuntime(lobbyId: string): void {
+  const runtime = lobbyRuntimes.get(lobbyId);
+  if (!runtime) return;
+  for (const client of runtime.clients) {
+    client.close();
+  }
+  lobbyRuntimes.delete(lobbyId);
+}
+
 function broadcastToLobby(lobbyId: string, data: unknown): void {
   const runtime = lobbyRuntimes.get(lobbyId);
   if (!runtime) return;
@@ -174,6 +183,7 @@ function startServer(): void {
         },
       });
       lobbyManager.finishLobby(id);
+      cleanupLobbyRuntime(id);
       logger.info(
         result.winner
           ? `Game over! ${result.winner} wins in ${result.year}.`
@@ -182,6 +192,7 @@ function startServer(): void {
     }).catch((err) => {
       storage.failGame(gameId);
       lobbyManager.finishLobby(id);
+      cleanupLobbyRuntime(id);
       logger.error('Game error:', err);
     });
   });
