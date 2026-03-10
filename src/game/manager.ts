@@ -17,7 +17,16 @@ import {
 import { logger } from '../util/logger.js';
 import { MessageBus, MessageBusConfig } from './message-bus.js';
 
-const VICTORY_THRESHOLD = 18;
+export interface GameManagerConfig {
+  maxYears?: number;
+  victoryThreshold?: number;
+  startYear?: number;
+  phaseDelayMs?: number;
+  remoteTimeoutMs?: number;
+  pressDelayMin?: number;
+  pressDelayMax?: number;
+}
+
 const ALL_POWERS = [
   Power.England,
   Power.France,
@@ -70,6 +79,7 @@ export class GameManager {
   private endYear: number;
   private phaseDelayMs: number;
   private remoteTimeoutMs: number;
+  private victoryThreshold: number;
   private _deadlineMs = 0; // unix timestamp when current phase's submission window closes (0 = no deadline)
   readonly bus: MessageBus;
 
@@ -78,19 +88,23 @@ export class GameManager {
   private retreatGates = new Map<Power, (retreats: RetreatOrder[]) => void>();
   private buildGates = new Map<Power, (builds: BuildOrder[]) => void>();
 
-  constructor(
-    maxYears = 50,
-    phaseDelayMs = 0,
-    remoteTimeoutMs = 0,
-    pressDelayMin = 0,
-    pressDelayMax = 0,
-  ) {
+  constructor(config: GameManagerConfig = {}) {
+    const {
+      maxYears = 50,
+      phaseDelayMs = 0,
+      remoteTimeoutMs = 0,
+      pressDelayMin = 0,
+      pressDelayMax = 0,
+      victoryThreshold = 18,
+      startYear = 1901,
+    } = config;
     this.bus = new MessageBus({ pressDelayMin, pressDelayMax });
-    this.endYear = 1900 + maxYears;
+    this.endYear = startYear - 1 + maxYears;
     this.phaseDelayMs = phaseDelayMs;
     this.remoteTimeoutMs = remoteTimeoutMs;
+    this.victoryThreshold = victoryThreshold;
     this.state = {
-      phase: { year: 1901, season: Season.Spring, type: PhaseType.Diplomacy },
+      phase: { year: startYear, season: Season.Spring, type: PhaseType.Diplomacy },
       units: STARTING_UNITS.map((u) => ({ ...u })),
       supplyCenters: new Map(STARTING_SUPPLY_CENTERS),
       orderHistory: [],
@@ -610,7 +624,7 @@ export class GameManager {
   private async checkVictory(): Promise<GameResult | null> {
     for (const power of ALL_POWERS) {
       const scCount = this.getSupplyCenterCount(power);
-      if (scCount >= VICTORY_THRESHOLD) {
+      if (scCount >= this.victoryThreshold) {
         const result: GameResult = {
           winner: power,
           year: this.state.phase.year,

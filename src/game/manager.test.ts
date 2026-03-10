@@ -16,7 +16,7 @@ import {
   RetreatSituation,
   Season,
 } from '../engine/types.js';
-import { GameEvent, GameManager } from './manager.js';
+import { GameEvent, GameManager, GameManagerConfig } from './manager.js';
 
 const ALL_POWERS = [
   Power.England,
@@ -87,6 +87,7 @@ describe('GameManager — Initialization', () => {
     expect(state.phase.type).toBe(PhaseType.Diplomacy);
     expect(state.units).toHaveLength(22);
     expect(state.supplyCenters.size).toBe(22);
+    expect(state.endYear).toBe(1950);
   });
 });
 
@@ -96,7 +97,7 @@ describe('GameManager — Initialization', () => {
 
 describe('GameManager — All-Hold game', () => {
   it('completes one full year with all units holding', async () => {
-    const manager = new GameManager(1);
+    const manager = new GameManager({ maxYears: 1 });
     connectAllHold(manager);
 
     const events: GameEvent[] = [];
@@ -123,7 +124,7 @@ describe('GameManager — All-Hold game', () => {
   });
 
   it('emits correct event sequence for one year', async () => {
-    const manager = new GameManager(1);
+    const manager = new GameManager({ maxYears: 1 });
     connectAllHold(manager);
 
     const eventTypes: string[] = [];
@@ -140,7 +141,7 @@ describe('GameManager — All-Hold game', () => {
   });
 
   it('supply centers unchanged after all-hold game', async () => {
-    const manager = new GameManager(1);
+    const manager = new GameManager({ maxYears: 1 });
     connectAllHold(manager);
     await manager.run();
 
@@ -150,7 +151,7 @@ describe('GameManager — All-Hold game', () => {
   });
 
   it('turn history is recorded', async () => {
-    const manager = new GameManager(1);
+    const manager = new GameManager({ maxYears: 1 });
     connectAllHold(manager);
     await manager.run();
 
@@ -166,7 +167,7 @@ describe('GameManager — All-Hold game', () => {
 
 describe('GameManager — Random agent game', () => {
   it('can run a 3-year game without crashing', async () => {
-    const manager = new GameManager(3);
+    const manager = new GameManager({ maxYears: 3 });
     connectAllRandom(manager);
 
     const result = await manager.run();
@@ -190,7 +191,7 @@ describe('GameManager — Random agent game', () => {
   });
 
   it('supply center ownership changes over time with random moves', async () => {
-    const manager = new GameManager(5);
+    const manager = new GameManager({ maxYears: 5 });
     connectAllRandom(manager);
 
     await manager.run();
@@ -201,7 +202,7 @@ describe('GameManager — Random agent game', () => {
   });
 
   it('eliminated powers have no units', async () => {
-    const manager = new GameManager(5);
+    const manager = new GameManager({ maxYears: 5 });
     connectAllRandom(manager);
 
     const result = await manager.run();
@@ -220,7 +221,7 @@ describe('GameManager — Random agent game', () => {
 
 describe('GameManager — Event system', () => {
   it('game_start event fires first', async () => {
-    const manager = new GameManager(1);
+    const manager = new GameManager({ maxYears: 1 });
     connectAllHold(manager);
 
     let firstEvent: GameEvent | null = null;
@@ -235,7 +236,7 @@ describe('GameManager — Event system', () => {
   });
 
   it('multiple listeners all receive events', async () => {
-    const manager = new GameManager(1);
+    const manager = new GameManager({ maxYears: 1 });
     connectAllHold(manager);
 
     let count1 = 0;
@@ -250,7 +251,7 @@ describe('GameManager — Event system', () => {
   });
 
   it('orders_resolved events include resolutions', async () => {
-    const manager = new GameManager(1);
+    const manager = new GameManager({ maxYears: 1 });
     connectAllHold(manager);
 
     const orderEvents: GameEvent[] = [];
@@ -275,7 +276,7 @@ describe('GameManager — Event system', () => {
 
 describe('GameManager — Build phase', () => {
   it('HoldAgent waives all builds (no new units built)', async () => {
-    const manager = new GameManager(1);
+    const manager = new GameManager({ maxYears: 1 });
     connectAllHold(manager);
     await manager.run();
 
@@ -285,7 +286,7 @@ describe('GameManager — Build phase', () => {
   });
 
   it('build events are emitted in winter', async () => {
-    const manager = new GameManager(1);
+    const manager = new GameManager({ maxYears: 1 });
     connectAllHold(manager);
 
     const buildEvents: GameEvent[] = [];
@@ -306,7 +307,7 @@ describe('GameManager — Build phase', () => {
 
 describe('GameManager — Victory detection', () => {
   it('detects victory when a power reaches 18 supply centers', async () => {
-    const manager = new GameManager(1);
+    const manager = new GameManager({ maxYears: 1 });
     connectAllHold(manager);
 
     // Hack the supply centers to give England 18
@@ -339,11 +340,47 @@ describe('GameManager — Victory detection', () => {
   });
 
   it('draw when max years reached with no winner', async () => {
-    const manager = new GameManager(1);
+    const manager = new GameManager({ maxYears: 1 });
     connectAllHold(manager);
 
     const result = await manager.run();
 
     expect(result.winner).toBeNull();
+  });
+});
+
+// ============================================================================
+// 7. CONFIG OBJECT — startYear and victoryThreshold
+// ============================================================================
+
+describe('GameManager — Config object', () => {
+  it('default startYear is 1901', () => {
+    const manager = new GameManager();
+    const state = manager.getState();
+    expect(state.phase.year).toBe(1901);
+  });
+
+  it('custom startYear is accepted', () => {
+    const manager = new GameManager({ startYear: 2000 });
+    const state = manager.getState();
+    expect(state.phase.year).toBe(2000);
+  });
+
+  it('endYear = startYear - 1 + maxYears', () => {
+    const manager = new GameManager({ startYear: 2000, maxYears: 10 });
+    const state = manager.getState();
+    expect(state.endYear).toBe(2009);
+  });
+
+  it('custom victoryThreshold is accepted', async () => {
+    // With threshold of 4, England starts with 3 SCs. Give it 1 more to win.
+    const manager = new GameManager({ maxYears: 1, victoryThreshold: 4 });
+    connectAllHold(manager);
+
+    const state = manager.getState();
+    state.supplyCenters.set('nor', Power.England);
+
+    const result = await manager.run();
+    expect(result.winner).toBe(Power.England);
   });
 });
