@@ -52,6 +52,16 @@ type WSMessage =
   | { type: 'game_restarting'; delayMs: number }
   | { type: 'game_waiting' };
 
+interface LobbyInfo {
+  id: string;
+  name: string;
+  status: 'waiting' | 'playing' | 'finished';
+  createdAt: number;
+  maxYears: number;
+  victoryThreshold: number;
+  startYear: number;
+}
+
 // --- Constants ---------------------------------------------------------------
 
 const POWERS = ['England', 'France', 'Germany', 'Italy', 'Austria', 'Russia', 'Turkey'] as const;
@@ -75,9 +85,24 @@ let activeChannel = 'All';
 let svgRoot: SVGSVGElement | null = null;
 let unitsLayer: SVGGElement | null = null;
 
+let currentWs: WebSocket | null = null;
+let lobbyPollTimer: ReturnType<typeof setInterval> | null = null;
+let currentLobbyId: string | null = null;
+
 // --- DOM refs ----------------------------------------------------------------
 
-const $ = (sel: string) => document.querySelector(sel)!;
+const $ = (sel: string) => document.querySelector(sel);
+
+// Lobby view refs
+const lobbyView = $('#lobby-view') as HTMLElement;
+const lobbyList = $('#lobby-list') as HTMLElement;
+const btnCreateLobby = $('#btn-create-lobby') as HTMLButtonElement;
+const createLobbyModal = $('#create-lobby-modal') as HTMLElement;
+const createLobbyForm = $('#create-lobby-form') as HTMLFormElement;
+const btnCancelCreate = $('#btn-cancel-create') as HTMLButtonElement;
+
+// Game view refs
+const gameView = $('#game-view') as HTMLElement;
 const mapContainer = $('#map-container') as HTMLElement;
 const phaseDisplay = $('#phase-display') as HTMLElement;
 const scSummary = $('#sc-summary') as HTMLElement;
@@ -92,6 +117,7 @@ const btnLive = $('#btn-live') as HTMLButtonElement;
 const statusDot = $('#status-dot') as HTMLElement;
 const statusText = $('#status-text') as HTMLElement;
 const btnNewGame = $('#btn-new-game') as HTMLButtonElement;
+const btnBackToLobbies = $('#btn-back-to-lobbies') as HTMLButtonElement;
 
 // --- Helpers -----------------------------------------------------------------
 
@@ -111,7 +137,10 @@ function currentSnapshot(): PhaseSnapshot | undefined {
 
 // --- SVG Loading & Setup -----------------------------------------------------
 
+let svgLoaded = false;
+
 async function loadSVG(): Promise<void> {
+  if (svgLoaded) return;
   const resp = await fetch('/Diplomacy.svg');
   const text = await resp.text();
   const parser = new DOMParser();
@@ -147,6 +176,7 @@ async function loadSVG(): Promise<void> {
 
   mapContainer.innerHTML = '';
   mapContainer.appendChild(svg);
+  svgLoaded = true;
 }
 
 // --- Tooltip -----------------------------------------------------------------
@@ -505,15 +535,21 @@ function setStatus(connected: boolean): void {
 
 // --- WebSocket ---------------------------------------------------------------
 
-function connect(): void {
+function connect(lobbyId: string): void {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const ws = new WebSocket(`${protocol}//${location.host}/ws`);
+  const ws = new WebSocket(`${protocol}//${location.host}/ws/${lobbyId}`);
+  currentWs = ws;
 
   ws.addEventListener('open', () => setStatus(true));
 
   ws.addEventListener('close', () => {
     setStatus(false);
-    setTimeout(connect, 3000);
+    // Only reconnect if this is still the active WebSocket
+    if (currentWs === ws) {
+      setTimeout(() => {
+        if (currentWs === ws) connect(lobbyId);
+      }, 3000);
+    }
   });
 
   ws.addEventListener('error', () => {
@@ -591,7 +627,7 @@ function connect(): void {
 btnNewGame.addEventListener('click', async () => {
   if (!confirm('Start a new game? The current game results will be preserved.')) return;
   btnNewGame.disabled = true;
-  btnNewGame.textContent = 'Starting…';
+  btnNewGame.textContent = 'Starting...';
   try {
     const resp = await fetch('/api/new-game', { method: 'POST' });
     if (!resp.ok) {
@@ -606,12 +642,228 @@ btnNewGame.addEventListener('click', async () => {
   btnNewGame.classList.add('hidden');
 });
 
+// --- Back to Lobbies ---------------------------------------------------------
+
+btnBackToLobbies.addEventListener('click', () => {
+  location.hash = '#/';
+});
+
+// --- Lobby Browser -----------------------------------------------------------
+
+async function fetchLobbies(): Promise<void> {
+  try {
+    const resp = await fetch('/trpc/lobby.list');
+    const json = await resp.json();
+    const lobbies: LobbyInfo[] = json.result?.data ?? [];
+    renderLobbies(lobbies);
+  } catch {
+    lobbyList.innerHTML =
+      '<div class="py-10 text-center text-sm text-red-400">Failed to load lobbies</div>';
+  }
+}
+
+function statusBadge(status: string): string {
+  const colors: Record<string, { bg: string; text: string }> = {
+    waiting: { bg: 'bg-yellow-900/50', text: 'text-yellow-400' },
+    playing: { bg: 'bg-green-900/50', text: 'text-green-400' },
+    finished: { bg: 'bg-gray-700/50', text: 'text-gray-400' },
+  };
+  const c = colors[status] ?? colors.finished;
+  return `<span class="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-semibold uppercase ${c.bg} ${c.text}">${escapeHtml(status)}</span>`;
+}
+
+function renderLobbies(lobbies: LobbyInfo[]): void {
+  if (lobbies.length === 0) {
+    lobbyList.innerHTML =
+      '<div class="py-10 text-center text-sm text-gray-600 italic">No lobbies yet. Create one to get started.</div>';
+    return;
+  }
+
+  lobbyList.innerHTML = `<div class="lobby-grid">${lobbies
+    .map((l) => {
+      const clickable = l.status === 'playing' || l.status === 'finished';
+      const cardClass = clickable ? 'lobby-card lobby-card-clickable' : 'lobby-card';
+      const onClick = clickable ? `data-lobby-navigate="${escapeHtml(l.id)}"` : '';
+      return (
+        `<div class="${cardClass}" ${onClick}>` +
+        `<div class="flex items-center justify-between mb-2">` +
+        `<h3 class="text-sm font-semibold text-gray-200 truncate">${escapeHtml(l.name)}</h3>` +
+        statusBadge(l.status) +
+        `</div>` +
+        `<div class="text-[11px] text-gray-500 space-y-0.5">` +
+        `<div>Start: ${l.startYear} &middot; Max years: ${l.maxYears} &middot; Victory: ${l.victoryThreshold}</div>` +
+        `</div>` +
+        (l.status === 'waiting'
+          ? `<button class="lobby-start-btn mt-2" data-lobby-start="${escapeHtml(l.id)}">Start Game</button>`
+          : '') +
+        `</div>`
+      );
+    })
+    .join('')}</div>`;
+}
+
+// Lobby list event delegation
+lobbyList.addEventListener('click', async (e) => {
+  const target = e.target as HTMLElement;
+
+  // Handle start button
+  const startBtn = target.closest('[data-lobby-start]') as HTMLElement | null;
+  if (startBtn) {
+    const id = startBtn.dataset.lobbyStart!;
+    startBtn.textContent = 'Starting...';
+    (startBtn as HTMLButtonElement).disabled = true;
+    try {
+      const resp = await fetch('/trpc/lobby.start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ json: { id } }),
+      });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({ error: 'Unknown error' }));
+        alert(`Failed to start lobby: ${JSON.stringify(body)}`);
+        startBtn.textContent = 'Start Game';
+        (startBtn as HTMLButtonElement).disabled = false;
+        return;
+      }
+      location.hash = `#/game/${id}`;
+    } catch (err) {
+      alert(`Network error: ${err}`);
+      startBtn.textContent = 'Start Game';
+      (startBtn as HTMLButtonElement).disabled = false;
+    }
+    return;
+  }
+
+  // Handle card click to navigate
+  const card = target.closest('[data-lobby-navigate]') as HTMLElement | null;
+  if (card) {
+    const id = card.dataset.lobbyNavigate!;
+    location.hash = `#/game/${id}`;
+  }
+});
+
+// --- Create Lobby Modal ------------------------------------------------------
+
+btnCreateLobby.addEventListener('click', () => {
+  createLobbyModal.classList.remove('hidden');
+});
+
+btnCancelCreate.addEventListener('click', () => {
+  createLobbyModal.classList.add('hidden');
+});
+
+createLobbyModal.addEventListener('click', (e) => {
+  // Close on backdrop click
+  if (e.target === createLobbyModal) {
+    createLobbyModal.classList.add('hidden');
+  }
+});
+
+createLobbyForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(createLobbyForm);
+
+  const payload = {
+    name: fd.get('name') as string,
+    maxYears: Number(fd.get('maxYears')),
+    victoryThreshold: Number(fd.get('victoryThreshold')),
+    startYear: Number(fd.get('startYear')),
+    phaseDelayMs: Number(fd.get('phaseDelayMs')),
+    agentConfig: {
+      defaultAgent: {
+        type: fd.get('agentType') as string,
+      },
+    },
+  };
+
+  try {
+    const resp = await fetch('/trpc/lobby.create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ json: payload }),
+    });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({ error: 'Unknown error' }));
+      alert(`Failed to create lobby: ${JSON.stringify(body)}`);
+      return;
+    }
+    createLobbyModal.classList.add('hidden');
+    createLobbyForm.reset();
+    await fetchLobbies();
+  } catch (err) {
+    alert(`Network error: ${err}`);
+  }
+});
+
+// --- Routing -----------------------------------------------------------------
+
+function showLobbyView(): void {
+  gameView.classList.add('hidden');
+  lobbyView.classList.remove('hidden');
+
+  // Close existing WebSocket
+  if (currentWs) {
+    currentWs.close();
+    currentWs = null;
+  }
+  currentLobbyId = null;
+
+  // Reset game state
+  snapshots = [];
+  currentIndex = 0;
+  isLive = true;
+
+  // Start polling lobbies
+  if (lobbyPollTimer) clearInterval(lobbyPollTimer);
+  lobbyPollTimer = setInterval(fetchLobbies, 3000);
+  fetchLobbies();
+}
+
+async function showGameView(lobbyId: string): Promise<void> {
+  lobbyView.classList.add('hidden');
+  gameView.classList.remove('hidden');
+
+  // Stop lobby polling
+  if (lobbyPollTimer) {
+    clearInterval(lobbyPollTimer);
+    lobbyPollTimer = null;
+  }
+
+  // Load SVG if not yet loaded
+  await loadSVG();
+
+  // Reconnect if switching to a different lobby
+  if (lobbyId !== currentLobbyId) {
+    if (currentWs) {
+      currentWs.close();
+      currentWs = null;
+    }
+    snapshots = [];
+    currentIndex = 0;
+    isLive = true;
+    currentLobbyId = lobbyId;
+    updateAll();
+    connect(lobbyId);
+  }
+}
+
+function route(): void {
+  const hash = location.hash || '#/';
+  if (hash.startsWith('#/game/')) {
+    const lobbyId = hash.slice(7);
+    showGameView(lobbyId);
+  } else {
+    showLobbyView();
+  }
+}
+
+window.addEventListener('hashchange', route);
+
 // --- Init --------------------------------------------------------------------
 
 async function init(): Promise<void> {
-  await loadSVG();
   buildChatTabs();
-  connect();
+  route();
 }
 
 init();
