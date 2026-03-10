@@ -21,9 +21,9 @@ Add configurable delivery delay with random jitter to the MessageBus so agent pr
 - `server.ts` reads `PRESS_DELAY_MIN` and `PRESS_DELAY_MAX` env vars, passes to `GameManager`.
 - Defaults: both 0 (instant delivery, backward compatible).
 
-## Remote Adapter Cleanup
+## Remote Adapter
 
-- Remove `PHASE_STAGGER_MAX` logic from `remote-adapter.ts` — the bus delay now covers this.
+- Keep `PHASE_STAGGER_MAX` in `remote-adapter.ts` — it solves a different problem (composition ordering vs delivery timing).
 - Keep `MESSAGE_BATCH_DELAY` in place (that's LLM batching, not delivery pacing).
 
 ## Testing
