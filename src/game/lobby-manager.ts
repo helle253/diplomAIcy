@@ -131,7 +131,9 @@ export class LobbyManager {
     return { seatToken };
   }
 
-  validateToken(token: string): { lobbyId: string; power: Power } | { lobbyId: string; role: 'creator' } | null {
+  validateToken(
+    token: string,
+  ): { lobbyId: string; power: Power } | { lobbyId: string; role: 'creator' } | null {
     for (const lobby of this.lobbies.values()) {
       if (lobby.creatorToken === token) {
         return { lobbyId: lobby.id, role: 'creator' };
