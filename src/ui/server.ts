@@ -76,7 +76,9 @@ async function startGame(wss: WebSocketServer, storage: GameStorage): Promise<vo
   const maxYears = parseInt(process.env.MAX_YEARS || '10');
   const phaseDelayMs = parseInt(process.env.PHASE_DELAY || '600000');
   const remoteTimeoutMs = parseInt(process.env.REMOTE_TIMEOUT || '0');
-  const manager = new GameManager(maxYears, phaseDelayMs, remoteTimeoutMs);
+  const pressDelayMin = parseInt(process.env.PRESS_DELAY_MIN || '0');
+  const pressDelayMax = parseInt(process.env.PRESS_DELAY_MAX || '0');
+  const manager = new GameManager(maxYears, phaseDelayMs, remoteTimeoutMs, pressDelayMin, pressDelayMax);
   currentManager = manager;
   phaseSnapshots = [];
   allMessages = [];

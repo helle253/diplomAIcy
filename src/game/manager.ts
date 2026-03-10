@@ -15,7 +15,7 @@ import {
   Season,
 } from '../engine/types.js';
 import { logger } from '../util/logger.js';
-import { MessageBus } from './message-bus.js';
+import { MessageBus, MessageBusConfig } from './message-bus.js';
 
 const VICTORY_THRESHOLD = 18;
 const ALL_POWERS = [
@@ -71,14 +71,21 @@ export class GameManager {
   private phaseDelayMs: number;
   private remoteTimeoutMs: number;
   private _deadlineMs = 0; // unix timestamp when current phase's submission window closes (0 = no deadline)
-  readonly bus = new MessageBus();
+  readonly bus: MessageBus;
 
   // Promise gates for collecting agent submissions
   private orderGates = new Map<Power, (orders: Order[]) => void>();
   private retreatGates = new Map<Power, (retreats: RetreatOrder[]) => void>();
   private buildGates = new Map<Power, (builds: BuildOrder[]) => void>();
 
-  constructor(maxYears = 50, phaseDelayMs = 0, remoteTimeoutMs = 0) {
+  constructor(
+    maxYears = 50,
+    phaseDelayMs = 0,
+    remoteTimeoutMs = 0,
+    pressDelayMin = 0,
+    pressDelayMax = 0,
+  ) {
+    this.bus = new MessageBus({ pressDelayMin, pressDelayMax });
     this.endYear = 1900 + maxYears;
     this.phaseDelayMs = phaseDelayMs;
     this.remoteTimeoutMs = remoteTimeoutMs;
