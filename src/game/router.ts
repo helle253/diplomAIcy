@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { Coast, OrderType, Phase, Power, UnitType } from '../engine/types.js';
 import type { LobbyManager } from './lobby-manager.js';
 import type { GameManager } from './manager.js';
-import { publicProcedure, router } from './trpc.js';
+import { createProtectedProcedures, publicProcedure, router } from './trpc.js';
 
 // ── Zod schemas ────────────────────────────────────────────────────────
 
@@ -100,6 +100,8 @@ function resolveManager(lobbyManager: LobbyManager, lobbyId: string): GameManage
 // ── Router factory ─────────────────────────────────────────────────────
 
 export function createGameRouter(lobbyManager: LobbyManager) {
+  const { playerProcedure } = createProtectedProcedures(lobbyManager);
+
   const gameRouter = router({
     // Queries
     getState: publicProcedure.input(lobbyIdInput).query(({ input }) => {
@@ -125,36 +127,39 @@ export function createGameRouter(lobbyManager: LobbyManager) {
     }),
 
     // Mutations
-    submitOrders: publicProcedure
-      .input(lobbyIdInput.extend({ power: powerEnum, orders: z.array(orderSchema) }))
-      .mutation(({ input }) => {
-        const manager = resolveManager(lobbyManager, input.lobbyId);
-        manager.submitOrders(input.power, input.orders);
+    submitOrders: playerProcedure
+      .input(z.object({ orders: z.array(orderSchema) }))
+      .mutation(({ ctx, input }) => {
+        const manager = resolveManager(lobbyManager, ctx.lobbyId);
+        manager.submitOrders(ctx.power, input.orders);
         return { ok: true };
       }),
 
-    submitRetreats: publicProcedure
-      .input(lobbyIdInput.extend({ power: powerEnum, retreats: z.array(retreatOrderSchema) }))
-      .mutation(({ input }) => {
-        const manager = resolveManager(lobbyManager, input.lobbyId);
-        manager.submitRetreats(input.power, input.retreats);
+    submitRetreats: playerProcedure
+      .input(z.object({ retreats: z.array(retreatOrderSchema) }))
+      .mutation(({ ctx, input }) => {
+        const manager = resolveManager(lobbyManager, ctx.lobbyId);
+        manager.submitRetreats(ctx.power, input.retreats);
         return { ok: true };
       }),
 
-    submitBuilds: publicProcedure
-      .input(lobbyIdInput.extend({ power: powerEnum, builds: z.array(buildOrderSchema) }))
-      .mutation(({ input }) => {
-        const manager = resolveManager(lobbyManager, input.lobbyId);
-        manager.submitBuilds(input.power, input.builds);
+    submitBuilds: playerProcedure
+      .input(z.object({ builds: z.array(buildOrderSchema) }))
+      .mutation(({ ctx, input }) => {
+        const manager = resolveManager(lobbyManager, ctx.lobbyId);
+        manager.submitBuilds(ctx.power, input.builds);
         return { ok: true };
       }),
 
-    sendMessage: publicProcedure
-      .input(lobbyIdInput.extend(messageInputSchema.shape))
-      .mutation(({ input }) => {
-        const manager = resolveManager(lobbyManager, input.lobbyId);
+    sendMessage: playerProcedure
+      .input(z.object({
+        to: z.union([powerEnum, z.array(powerEnum), z.literal('Global')]),
+        content: z.string(),
+      }))
+      .mutation(({ ctx, input }) => {
+        const manager = resolveManager(lobbyManager, ctx.lobbyId);
         manager.sendMessage({
-          from: input.from,
+          from: ctx.power,
           to: input.to,
           content: input.content,
           phase: manager.getState().phase,
@@ -194,9 +199,18 @@ export function createGameRouter(lobbyManager: LobbyManager) {
       }),
 
     onMessage: publicProcedure
-      .input(lobbyIdInput.extend({ power: powerEnum }).partial({ power: true }))
-      .subscription(async function* ({ input, signal }) {
+      .input(lobbyIdInput)
+      .subscription(async function* ({ input, signal, ctx }) {
         const manager = resolveManager(lobbyManager, input.lobbyId);
+        // Resolve power from token if present
+        let filterPower: Power | undefined;
+        if (ctx.token) {
+          const identity = lobbyManager.validateToken(ctx.token);
+          if (identity && 'power' in identity) {
+            filterPower = identity.power;
+          }
+        }
+
         let id = 0;
         type Msg = {
           from: string;
@@ -209,13 +223,16 @@ export function createGameRouter(lobbyManager: LobbyManager) {
         let resolve: (() => void) | null = null;
 
         manager.onMessage((message) => {
-          // If power specified, filter messages addressed to them
-          if (input?.power) {
+          if (filterPower) {
+            // Authenticated: receive messages addressed to this power or broadcast
             const isRecipient =
               message.to === 'Global' ||
-              message.to === input.power ||
-              (Array.isArray(message.to) && message.to.includes(input.power));
+              message.to === filterPower ||
+              (Array.isArray(message.to) && message.to.includes(filterPower));
             if (!isRecipient) return;
+          } else {
+            // Spectator: only broadcast messages
+            if (message.to !== 'Global') return;
           }
           queue.push(message);
           if (resolve) {
