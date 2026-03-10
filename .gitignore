@@ -11,5 +11,6 @@ dist/
 
 test-results/
 docs/superpowers/
+docs/specs/
 .worktrees/
 .claude/
