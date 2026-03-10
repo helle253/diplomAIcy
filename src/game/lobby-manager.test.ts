@@ -180,4 +180,138 @@ describe('LobbyManager', () => {
       expect(() => lm.joinLobby(lobbyId, Power.England)).toThrow('not accepting players');
     });
   });
+
+  describe('autostart', () => {
+    const ALL_POWERS: Power[] = [
+      Power.England, Power.France, Power.Germany, Power.Italy,
+      Power.Austria, Power.Russia, Power.Turkey,
+    ];
+
+    it('triggers startLobby when last seat is filled and autostart is true', async () => {
+      const lm = new LobbyManager();
+      const handler = vi.fn();
+      lm.onStart(handler);
+      const { lobbyId } = lm.createLobby({ ...DEFAULT_CONFIG, autostart: true });
+      for (const power of ALL_POWERS) {
+        lm.joinLobby(lobbyId, power);
+      }
+      await vi.waitFor(() => expect(handler).toHaveBeenCalledTimes(1));
+      const lobby = lm.getLobby(lobbyId)!;
+      expect(lobby.status).toBe('playing');
+    });
+
+    it('does not autostart when autostart is false', () => {
+      const lm = new LobbyManager();
+      const handler = vi.fn();
+      lm.onStart(handler);
+      const { lobbyId } = lm.createLobby({ ...DEFAULT_CONFIG, autostart: false });
+      for (const power of ALL_POWERS) {
+        lm.joinLobby(lobbyId, power);
+      }
+      expect(handler).not.toHaveBeenCalled();
+      expect(lm.getLobby(lobbyId)!.status).toBe('waiting');
+    });
+
+    it('does not autostart when not all seats are filled', () => {
+      const lm = new LobbyManager();
+      const handler = vi.fn();
+      lm.onStart(handler);
+      const { lobbyId } = lm.createLobby({ ...DEFAULT_CONFIG, autostart: true });
+      lm.joinLobby(lobbyId, Power.England);
+      lm.joinLobby(lobbyId, Power.France);
+      expect(handler).not.toHaveBeenCalled();
+      expect(lm.getLobby(lobbyId)!.status).toBe('waiting');
+    });
+  });
+
+  describe('kickPlayer', () => {
+    it('removes a seat from a waiting lobby', () => {
+      const lm = new LobbyManager();
+      const { lobbyId } = lm.createLobby(DEFAULT_CONFIG);
+      lm.joinLobby(lobbyId, Power.England);
+      lm.kickPlayer(lobbyId, Power.England);
+      expect(lm.getLobby(lobbyId)!.seats.has(Power.England)).toBe(false);
+    });
+
+    it('throws if lobby is not waiting', async () => {
+      const lm = new LobbyManager();
+      const { lobbyId } = lm.createLobby(DEFAULT_CONFIG);
+      lm.joinLobby(lobbyId, Power.England);
+      await lm.startLobby(lobbyId);
+      expect(() => lm.kickPlayer(lobbyId, Power.England)).toThrow('waiting status');
+    });
+
+    it('throws if power has no seat', () => {
+      const lm = new LobbyManager();
+      const { lobbyId } = lm.createLobby(DEFAULT_CONFIG);
+      expect(() => lm.kickPlayer(lobbyId, Power.England)).toThrow('has no seat');
+    });
+  });
+
+  describe('rejoinLobby', () => {
+    it('issues a new seatToken when given the correct old token', async () => {
+      const lm = new LobbyManager();
+      const { lobbyId } = lm.createLobby(DEFAULT_CONFIG);
+      const { seatToken: oldToken } = lm.joinLobby(lobbyId, Power.England);
+      await lm.startLobby(lobbyId);
+      const { seatToken: newToken } = lm.rejoinLobby(lobbyId, Power.England, oldToken);
+      expect(newToken).not.toBe(oldToken);
+      expect(typeof newToken).toBe('string');
+    });
+
+    it('throws if old token does not match', async () => {
+      const lm = new LobbyManager();
+      const { lobbyId } = lm.createLobby(DEFAULT_CONFIG);
+      lm.joinLobby(lobbyId, Power.England);
+      await lm.startLobby(lobbyId);
+      expect(() => lm.rejoinLobby(lobbyId, Power.England, 'wrong-token')).toThrow('Invalid token');
+    });
+
+    it('throws if lobby is not playing', () => {
+      const lm = new LobbyManager();
+      const { lobbyId } = lm.createLobby(DEFAULT_CONFIG);
+      const { seatToken } = lm.joinLobby(lobbyId, Power.England);
+      expect(() => lm.rejoinLobby(lobbyId, Power.England, seatToken)).toThrow('not playing');
+    });
+
+    it('invalidates the old token after rejoin', async () => {
+      const lm = new LobbyManager();
+      const { lobbyId } = lm.createLobby(DEFAULT_CONFIG);
+      const { seatToken: oldToken } = lm.joinLobby(lobbyId, Power.England);
+      await lm.startLobby(lobbyId);
+      lm.rejoinLobby(lobbyId, Power.England, oldToken);
+      expect(lm.validateToken(oldToken)).toBeNull();
+    });
+  });
+
+  describe('validateToken', () => {
+    it('resolves a seat token to lobbyId and power', () => {
+      const lm = new LobbyManager();
+      const { lobbyId } = lm.createLobby(DEFAULT_CONFIG);
+      const { seatToken } = lm.joinLobby(lobbyId, Power.France);
+      const result = lm.validateToken(seatToken);
+      expect(result).toEqual({ lobbyId, power: Power.France });
+    });
+
+    it('resolves a creator token to lobbyId and role', () => {
+      const lm = new LobbyManager();
+      const { lobbyId, creatorToken } = lm.createLobby(DEFAULT_CONFIG);
+      const result = lm.validateToken(creatorToken);
+      expect(result).toEqual({ lobbyId, role: 'creator' });
+    });
+
+    it('returns null for an invalid token', () => {
+      const lm = new LobbyManager();
+      lm.createLobby(DEFAULT_CONFIG);
+      expect(lm.validateToken('bad-token')).toBeNull();
+    });
+
+    it('returns null for a kicked player token', () => {
+      const lm = new LobbyManager();
+      const { lobbyId } = lm.createLobby(DEFAULT_CONFIG);
+      const { seatToken } = lm.joinLobby(lobbyId, Power.England);
+      lm.kickPlayer(lobbyId, Power.England);
+      expect(lm.validateToken(seatToken)).toBeNull();
+    });
+  });
 });

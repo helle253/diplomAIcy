@@ -61,6 +61,15 @@ export class LobbyManager {
 
     const seatToken = randomUUID();
     lobby.seats.set(power, seatToken);
+
+    // Autostart if all 7 seats are filled
+    const ALL_POWERS_COUNT = 7;
+    if (lobby.config.autostart && lobby.seats.size === ALL_POWERS_COUNT) {
+      this.startLobby(lobbyId).catch((err) => {
+        console.error(`Autostart failed for lobby ${lobbyId}:`, err);
+      });
+    }
+
     return { seatToken };
   }
 
@@ -89,12 +98,51 @@ export class LobbyManager {
     });
 
     lobby.manager = manager;
-    lobby.status = 'playing';
 
     // Notify server to wire agents and start the game loop
     if (this._onStart) await this._onStart(id, manager);
 
+    // Set status AFTER successful start (transactional)
+    lobby.status = 'playing';
+
     return manager;
+  }
+
+  kickPlayer(lobbyId: string, power: Power): void {
+    const lobby = this.lobbies.get(lobbyId);
+    if (!lobby) throw new Error(`Lobby ${lobbyId} not found`);
+    if (lobby.status !== 'waiting') throw new Error(`Can only kick players in waiting status`);
+    if (!lobby.seats.has(power)) throw new Error(`${power} has no seat in lobby ${lobbyId}`);
+    lobby.seats.delete(power);
+  }
+
+  rejoinLobby(lobbyId: string, power: Power, oldToken: string): { seatToken: string } {
+    const lobby = this.lobbies.get(lobbyId);
+    if (!lobby) throw new Error(`Lobby ${lobbyId} not found`);
+    if (lobby.status !== 'playing') throw new Error(`Lobby ${lobbyId} is not playing`);
+
+    const currentToken = lobby.seats.get(power);
+    if (!currentToken || currentToken !== oldToken) {
+      throw new Error(`Invalid token for ${power} in lobby ${lobbyId}`);
+    }
+
+    const seatToken = randomUUID();
+    lobby.seats.set(power, seatToken);
+    return { seatToken };
+  }
+
+  validateToken(token: string): { lobbyId: string; power: Power } | { lobbyId: string; role: 'creator' } | null {
+    for (const lobby of this.lobbies.values()) {
+      if (lobby.creatorToken === token) {
+        return { lobbyId: lobby.id, role: 'creator' };
+      }
+      for (const [power, seatToken] of lobby.seats) {
+        if (seatToken === token) {
+          return { lobbyId: lobby.id, power };
+        }
+      }
+    }
+    return null;
   }
 
   finishLobby(id: string): void {
