@@ -1,14 +1,14 @@
 import { createTRPCClient, httpLink, httpSubscriptionLink, splitLink } from '@trpc/client';
 import { EventSource } from 'eventsource';
 
-import type { GameRouter } from '../../game/router.js';
+import type { AppRouter } from '../../ui/server.js';
 
 /**
  * Creates a typed tRPC client that connects to the game server.
  * Uses httpLink for queries/mutations and httpSubscriptionLink (SSE) for subscriptions.
  */
 export function createGameClient(serverUrl: string) {
-  return createTRPCClient<GameRouter>({
+  return createTRPCClient<AppRouter>({
     links: [
       splitLink({
         condition: (op) => op.type === 'subscription',

@@ -20,9 +20,10 @@ function formatTo(to: Message['to']): string {
 export async function connectRemoteAgent(
   agent: DiplomacyAgent,
   client: GameClient,
+  lobbyId: string,
 ): Promise<{ unsubscribe: () => void }> {
   // 1. Initialize agent with current game state
-  const serializedState = await client.getState.query();
+  const serializedState = await client.game.getState.query({ lobbyId });
   const initialState = deserializeGameState(serializedState as SerializedGameState);
   await agent.initialize(initialState);
   logger.info(`[${agent.power}] Initialized with remote game state`);
@@ -136,7 +137,7 @@ export async function connectRemoteAgent(
         for (const o of orders) {
           logger.info(`[${agent.power}]   order: ${JSON.stringify(o)}`);
         }
-        await client.submitOrders.mutate({ power: agent.power, orders });
+        await client.game.submitOrders.mutate({ lobbyId, power: agent.power, orders });
         logger.info(`[${agent.power}] orders submitted to server`);
       } else if (gameState.phase.type === PhaseType.Retreats) {
         // Only submit if this power has dislodged units
@@ -147,18 +148,18 @@ export async function connectRemoteAgent(
           for (const r of retreats) {
             logger.info(`[${agent.power}]   retreat: ${JSON.stringify(r)}`);
           }
-          await client.submitRetreats.mutate({ power: agent.power, retreats });
+          await client.game.submitRetreats.mutate({ lobbyId, power: agent.power, retreats });
           logger.info(`[${agent.power}] retreats submitted to server`);
         }
       } else if (gameState.phase.type === PhaseType.Builds) {
-        const { buildCount } = await client.getBuildCount.query({ power: agent.power });
+        const { buildCount } = await client.game.getBuildCount.query({ lobbyId, power: agent.power });
         if (buildCount !== 0) {
           logger.info(`[${agent.power}] submitBuilds (buildCount=${buildCount})`);
           const builds = await agent.submitBuilds(gameState, buildCount);
           for (const b of builds) {
             logger.info(`[${agent.power}]   build: ${JSON.stringify(b)}`);
           }
-          await client.submitBuilds.mutate({ power: agent.power, builds });
+          await client.game.submitBuilds.mutate({ lobbyId, power: agent.power, builds });
           logger.info(`[${agent.power}] builds submitted to server`);
         }
       }
@@ -179,7 +180,8 @@ export async function connectRemoteAgent(
       const messages = await agent.onPhaseStart(gameState);
       for (const msg of messages) {
         logger.info(`[${agent.power}] -> ${formatTo(msg.to)}: ${msg.content}`);
-        await client.sendMessage.mutate({
+        await client.game.sendMessage.mutate({
+          lobbyId,
           from: msg.from,
           to: msg.to,
           content: msg.content,
@@ -196,7 +198,7 @@ export async function connectRemoteAgent(
 
   async function handleMessageBatch(messages: Message[]) {
     try {
-      const state = await client.getState.query();
+      const state = await client.game.getState.query({ lobbyId });
       const gameState = deserializeGameState(state as SerializedGameState);
 
       let replies: Message[];
@@ -217,7 +219,8 @@ export async function connectRemoteAgent(
 
       for (const reply of replies) {
         logger.info(`[${agent.power}] -> ${formatTo(reply.to)}: ${reply.content}`);
-        await client.sendMessage.mutate({
+        await client.game.sendMessage.mutate({
+          lobbyId,
           from: reply.from,
           to: reply.to,
           content: reply.content,
@@ -268,7 +271,7 @@ export async function connectRemoteAgent(
   }
 
   // Subscribe to phase changes
-  const phaseSub = client.onPhaseChange.subscribe(undefined, {
+  const phaseSub = client.game.onPhaseChange.subscribe({ lobbyId }, {
     onData(envelope) {
       const tracked = envelope as unknown as {
         id: string;
@@ -287,8 +290,8 @@ export async function connectRemoteAgent(
   subs.push(phaseSub);
 
   // Subscribe to messages
-  const msgSub = client.onMessage.subscribe(
-    { power: agent.power },
+  const msgSub = client.game.onMessage.subscribe(
+    { lobbyId, power: agent.power },
     {
       onData(envelope) {
         const tracked = envelope as unknown as { id: string; data: Message };
@@ -318,7 +321,7 @@ export async function connectRemoteAgent(
 
   // Catch up: act on the current phase if we missed the SSE event
   try {
-    const currentState = await client.getState.query();
+    const currentState = await client.game.getState.query({ lobbyId });
     const currentGameState = deserializeGameState(currentState as SerializedGameState);
     const key = phaseKey(currentGameState);
     if (
