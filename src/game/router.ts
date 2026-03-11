@@ -1,3 +1,6 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
 import { tracked, TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
@@ -5,6 +8,8 @@ import { Coast, OrderType, Phase, Power, UnitType } from '../engine/types.js';
 import type { LobbyManager } from './lobby-manager.js';
 import type { GameManager } from './manager.js';
 import { createProtectedProcedures, publicProcedure, router } from './trpc.js';
+
+const RULES_TEXT = readFileSync(join(process.cwd(), 'src/engine/RULES.md'), 'utf-8');
 
 // ── Zod schemas ────────────────────────────────────────────────────────
 
@@ -115,6 +120,8 @@ export function createGameRouter(lobbyManager: LobbyManager) {
         const manager = resolveManager(lobbyManager, input.lobbyId);
         return { buildCount: manager.getBuildCount(input.power) };
       }),
+
+    getRules: publicProcedure.query(() => ({ rules: RULES_TEXT })),
 
     getActivePowers: publicProcedure.input(lobbyIdInput).query(({ input }) => {
       const manager = resolveManager(lobbyManager, input.lobbyId);
