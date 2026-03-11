@@ -3,6 +3,7 @@ import { join } from 'path';
 
 import { tracked, TRPCError } from '@trpc/server';
 import { z } from 'zod';
+import { toJSONSchema } from 'zod/v4';
 
 import { Coast, OrderType, Phase, Power, UnitType } from '../engine/types.js';
 import type { LobbyManager } from './lobby-manager.js';
@@ -69,6 +70,12 @@ const buildOrderSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('Waive') }),
 ]);
 
+// ── Precomputed JSON schemas ──────────────────────────────────────────
+
+const ORDER_JSON_SCHEMA = toJSONSchema(orderSchema);
+const RETREAT_JSON_SCHEMA = toJSONSchema(retreatOrderSchema);
+const BUILD_JSON_SCHEMA = toJSONSchema(buildOrderSchema);
+
 // ── Serialization helpers ──────────────────────────────────────────────
 
 function serializeState(manager: GameManager) {
@@ -122,6 +129,12 @@ export function createGameRouter(lobbyManager: LobbyManager) {
       }),
 
     getRules: publicProcedure.query(() => ({ rules: RULES_TEXT })),
+
+    getSchemas: publicProcedure.query(() => ({
+      orders: ORDER_JSON_SCHEMA,
+      retreats: RETREAT_JSON_SCHEMA,
+      builds: BUILD_JSON_SCHEMA,
+    })),
 
     getActivePowers: publicProcedure.input(lobbyIdInput).query(({ input }) => {
       const manager = resolveManager(lobbyManager, input.lobbyId);
