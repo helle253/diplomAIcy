@@ -53,7 +53,7 @@ type WSMessage =
 interface LobbyInfo {
   id: string;
   name: string;
-  status: 'waiting' | 'playing' | 'finished';
+  status: 'waiting' | 'starting' | 'playing' | 'finished';
   createdAt: number;
   maxYears: number;
   victoryThreshold: number;
@@ -87,7 +87,20 @@ let currentWs: WebSocket | null = null;
 let lobbyPollTimer: ReturnType<typeof setInterval> | null = null;
 let currentLobbyId: string | null = null;
 
-const creatorTokens = new Map<string, string>();
+const creatorTokens = new Map<string, string>(
+  (() => {
+    try {
+      const stored = sessionStorage.getItem('creatorTokens');
+      return stored ? (JSON.parse(stored) as [string, string][]) : [];
+    } catch {
+      return [];
+    }
+  })(),
+);
+
+function persistCreatorTokens(): void {
+  sessionStorage.setItem('creatorTokens', JSON.stringify([...creatorTokens]));
+}
 
 // --- DOM refs ----------------------------------------------------------------
 
@@ -770,6 +783,7 @@ createLobbyForm.addEventListener('submit', async (e) => {
     const creatorToken = body[0]?.result?.data?.json?.creatorToken;
     if (lobbyId && creatorToken) {
       creatorTokens.set(lobbyId, creatorToken);
+      persistCreatorTokens();
     }
     createLobbyModal.classList.add('hidden');
     createLobbyForm.reset();
