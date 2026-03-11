@@ -107,11 +107,42 @@ function serializeOrderHistory(
   return byPower;
 }
 
+interface PowerSummary {
+  units: number;
+  supplyCenters: number;
+  buildCount: number;
+}
+
+function buildPowerSummary(manager: GameManager): Record<string, PowerSummary> {
+  const state = manager.getState();
+  const summary: Record<string, PowerSummary> = {};
+
+  // Count units per power
+  for (const unit of state.units) {
+    if (!summary[unit.power]) summary[unit.power] = { units: 0, supplyCenters: 0, buildCount: 0 };
+    summary[unit.power].units++;
+  }
+
+  // Count SCs per power
+  for (const [, power] of state.supplyCenters) {
+    if (!summary[power]) summary[power] = { units: 0, supplyCenters: 0, buildCount: 0 };
+    summary[power].supplyCenters++;
+  }
+
+  // Compute buildCount (SC - units)
+  for (const power of Object.keys(summary)) {
+    summary[power].buildCount = summary[power].supplyCenters - summary[power].units;
+  }
+
+  return summary;
+}
+
 function serializeState(manager: GameManager) {
   const state = manager.getState();
   return {
     phase: state.phase,
     map: buildMapState(state.units, state.supplyCenters),
+    powers: buildPowerSummary(manager),
     orderHistory: serializeOrderHistory(manager.getTurnHistory()),
     retreatSituations: state.retreatSituations,
     endYear: state.endYear,

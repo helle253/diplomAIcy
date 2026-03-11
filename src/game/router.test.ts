@@ -111,6 +111,18 @@ describe('game router wire format', () => {
       expect(state.deadlineMs).toBeDefined();
       expect(state.gameOver).toBe(false);
     });
+
+    it('includes power summary with unit counts, SC counts, and buildCount', async () => {
+      const { caller, lobbyId } = setupTestGame();
+      const state = await caller.game.getState({ lobbyId });
+
+      expect(state.powers).toBeDefined();
+      // At game start, each power has equal units and SCs (buildCount = 0)
+      expect(state.powers[Power.England]).toEqual({ units: 3, supplyCenters: 3, buildCount: 0 });
+      expect(state.powers[Power.Russia]).toEqual({ units: 4, supplyCenters: 4, buildCount: 0 });
+      // All 7 powers should be present
+      expect(Object.keys(state.powers)).toHaveLength(7);
+    });
   });
 
   describe('getRules', () => {

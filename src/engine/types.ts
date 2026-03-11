@@ -168,6 +168,8 @@ export interface OrderResolution {
   power: Power;
   status: OrderStatus;
   reason?: string;
+  /** Present when the submitted order was invalid and got converted (usually to Hold). */
+  originalOrder?: Order;
 }
 
 // === Game State ===

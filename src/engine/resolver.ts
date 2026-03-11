@@ -29,6 +29,8 @@ interface OrderState {
   unit: Unit;
   status: OrderStatus;
   reason?: string;
+  /** The order as originally submitted, before validation converted it. */
+  originalOrder?: Order;
 }
 
 // === Helper: find unit at a province ===
@@ -226,15 +228,17 @@ export function resolveOrders(
   const orderStates = new Map<string, OrderState>();
 
   for (const unit of units) {
-    let order = orders.get(unit.province) ?? {
+    const submittedOrder = orders.get(unit.province) ?? {
       type: OrderType.Hold as const,
       unit: unit.province,
     };
-    order = validateOrder(order, unit, units, provinces);
+    const validatedOrder = validateOrder(submittedOrder, unit, units, provinces);
+    const wasInvalid = validatedOrder !== submittedOrder && submittedOrder.type !== OrderType.Hold;
     orderStates.set(unit.province, {
-      order,
+      order: validatedOrder,
       unit,
       status: OrderStatus.Succeeds, // optimistic start
+      ...(wasInvalid ? { originalOrder: submittedOrder } : {}),
     });
   }
 
@@ -475,8 +479,9 @@ export function resolveOrders(
     resolutions.push({
       order: state.order,
       power: state.unit.power,
-      status: state.status,
-      reason: state.reason,
+      status: state.originalOrder ? OrderStatus.Invalid : state.status,
+      reason: state.originalOrder ? 'Invalid order, resolved as Hold' : state.reason,
+      originalOrder: state.originalOrder,
     });
 
     if (state.order.type === OrderType.Move && state.status === OrderStatus.Succeeds) {

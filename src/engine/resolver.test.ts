@@ -1161,8 +1161,8 @@ describe('Split Coasts [Rule 32]', () => {
     ]);
     const result = resolveOrders(units, orders, PROVINCES);
 
-    // Invalid move becomes Hold
-    expect(res(result, 'stp')!.status).toBe(OrderStatus.Succeeds);
+    // Invalid move gets Invalid status
+    expect(res(result, 'stp')!.status).toBe(OrderStatus.Invalid);
     expect(result.newPositions[0].province).toBe('stp');
     expect(result.newPositions[0].coast).toBe(Coast.South);
   });
@@ -1190,7 +1190,7 @@ describe('Split Coasts [Rule 32]', () => {
     ]);
     const result = resolveOrders(units, orders, PROVINCES);
 
-    expect(res(result, 'stp')!.status).toBe(OrderStatus.Succeeds);
+    expect(res(result, 'stp')!.status).toBe(OrderStatus.Invalid);
     expect(result.newPositions[0].province).toBe('stp');
   });
 
@@ -1204,8 +1204,8 @@ describe('Split Coasts [Rule 32]', () => {
     ]);
     const result = resolveOrders(units, orders, PROVINCES);
 
-    // No coast specified → invalid → becomes Hold
-    expect(res(result, 'mao')!.status).toBe(OrderStatus.Succeeds);
+    // No coast specified → invalid
+    expect(res(result, 'mao')!.status).toBe(OrderStatus.Invalid);
     expect(result.newPositions[0].province).toBe('mao');
   });
 
@@ -1243,8 +1243,8 @@ describe('Split Coasts [Rule 32]', () => {
     ]);
     const result = resolveOrders(units, orders, PROVINCES);
 
-    // MAR is not adjacent to SPA/NC → invalid → becomes Hold
-    expect(res(result, 'mar')!.status).toBe(OrderStatus.Succeeds);
+    // MAR is not adjacent to SPA/NC → invalid
+    expect(res(result, 'mar')!.status).toBe(OrderStatus.Invalid);
     expect(result.newPositions[0].province).toBe('mar');
   });
 
@@ -1256,8 +1256,8 @@ describe('Split Coasts [Rule 32]', () => {
     ]);
     const result = resolveOrders(units, orders, PROVINCES);
 
-    // GAS is not adjacent to SPA/SC → invalid → becomes Hold
-    expect(res(result, 'gas')!.status).toBe(OrderStatus.Succeeds);
+    // GAS is not adjacent to SPA/SC → invalid
+    expect(res(result, 'gas')!.status).toBe(OrderStatus.Invalid);
     expect(result.newPositions[0].province).toBe('gas');
   });
 
@@ -1285,7 +1285,7 @@ describe('Split Coasts [Rule 32]', () => {
     const result = resolveOrders(units, orders, PROVINCES);
 
     // AEG not adjacent to BUL east coast → invalid
-    expect(res(result, 'aeg')!.status).toBe(OrderStatus.Succeeds);
+    expect(res(result, 'aeg')!.status).toBe(OrderStatus.Invalid);
     expect(result.newPositions[0].province).toBe('aeg');
   });
 
@@ -1300,7 +1300,7 @@ describe('Split Coasts [Rule 32]', () => {
     const result = resolveOrders(units, orders, PROVINCES);
 
     // BLA is only adjacent to BUL east coast (NC), not south → invalid
-    expect(res(result, 'bul')!.status).toBe(OrderStatus.Succeeds);
+    expect(res(result, 'bul')!.status).toBe(OrderStatus.Invalid);
     expect(result.newPositions[0].province).toBe('bul');
   });
 
@@ -1618,8 +1618,32 @@ describe('Non-Adjacent Provinces [Rule 35]', () => {
     ]);
     const result = resolveOrders(units, orders, PROVINCES);
 
-    expect(res(result, 'bal')!.status).toBe(OrderStatus.Succeeds);
+    expect(res(result, 'bal')!.status).toBe(OrderStatus.Invalid);
     expect(result.newPositions[0].province).toBe('bal'); // stays put — invalid move
+  });
+
+  it('Invalid orders include originalOrder with the submitted order', () => {
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.Germany, province: 'bal' }];
+    const submittedOrder: Order = { type: OrderType.Move, unit: 'bal', destination: 'hel' };
+    const orders = new Map<string, Order>([['bal', submittedOrder]]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    const resolution = res(result, 'bal')!;
+    expect(resolution.status).toBe(OrderStatus.Invalid);
+    expect(resolution.originalOrder).toEqual(submittedOrder);
+    expect(resolution.order).toEqual({ type: OrderType.Hold, unit: 'bal' });
+  });
+
+  it('Valid orders do not include originalOrder', () => {
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.Germany, province: 'bal' }];
+    const orders = new Map<string, Order>([
+      ['bal', { type: OrderType.Move, unit: 'bal', destination: 'den' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    const resolution = res(result, 'bal')!;
+    expect(resolution.status).toBe(OrderStatus.Succeeds);
+    expect(resolution.originalOrder).toBeUndefined();
   });
 
   it('Fleet in BAL cannot move to NTH (not adjacent)', () => {
@@ -1630,7 +1654,7 @@ describe('Non-Adjacent Provinces [Rule 35]', () => {
     ]);
     const result = resolveOrders(units, orders, PROVINCES);
 
-    expect(res(result, 'bal')!.status).toBe(OrderStatus.Succeeds);
+    expect(res(result, 'bal')!.status).toBe(OrderStatus.Invalid);
     expect(result.newPositions[0].province).toBe('bal');
   });
 
@@ -1642,7 +1666,7 @@ describe('Non-Adjacent Provinces [Rule 35]', () => {
     ]);
     const result = resolveOrders(units, orders, PROVINCES);
 
-    expect(res(result, 'bal')!.status).toBe(OrderStatus.Succeeds);
+    expect(res(result, 'bal')!.status).toBe(OrderStatus.Invalid);
     expect(result.newPositions[0].province).toBe('bal');
   });
 
@@ -1668,7 +1692,7 @@ describe('Non-Adjacent Provinces [Rule 35]', () => {
     ]);
     const result = resolveOrders(units, orders, PROVINCES);
 
-    expect(res(result, 'aeg')!.status).toBe(OrderStatus.Succeeds);
+    expect(res(result, 'aeg')!.status).toBe(OrderStatus.Invalid);
     expect(result.newPositions[0].province).toBe('aeg');
   });
 
@@ -1679,7 +1703,7 @@ describe('Non-Adjacent Provinces [Rule 35]', () => {
     ]);
     const result = resolveOrders(units, orders, PROVINCES);
 
-    expect(res(result, 'bla')!.status).toBe(OrderStatus.Succeeds);
+    expect(res(result, 'bla')!.status).toBe(OrderStatus.Invalid);
     expect(result.newPositions[0].province).toBe('bla');
   });
 
@@ -1691,7 +1715,7 @@ describe('Non-Adjacent Provinces [Rule 35]', () => {
     ]);
     const result = resolveOrders(units, orders, PROVINCES);
 
-    expect(res(result, 'naf')!.status).toBe(OrderStatus.Succeeds);
+    expect(res(result, 'naf')!.status).toBe(OrderStatus.Invalid);
     expect(result.newPositions[0].province).toBe('naf');
   });
 
@@ -1702,7 +1726,7 @@ describe('Non-Adjacent Provinces [Rule 35]', () => {
     ]);
     const result = resolveOrders(units, orders, PROVINCES);
 
-    expect(res(result, 'naf')!.status).toBe(OrderStatus.Succeeds);
+    expect(res(result, 'naf')!.status).toBe(OrderStatus.Invalid);
     expect(result.newPositions[0].province).toBe('naf');
   });
 });

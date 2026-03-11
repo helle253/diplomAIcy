@@ -37,6 +37,10 @@ Each game year has two seasons:
 3. Retreats — dislodged units retreat or disband (only if units were dislodged)
 4. Builds — powers build new units or remove excess units (only after Fall)
 
+## Order Field Convention
+
+All order fields — `unit`, `supportedUnit`, `convoyedUnit` — take the **province ID** where the unit is located (e.g., `"par"` for Paris, `"lon"` for London), not a unit description. The `destination` field is also a province ID.
+
 ## Order Types
 
 ### Hold
