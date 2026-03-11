@@ -212,35 +212,6 @@ export function createGameRouter(lobbyManager: LobbyManager) {
       return manager.getActivePowers();
     }),
 
-    getResult: publicProcedure.input(lobbyIdInput).query(({ input }) => {
-      const lobby = lobbyManager.getLobby(input.lobbyId);
-      if (!lobby) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Lobby ${input.lobbyId} not found` });
-      }
-      if (lobby.status !== 'finished' || !lobby.result) {
-        return null;
-      }
-      return {
-        winner: lobby.result.winner,
-        year: lobby.result.year,
-        supplyCenters: Object.fromEntries(lobby.result.supplyCenters),
-        eliminatedPowers: lobby.result.eliminatedPowers,
-      };
-    }),
-
-    getMessages: publicProcedure.input(lobbyIdInput).query(({ input, ctx }) => {
-      const manager = resolveManager(lobbyManager, input.lobbyId);
-      // Authenticated: see messages addressed to this power (private + global)
-      if (ctx.token) {
-        const identity = lobbyManager.validateToken(ctx.token);
-        if (identity && 'power' in identity) {
-          return manager.getMessagesFor(identity.power as Power);
-        }
-      }
-      // Spectator: only global messages
-      return manager.getMessages().filter((m) => m.to === 'Global');
-    }),
-
     // Mutations
     submitOrders: playerProcedure
       .input(z.object({ orders: z.array(orderSchema) }))
@@ -274,10 +245,6 @@ export function createGameRouter(lobbyManager: LobbyManager) {
         }),
       )
       .mutation(({ ctx, input }) => {
-        const lobby = lobbyManager.getLobby(ctx.lobbyId);
-        if (lobby?.status === 'finished' && !lobby.config.postGamePress) {
-          throw new TRPCError({ code: 'FORBIDDEN', message: 'Post-game press is disabled' });
-        }
         const manager = resolveManager(lobbyManager, ctx.lobbyId);
         manager.sendMessage({
           from: ctx.power,

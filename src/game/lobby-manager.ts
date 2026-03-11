@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 
 import type { GameConfig } from '../agent/llm/config.js';
 import { Power } from '../engine/types.js';
-import { GameManager, type GameResult } from './manager.js';
+import { GameManager } from './manager.js';
 
 export interface LobbyConfig {
   name: string;
@@ -15,7 +15,6 @@ export interface LobbyConfig {
   pressDelayMax: number;
   agentConfig: GameConfig;
   autostart?: boolean;
-  postGamePress?: boolean;
 }
 
 export interface Lobby {
@@ -26,7 +25,6 @@ export interface Lobby {
   creatorToken: string;
   seats: Map<Power, string>;
   manager: GameManager | null;
-  result: GameResult | null;
 }
 
 export class LobbyManager {
@@ -50,7 +48,6 @@ export class LobbyManager {
       creatorToken,
       seats: new Map(),
       manager: null,
-      result: null,
     };
     this.lobbies.set(id, lobby);
     return { lobbyId: id, creatorToken };
@@ -159,11 +156,10 @@ export class LobbyManager {
     return null;
   }
 
-  finishLobby(id: string, result?: GameResult): void {
+  finishLobby(id: string): void {
     const lobby = this.lobbies.get(id);
     if (!lobby) return;
     lobby.status = 'finished';
-    if (result) lobby.result = result;
   }
 
   deleteLobby(id: string): void {

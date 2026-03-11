@@ -189,16 +189,6 @@ export class GameManager {
     this.bus.onMessage(listener);
   }
 
-  /** Get all messages (for spectators/public view) */
-  getMessages(): Message[] {
-    return this.bus.getMessages();
-  }
-
-  /** Get messages visible to a specific power (includes private messages to them) */
-  getMessagesFor(power: Power): Message[] {
-    return this.bus.getMessagesFor(power);
-  }
-
   getTurnHistory(): TurnRecord[] {
     return this.turnHistory;
   }
