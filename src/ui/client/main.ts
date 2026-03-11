@@ -196,6 +196,7 @@ async function loadSVG(): Promise<void> {
   // Create arrows layer (above units so arrows are visible over tokens)
   arrowsLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
   arrowsLayer.setAttribute('id', 'arrows-layer');
+  arrowsLayer.setAttribute('pointer-events', 'none');
   svg.appendChild(arrowsLayer);
 
   mapContainer.innerHTML = '';
