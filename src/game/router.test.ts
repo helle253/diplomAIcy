@@ -125,6 +125,14 @@ describe('game router wire format', () => {
     });
   });
 
+  describe('getMessages', () => {
+    it('returns empty array when no messages have been sent', async () => {
+      const { caller, lobbyId } = setupTestGame();
+      const messages = await caller.game.getMessages({ lobbyId });
+      expect(messages).toEqual([]);
+    });
+  });
+
   describe('getRules', () => {
     it('returns rules as markdown string with game config substituted', async () => {
       const { caller, lobbyId } = setupTestGame();

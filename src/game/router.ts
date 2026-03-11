@@ -212,6 +212,19 @@ export function createGameRouter(lobbyManager: LobbyManager) {
       return manager.getActivePowers();
     }),
 
+    getMessages: publicProcedure.input(lobbyIdInput).query(({ input, ctx }) => {
+      const manager = resolveManager(lobbyManager, input.lobbyId);
+      // Authenticated: see messages addressed to this power (private + global)
+      if (ctx.token) {
+        const identity = lobbyManager.validateToken(ctx.token);
+        if (identity && 'power' in identity) {
+          return manager.getMessagesFor(identity.power as Power);
+        }
+      }
+      // Spectator: only global messages
+      return manager.getMessages().filter((m) => m.to === 'Global');
+    }),
+
     // Mutations
     submitOrders: playerProcedure
       .input(z.object({ orders: z.array(orderSchema) }))
