@@ -11,7 +11,7 @@ import type { LobbyManager } from './lobby-manager.js';
 import type { GameManager } from './manager.js';
 import { createProtectedProcedures, publicProcedure, router } from './trpc.js';
 
-const RULES_TEXT = readFileSync(join(process.cwd(), 'src/engine/RULES.md'), 'utf-8');
+const RULES_TEMPLATE = readFileSync(join(process.cwd(), 'src/engine/RULES.md'), 'utf-8');
 
 // ── Zod schemas ────────────────────────────────────────────────────────
 
@@ -128,7 +128,19 @@ export function createGameRouter(lobbyManager: LobbyManager) {
         return { buildCount: manager.getBuildCount(input.power) };
       }),
 
-    getRules: publicProcedure.query(() => ({ rules: RULES_TEXT })),
+    getRules: publicProcedure.input(lobbyIdInput).query(({ input }) => {
+      const manager = resolveManager(lobbyManager, input.lobbyId);
+      const config = manager.getGameConfig();
+      const deadlineStr =
+        config.phaseDeadlineMs > 0
+          ? `${Math.round(config.phaseDeadlineMs / 1000)} seconds per phase`
+          : 'No time limit — phases resolve when all orders are submitted';
+      const rules = RULES_TEMPLATE.replace('{{VICTORY_THRESHOLD}}', String(config.victoryThreshold))
+        .replace('{{END_YEAR}}', String(config.endYear))
+        .replace('{{START_YEAR}}', String(config.startYear))
+        .replace('{{DEADLINE}}', deadlineStr);
+      return { rules };
+    }),
 
     getSchemas: publicProcedure.query(() => ({
       orders: ORDER_JSON_SCHEMA,

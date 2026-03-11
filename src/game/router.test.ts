@@ -114,15 +114,20 @@ describe('game router wire format', () => {
   });
 
   describe('getRules', () => {
-    it('returns rules as markdown string', async () => {
-      const { caller } = setupTestGame();
-      const result = await caller.game.getRules();
+    it('returns rules as markdown string with game config substituted', async () => {
+      const { caller, lobbyId } = setupTestGame();
+      const result = await caller.game.getRules({ lobbyId });
 
       expect(result.rules).toContain('# Diplomacy Rules');
       expect(result.rules).toContain('Hold');
       expect(result.rules).toContain('Move');
       expect(result.rules).toContain('Support');
       expect(result.rules).toContain('Build');
+      // Config values should be substituted (maxYears=1, startYear=1901 → endYear=1901)
+      expect(result.rules).toContain('1901');
+      expect(result.rules).toContain('18 or more supply centers');
+      // Template placeholders should be gone
+      expect(result.rules).not.toContain('{{');
     });
   });
 
