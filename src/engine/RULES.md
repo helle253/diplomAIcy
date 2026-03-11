@@ -140,6 +140,13 @@ A power wins by controlling **{{VICTORY_THRESHOLD}} or more supply centers**. If
 
 **Phase deadline:** {{DEADLINE}}.
 
+## Timeouts
+
+If a phase has a deadline and a power does not submit in time:
+- **Orders phase**: all units default to Hold.
+- **Retreats phase**: all dislodged units are disbanded.
+- **Builds phase**: all builds are waived; all required removals disband random units.
+
 ## Elimination
 
 A power with zero units is eliminated from the game. Eliminated powers cannot issue orders or build units, even if they still control supply centers (ownership transfers when another power occupies the SC).
