@@ -13,4 +13,5 @@ test-results/
 docs/superpowers/
 docs/specs/
 .worktrees/
-.claude/
+.claude/settings.local.json
+game-notes/
