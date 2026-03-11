@@ -183,11 +183,29 @@ function startServer(): void {
       };
       runtime.phaseSnapshots.push(snapshot);
 
-      broadcastToLobby(id, {
-        type: 'new_phase',
-        snapshotIndex: runtime.phaseSnapshots.length - 1,
-        snapshot,
-      });
+      // Send per-client filtered snapshots to avoid leaking private press
+      const snapshotIndex = runtime.phaseSnapshots.length - 1;
+      for (const [client, clientPower] of runtime.clients) {
+        if (client.readyState !== WebSocket.OPEN) continue;
+        client.send(
+          JSON.stringify({
+            type: 'new_phase',
+            snapshotIndex,
+            snapshot: {
+              ...snapshot,
+              messages: snapshot.messages.filter((msg) => {
+                if (msg.to === 'Global') return true;
+                if (!clientPower) return false;
+                return (
+                  msg.to === clientPower ||
+                  msg.from === clientPower ||
+                  (Array.isArray(msg.to) && msg.to.includes(clientPower))
+                );
+              }),
+            },
+          }),
+        );
+      }
     });
 
     logger.info(`Starting new Diplomacy game (${gameId}) for lobby ${id}...`);
@@ -244,7 +262,7 @@ function startServer(): void {
     }
     const lobbyId = match[1];
     const lobby = lobbyManager.getLobby(lobbyId);
-    if (!lobby || lobby.status === 'waiting') {
+    if (!lobby || lobby.status === 'waiting' || lobby.status === 'starting') {
       socket.destroy();
       return;
     }
