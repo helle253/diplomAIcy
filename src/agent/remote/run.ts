@@ -121,8 +121,19 @@ async function main() {
     process.exit(1);
   }
 
-  // Step 2: Create authenticated client with seat token
+  // Step 2: Wait for lobby to be playing (autostart may be in progress)
   const trpcClient = createGameClient(server, seatToken);
+  for (let attempt = 0; attempt < 30; attempt++) {
+    try {
+      await trpcClient.game.getState.query({ lobbyId });
+      break; // game is ready
+    } catch {
+      if (attempt === 29) throw new Error(`Lobby ${lobbyId} never became playable`);
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+
+  // Step 3: Connect agent
   await connectRemoteAgent(agent, trpcClient, lobbyId);
 
   // Keep the process alive
