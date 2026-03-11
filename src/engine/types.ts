@@ -181,6 +181,18 @@ export interface GameState {
   endYear: number; // final year of the game (e.g. 1901 for a 1-year game)
 }
 
+// === Province State (wire format) ===
+
+export interface ProvinceState {
+  type: ProvinceType;
+  supplyCenter: boolean;
+  homeCenter: Power | null;
+  adjacent: string[];
+  coasts: Record<string, string[]> | null;
+  owner: Power | null;
+  unit: { type: UnitType; power: Power; coast: string | null } | null;
+}
+
 // === Messages (for negotiation) ===
 
 export interface Message {
