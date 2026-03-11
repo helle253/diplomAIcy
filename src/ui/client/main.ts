@@ -13,17 +13,19 @@ interface Phase {
   type: string;
 }
 
-interface UnitInfo {
-  type: 'Army' | 'Fleet';
-  power: string;
-  province: string;
-  coast?: string;
+interface ProvinceState {
+  type: string;
+  supplyCenter: boolean;
+  homeCenter: string | null;
+  adjacent: string[];
+  coasts: Record<string, string[]> | null;
+  owner: string | null;
+  unit: { type: 'Army' | 'Fleet'; power: string; coast: string | null } | null;
 }
 
 interface GameState {
   phase: Phase;
-  units: UnitInfo[];
-  supplyCenters: Record<string, string>;
+  map: Record<string, ProvinceState>;
   retreatSituations: unknown[];
 }
 
@@ -204,10 +206,11 @@ function showTooltip(e: MouseEvent, provinceId: string): void {
 
   ttName.textContent = provinceId.toUpperCase();
 
-  const owner = snap.gameState.supplyCenters[provinceId];
+  const prov = snap.gameState.map[provinceId];
+  const owner = prov?.owner;
   ttOwner.textContent = owner ? `Owner: ${owner}` : '';
 
-  const unit = snap.gameState.units.find((u) => u.province === provinceId);
+  const unit = prov?.unit;
   if (unit) {
     ttUnit.textContent = `${unit.power} ${unit.type}${unit.coast ? ` (${unit.coast})` : ''}`;
   } else {
@@ -270,7 +273,7 @@ function updateProvinceColors(): void {
 
     if (snap) {
       const prov = g.getAttribute('data-province')!;
-      const owner = snap.gameState.supplyCenters[prov];
+      const owner = snap.gameState.map[prov]?.owner;
       if (owner) {
         g.classList.add(`power-${owner}`);
       }
@@ -328,8 +331,11 @@ function updateUnits(): void {
 
   const ns = 'http://www.w3.org/2000/svg';
 
-  for (const unit of snap.gameState.units) {
-    const group = svgRoot?.querySelector(`.province-group[data-province="${unit.province}"]`);
+  for (const [province, prov] of Object.entries(snap.gameState.map)) {
+    if (!prov.unit) continue;
+    const unit = prov.unit;
+
+    const group = svgRoot?.querySelector(`.province-group[data-province="${province}"]`);
     if (!group) continue;
 
     const pos = getTextPosition(group);
@@ -337,7 +343,7 @@ function updateUnits(): void {
 
     const color = POWER_COLORS[unit.power] || '#888';
 
-    const { cx, cy } = unitPosition(pos, unit.province, unit.type, unit.coast);
+    const { cx, cy } = unitPosition(pos, province, unit.type, unit.coast ?? undefined);
 
     const g = document.createElementNS(ns, 'g');
     g.classList.add('unit-marker');
@@ -380,8 +386,8 @@ function updateSCSummary(): void {
 
   const counts: Record<string, number> = {};
   POWERS.forEach((p) => (counts[p] = 0));
-  for (const owner of Object.values(snap.gameState.supplyCenters)) {
-    if (counts[owner] !== undefined) counts[owner]++;
+  for (const prov of Object.values(snap.gameState.map)) {
+    if (prov.owner && counts[prov.owner] !== undefined) counts[prov.owner]++;
   }
 
   scSummary.innerHTML = POWERS.map(
