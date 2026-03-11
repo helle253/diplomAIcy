@@ -105,7 +105,7 @@ describe('game router wire format', () => {
 
       expect(state.phase).toBeDefined();
       expect(state.phase.year).toBe(1901);
-      expect(state.orderHistory).toEqual([]);
+      expect(state.orderHistory).toEqual({});
       expect(state.retreatSituations).toEqual([]);
       expect(state.endYear).toBeDefined();
       expect(state.deadlineMs).toBeDefined();

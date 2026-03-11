@@ -13,11 +13,34 @@ import { UnitType } from '../../engine/types.js';
 export interface SerializedGameState {
   phase: Phase;
   map: Record<string, ProvinceState>;
-  orderHistory: OrderResolution[][];
+  orderHistory: Record<string, OrderResolution[][]>;
   retreatSituations: RetreatSituation[];
   endYear: number;
   deadlineMs: number;
   gameOver?: boolean;
+}
+
+/** Reconstructs flat OrderResolution[][] from per-power wire format. */
+function deserializeOrderHistory(
+  perPower: Record<string, OrderResolution[][]>,
+): OrderResolution[][] {
+  // Find the max number of rounds across all powers
+  let maxRounds = 0;
+  for (const rounds of Object.values(perPower)) {
+    if (rounds.length > maxRounds) maxRounds = rounds.length;
+  }
+  // Merge each round back together
+  const result: OrderResolution[][] = [];
+  for (let i = 0; i < maxRounds; i++) {
+    const round: OrderResolution[] = [];
+    for (const rounds of Object.values(perPower)) {
+      if (i < rounds.length) {
+        round.push(...rounds[i]);
+      }
+    }
+    result.push(round);
+  }
+  return result;
 }
 
 /** Converts the serialized tRPC game state back into internal GameState. */
@@ -43,7 +66,7 @@ export function deserializeGameState(s: SerializedGameState): GameState {
     phase: s.phase,
     units,
     supplyCenters,
-    orderHistory: s.orderHistory,
+    orderHistory: deserializeOrderHistory(s.orderHistory),
     retreatSituations: s.retreatSituations,
     endYear: s.endYear,
   };

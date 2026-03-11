@@ -79,12 +79,33 @@ const BUILD_JSON_SCHEMA = toJSONSchema(buildOrderSchema);
 
 // ── Serialization helpers ──────────────────────────────────────────────
 
+function serializeOrderHistory(
+  history: ReturnType<GameManager['getState']>['orderHistory'],
+): Record<string, typeof history> {
+  const byPower: Record<string, typeof history[number][]> = {};
+  for (const round of history) {
+    // Group resolutions in this round by power
+    const grouped = new Map<string, typeof round>();
+    for (const res of round) {
+      const arr = grouped.get(res.power) ?? [];
+      arr.push(res);
+      grouped.set(res.power, arr);
+    }
+    // Append each power's slice to their history
+    for (const [power, resolutions] of grouped) {
+      if (!byPower[power]) byPower[power] = [];
+      byPower[power].push(resolutions);
+    }
+  }
+  return byPower;
+}
+
 function serializeState(manager: GameManager) {
   const state = manager.getState();
   return {
     phase: state.phase,
     map: buildMapState(state.units, state.supplyCenters),
-    orderHistory: state.orderHistory,
+    orderHistory: serializeOrderHistory(state.orderHistory),
     retreatSituations: state.retreatSituations,
     endYear: state.endYear,
     deadlineMs: manager.getDeadline(),
