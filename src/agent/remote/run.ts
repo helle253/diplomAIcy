@@ -122,15 +122,22 @@ async function main() {
   }
 
   // Step 2: Wait for lobby to be playing (autostart may be in progress)
+  // LOBBY_READY_TIMEOUT_MS=0 (default) means wait indefinitely
   const trpcClient = createGameClient(server, seatToken);
-  for (let attempt = 0; attempt < 30; attempt++) {
+  const readyTimeoutMs = Number(process.env.LOBBY_READY_TIMEOUT_MS ?? 0);
+  const deadline = readyTimeoutMs > 0 ? Date.now() + readyTimeoutMs : Number.POSITIVE_INFINITY;
+
+  while (Date.now() < deadline || deadline === Number.POSITIVE_INFINITY) {
     try {
       await trpcClient.game.getState.query({ lobbyId });
       break; // game is ready
     } catch {
-      if (attempt === 29) throw new Error(`Lobby ${lobbyId} never became playable`);
       await new Promise((r) => setTimeout(r, 1000));
     }
+  }
+
+  if (deadline !== Number.POSITIVE_INFINITY && Date.now() >= deadline) {
+    throw new Error(`Lobby ${lobbyId} never became playable before timeout (${readyTimeoutMs}ms)`);
   }
 
   // Step 3: Connect agent
