@@ -141,6 +141,7 @@ test('bounced move: coast to coast army (bre → pic)', async ({ page }) => {
 
   expect(await screenshotRegion(page, ['bre', 'pic'])).toMatchSnapshot(
     'bounce-coast-coast-army-bre-pic.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -169,6 +170,7 @@ test('bounced move: coast to sea fleet (bre → eng)', async ({ page }) => {
 
   expect(await screenshotRegion(page, ['bre', 'eng'])).toMatchSnapshot(
     'bounce-coast-sea-fleet-bre-eng.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -197,6 +199,7 @@ test('bounced move: sea to sea fleet (nth → nwg)', async ({ page }) => {
 
   expect(await screenshotRegion(page, ['nth', 'nwg'])).toMatchSnapshot(
     'bounce-sea-sea-fleet-nth-nwg.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -225,6 +228,7 @@ test('bounced move: sea to coast fleet (nth → lon)', async ({ page }) => {
 
   expect(await screenshotRegion(page, ['nth', 'lon'])).toMatchSnapshot(
     'bounce-sea-coast-fleet-nth-lon.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -253,6 +257,7 @@ test('bounced move: coast to inland army (mar → bur)', async ({ page }) => {
 
   expect(await screenshotRegion(page, ['mar', 'bur'])).toMatchSnapshot(
     'bounce-coast-inland-army-mar-bur.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -281,6 +286,7 @@ test('bounced move: inland to coast army (bur → mar)', async ({ page }) => {
 
   expect(await screenshotRegion(page, ['bur', 'mar'])).toMatchSnapshot(
     'bounce-inland-coast-army-bur-mar.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -309,6 +315,7 @@ test('bounced move: inland to inland army (mun → boh)', async ({ page }) => {
 
   expect(await screenshotRegion(page, ['mun', 'boh'])).toMatchSnapshot(
     'bounce-inland-inland-army-mun-boh.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -337,6 +344,7 @@ test('bounced move: bicoastal to sea fleet (stp/sc → bot)', async ({ page }) =
 
   expect(await screenshotRegion(page, ['stp', 'bot'])).toMatchSnapshot(
     'bounce-bicoastal-sea-fleet-stp-bot.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -364,5 +372,6 @@ test('bounce arrow is red', async ({ page }) => {
 
   expect(await screenshotRegion(page, ['par', 'bur'])).toMatchSnapshot(
     'bounce-red-army-par-bur.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });

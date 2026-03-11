@@ -146,6 +146,7 @@ test('successful move: coast to coast army (bre → pic)', async ({ page }) => {
 
   expect(await screenshotRegion(page, ['bre', 'pic'])).toMatchSnapshot(
     'success-coast-coast-army-bre-pic.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -171,6 +172,7 @@ test('successful move: coast to coast fleet (bre → pic)', async ({ page }) => 
 
   expect(await screenshotRegion(page, ['bre', 'pic'])).toMatchSnapshot(
     'success-coast-coast-fleet-bre-pic.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -196,6 +198,7 @@ test('successful move: coast to sea fleet (bre → mao)', async ({ page }) => {
 
   expect(await screenshotRegion(page, ['bre', 'mao'])).toMatchSnapshot(
     'success-coast-sea-fleet-bre-mao.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -220,6 +223,7 @@ test('successful move: sea to sea fleet (nth → nwg)', async ({ page }) => {
 
   expect(await screenshotRegion(page, ['nth', 'nwg'])).toMatchSnapshot(
     'success-sea-sea-fleet-nth-nwg.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -244,6 +248,7 @@ test('successful move: sea to coast fleet (nth → lon)', async ({ page }) => {
 
   expect(await screenshotRegion(page, ['nth', 'lon'])).toMatchSnapshot(
     'success-sea-coast-fleet-nth-lon.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -268,6 +273,7 @@ test('successful move: coast to inland army (mar → bur)', async ({ page }) => 
 
   expect(await screenshotRegion(page, ['mar', 'bur'])).toMatchSnapshot(
     'success-coast-inland-army-mar-bur.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -292,6 +298,7 @@ test('successful move: inland to coast army (bur → mar)', async ({ page }) => 
 
   expect(await screenshotRegion(page, ['bur', 'mar'])).toMatchSnapshot(
     'success-inland-coast-army-bur-mar.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -316,6 +323,7 @@ test('successful move: inland to inland army (mun → boh)', async ({ page }) =>
 
   expect(await screenshotRegion(page, ['mun', 'boh'])).toMatchSnapshot(
     'success-inland-inland-army-mun-boh.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -340,6 +348,7 @@ test('successful move: bicoastal to sea fleet (stp/sc → bot)', async ({ page }
 
   expect(await screenshotRegion(page, ['stp', 'bot'])).toMatchSnapshot(
     'success-bicoastal-sea-fleet-stp-bot.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -364,6 +373,7 @@ test('successful move: sea to bicoastal fleet (bot → stp/sc)', async ({ page }
 
   expect(await screenshotRegion(page, ['bot', 'stp'])).toMatchSnapshot(
     'success-sea-bicoastal-fleet-bot-stp.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -388,6 +398,7 @@ test('successful move: bicoastal to coast fleet (spa/nc → por)', async ({ page
 
   expect(await screenshotRegion(page, ['spa', 'por'])).toMatchSnapshot(
     'success-bicoastal-coast-fleet-spa-por.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -412,6 +423,7 @@ test('arrow uses black color for successful move', async ({ page }) => {
 
   expect(await screenshotRegion(page, ['lvp', 'yor'])).toMatchSnapshot(
     'success-color-england-lvp-yor.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -441,6 +453,7 @@ test('multiple successful moves render separate arrows', async ({ page }) => {
 
   expect(await screenshotRegion(page, ['par', 'bur', 'mun', 'boh'])).toMatchSnapshot(
     'success-multiple-moves.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 

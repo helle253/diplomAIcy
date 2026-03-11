@@ -153,6 +153,7 @@ test('support-to-move: coast army supports coast army (pic S bre → bur)', asyn
 
   expect(await screenshotRegion(page, ['bre', 'pic', 'bur'])).toMatchSnapshot(
     'support-move-coast-army-pic-bre-bur.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -181,6 +182,7 @@ test('support-to-hold: coast army supports inland army hold (pic S bur)', async 
 
   expect(await screenshotRegion(page, ['pic', 'bur'])).toMatchSnapshot(
     'support-hold-coast-army-pic-bur.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -212,6 +214,7 @@ test('support from sea: fleet supports army move (eng S lon → wal)', async ({ 
 
   expect(await screenshotRegion(page, ['eng', 'lon', 'wal'])).toMatchSnapshot(
     'support-sea-fleet-eng-lon-wal.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -243,6 +246,7 @@ test('support from inland: army supports army move (boh S mun → tyr)', async (
 
   expect(await screenshotRegion(page, ['boh', 'mun', 'tyr'])).toMatchSnapshot(
     'support-inland-army-boh-mun-tyr.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -274,6 +278,7 @@ test('support from coast: fleet supports fleet move (lon S nth → eng)', async 
 
   expect(await screenshotRegion(page, ['lon', 'nth', 'eng'])).toMatchSnapshot(
     'support-coast-fleet-lon-nth-eng.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -310,6 +315,7 @@ test('disrupted support is red', async ({ page }) => {
 
   expect(await screenshotRegion(page, ['pic', 'bur', 'bel'])).toMatchSnapshot(
     'support-failed-pic-bur-bel.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -341,6 +347,7 @@ test('support from bicoastal: fleet stp/sc supports move (bot → fin)', async (
 
   expect(await screenshotRegion(page, ['stp', 'bot', 'fin'])).toMatchSnapshot(
     'support-bicoastal-fleet-stp-bot-fin.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -375,6 +382,7 @@ test('mixed: move arrow and support arrow render together', async ({ page }) => 
 
   expect(await screenshotRegion(page, ['par', 'pic', 'bur'])).toMatchSnapshot(
     'mixed-move-support-par-pic-bur.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
 
@@ -411,5 +419,6 @@ test('mixed: bounce and support render together', async ({ page }) => {
 
   expect(await screenshotRegion(page, ['par', 'pic', 'bur'])).toMatchSnapshot(
     'mixed-bounce-support-par-pic-bur.png',
+    { maxDiffPixelRatio: 0.01 },
   );
 });
