@@ -245,6 +245,10 @@ export function createGameRouter(lobbyManager: LobbyManager) {
         }),
       )
       .mutation(({ ctx, input }) => {
+        const lobby = lobbyManager.getLobby(ctx.lobbyId);
+        if (lobby?.status === 'finished' && !lobby.config.postGamePress) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'Post-game press is disabled' });
+        }
         const manager = resolveManager(lobbyManager, ctx.lobbyId);
         manager.sendMessage({
           from: ctx.power,
