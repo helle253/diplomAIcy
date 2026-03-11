@@ -276,13 +276,17 @@ export async function connectRemoteAgent(
       onData(envelope) {
         const tracked = envelope as unknown as {
           id: string;
-          data: { gameState: SerializedGameState };
+          data: { gameState: SerializedGameState; deadlineMs?: number };
         };
+        if (!tracked?.data?.gameState) {
+          logger.warn(`[${agent.power}] Unexpected phase envelope shape, skipping`);
+          return;
+        }
         const gameState = deserializeGameState(tracked.data.gameState);
         const key = phaseKey(gameState);
         if (key === lastHandledPhase) return;
         lastHandledPhase = key;
-        enqueuePhase(gameState, tracked.data.gameState.deadlineMs);
+        enqueuePhase(gameState, tracked.data.gameState.deadlineMs ?? 0);
       },
       onError(err) {
         logger.error(`[${agent.power}] onPhaseChange subscription error:`, err);
@@ -297,6 +301,10 @@ export async function connectRemoteAgent(
     {
       onData(envelope) {
         const tracked = envelope as unknown as { id: string; data: Message };
+        if (!tracked?.data?.from) {
+          logger.warn(`[${agent.power}] Unexpected message envelope shape, skipping`);
+          return;
+        }
         const message = tracked.data;
         if (message.from === agent.power) return;
         logger.info(`[${agent.power}] <- ${message.from}: ${message.content}`);
