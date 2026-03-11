@@ -23,10 +23,16 @@ interface ProvinceState {
   unit: { type: 'Army' | 'Fleet'; power: string; coast: string | null } | null;
 }
 
+interface RetreatSituation {
+  unit: { type: 'Army' | 'Fleet'; power: string; province: string; coast?: string };
+  attackedFrom: string;
+  validDestinations: string[];
+}
+
 interface GameState {
   phase: Phase;
   map: Record<string, ProvinceState>;
-  retreatSituations: unknown[];
+  retreatSituations: RetreatSituation[];
 }
 
 interface Message {
