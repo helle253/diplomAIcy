@@ -93,12 +93,77 @@ export function makeSnapshot(
   units: TestUnit[],
   supplyCenters: Record<string, string> = STARTING_SC,
   phase = { year: 1901, season: 'Spring', type: 'Diplomacy' },
+  turnRecord?: unknown,
 ): TestSnapshot {
   return {
     phase,
     gameState: { phase, units, supplyCenters, retreatSituations: [] },
+    turnRecord,
     messages: [],
   };
+}
+
+// --- Order / arrow test helpers ------------------------------------------------
+
+export interface TestOrderResolution {
+  order: {
+    type: string;
+    unit: string;
+    destination?: string;
+    coast?: string;
+    supportedUnit?: string;
+    viaConvoy?: boolean;
+  };
+  power: string;
+  status: 'Succeeds' | 'Fails' | 'Invalid';
+  reason?: string;
+}
+
+export function makeMove(
+  power: string,
+  unit: string,
+  destination: string,
+  status: 'Succeeds' | 'Fails' = 'Succeeds',
+  coast?: string,
+): TestOrderResolution {
+  return {
+    order: { type: 'Move', unit, destination, ...(coast ? { coast } : {}) },
+    power,
+    status,
+  };
+}
+
+export function makeSupport(
+  power: string,
+  unit: string,
+  supportedUnit: string,
+  destination: string | undefined,
+  status: 'Succeeds' | 'Fails' = 'Succeeds',
+): TestOrderResolution {
+  return {
+    order: {
+      type: 'Support',
+      unit,
+      supportedUnit,
+      ...(destination ? { destination } : {}),
+    },
+    power,
+    status,
+  };
+}
+
+export function makeHold(power: string, unit: string): TestOrderResolution {
+  return { order: { type: 'Hold', unit }, power, status: 'Succeeds' };
+}
+
+/** Build an Orders-phase snapshot with a turnRecord containing order resolutions. */
+export function makeOrdersSnapshot(
+  units: TestUnit[],
+  orders: TestOrderResolution[],
+  supplyCenters: Record<string, string> = STARTING_SC,
+  phase = { year: 1901, season: 'Spring', type: 'Orders' },
+): TestSnapshot {
+  return makeSnapshot(units, supplyCenters, phase, { orders });
 }
 
 export interface TestServer {
@@ -107,6 +172,8 @@ export interface TestServer {
   close: () => Promise<void>;
   /** Send a new snapshot to all connected clients */
   setSnapshot: (snapshot: TestSnapshot) => void;
+  /** Send multiple snapshots (full timeline) to all connected clients */
+  setSnapshots: (snapshots: TestSnapshot[]) => void;
 }
 
 export async function startTestServer(snapshots: TestSnapshot[]): Promise<TestServer> {
@@ -141,7 +208,11 @@ export async function startTestServer(snapshots: TestSnapshot[]): Promise<TestSe
   });
 
   function setSnapshot(snapshot: TestSnapshot) {
-    currentSnapshots = [snapshot];
+    setSnapshots([snapshot]);
+  }
+
+  function setSnapshots(snaps: TestSnapshot[]) {
+    currentSnapshots = [...snaps];
     const msg = JSON.stringify({
       type: 'full_history',
       snapshots: currentSnapshots,
@@ -162,6 +233,7 @@ export async function startTestServer(snapshots: TestSnapshot[]): Promise<TestSe
         url: `http://localhost:${port}#/game/test`,
         port,
         setSnapshot,
+        setSnapshots,
         close: () =>
           new Promise<void>((res) => {
             wss.close();
