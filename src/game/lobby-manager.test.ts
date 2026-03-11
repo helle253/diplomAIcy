@@ -123,6 +123,47 @@ describe('LobbyManager', () => {
     await expect(lm.startLobby(id)).rejects.toThrow('playing, not waiting');
   });
 
+  it('startLobby sets status to starting during _onStart, preventing concurrent starts', async () => {
+    const lm = new LobbyManager();
+    let statusDuringStart: string | undefined;
+    lm.onStart(async (id) => {
+      statusDuringStart = lm.getLobby(id)!.status;
+    });
+    const { lobbyId: id } = lm.createLobby(DEFAULT_CONFIG);
+    await lm.startLobby(id);
+    expect(statusDuringStart).toBe('starting');
+    expect(lm.getLobby(id)!.status).toBe('playing');
+  });
+
+  it('startLobby rolls back status on _onStart failure', async () => {
+    const lm = new LobbyManager();
+    lm.onStart(async () => {
+      throw new Error('startup failed');
+    });
+    const { lobbyId: id } = lm.createLobby(DEFAULT_CONFIG);
+    await expect(lm.startLobby(id)).rejects.toThrow('startup failed');
+    const lobby = lm.getLobby(id)!;
+    expect(lobby.status).toBe('waiting');
+    expect(lobby.manager).toBeNull();
+  });
+
+  it('startLobby rejects concurrent calls with starting guard', async () => {
+    const lm = new LobbyManager();
+    let resolveStart: (() => void) | null = null;
+    lm.onStart(async () => {
+      await new Promise<void>((r) => {
+        resolveStart = r;
+      });
+    });
+    const { lobbyId: id } = lm.createLobby(DEFAULT_CONFIG);
+    const p1 = lm.startLobby(id);
+    // Second call should fail immediately since status is 'starting'
+    await expect(lm.startLobby(id)).rejects.toThrow('starting, not waiting');
+    resolveStart!();
+    await p1;
+    expect(lm.getLobby(id)!.status).toBe('playing');
+  });
+
   it('startLobby calls onStart handler', async () => {
     const lm = new LobbyManager();
     const handler = vi.fn();

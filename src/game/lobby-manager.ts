@@ -20,7 +20,7 @@ export interface LobbyConfig {
 export interface Lobby {
   id: string;
   config: LobbyConfig;
-  status: 'waiting' | 'playing' | 'finished';
+  status: 'waiting' | 'starting' | 'playing' | 'finished';
   createdAt: number;
   creatorToken: string;
   seats: Map<Power, string>;
@@ -86,6 +86,9 @@ export class LobbyManager {
     if (!lobby) throw new Error(`Lobby ${id} not found`);
     if (lobby.status !== 'waiting') throw new Error(`Lobby ${id} is ${lobby.status}, not waiting`);
 
+    // Guard against concurrent starts
+    lobby.status = 'starting';
+
     const config = lobby.config;
     const manager = new GameManager({
       maxYears: config.maxYears,
@@ -99,10 +102,16 @@ export class LobbyManager {
 
     lobby.manager = manager;
 
-    // Notify server to wire agents and start the game loop
-    if (this._onStart) await this._onStart(id, manager);
+    try {
+      // Notify server to wire agents and start the game loop
+      if (this._onStart) await this._onStart(id, manager);
+    } catch (err) {
+      // Roll back on failure
+      lobby.manager = null;
+      lobby.status = 'waiting';
+      throw err;
+    }
 
-    // Set status AFTER successful start (transactional)
     lobby.status = 'playing';
 
     return manager;
