@@ -222,7 +222,7 @@ function startServer(): void {
             supplyCenters: Object.fromEntries(result.supplyCenters),
           },
         });
-        lobbyManager.finishLobby(id);
+        lobbyManager.finishLobby(id, result);
         cleanupLobbyRuntime(id);
         logger.info(
           result.winner
