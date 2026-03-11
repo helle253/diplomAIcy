@@ -281,11 +281,11 @@ function startServer(): void {
       return;
     }
 
-    // Resolve power from token
+    // Resolve power from token, verifying it belongs to this lobby
     let clientPower: Power | undefined;
     if (token) {
       const identity = lobbyManager.validateToken(token);
-      if (identity && 'power' in identity) {
+      if (identity && 'power' in identity && identity.lobbyId === lobbyId) {
         clientPower = identity.power;
       }
     }
