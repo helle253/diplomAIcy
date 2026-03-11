@@ -76,10 +76,22 @@ export function createLobbyRouter(lobbyManager: LobbyManager, defaults: LobbyDef
 
     get: publicProcedure.input(z.object({ id: z.string() })).query(({ input }) => {
       const lobby = lobbyManager.getLobby(input.id);
-      if (!lobby) throw new Error(`Lobby ${input.id} not found`);
+      if (!lobby)
+        throw new TRPCError({ code: 'NOT_FOUND', message: `Lobby ${input.id} not found` });
+      // Redact secrets from agentConfig before returning
+      const { agentConfig, ...restConfig } = lobby.config;
+      const redactedAgentConfig = {
+        ...agentConfig,
+        defaultAgent: { ...agentConfig.defaultAgent, apiKey: undefined },
+        powers: agentConfig.powers
+          ? Object.fromEntries(
+              Object.entries(agentConfig.powers).map(([k, v]) => [k, { ...v, apiKey: undefined }]),
+            )
+          : undefined,
+      };
       return {
         ...serializeLobby(lobby),
-        config: lobby.config,
+        config: { ...restConfig, agentConfig: redactedAgentConfig },
       };
     }),
 
