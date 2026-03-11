@@ -5,6 +5,7 @@ import { tracked, TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { toJSONSchema } from 'zod/v4';
 
+import { buildMapState } from '../engine/map-state.js';
 import { Coast, OrderType, Phase, Power, UnitType } from '../engine/types.js';
 import type { LobbyManager } from './lobby-manager.js';
 import type { GameManager } from './manager.js';
@@ -82,8 +83,7 @@ function serializeState(manager: GameManager) {
   const state = manager.getState();
   return {
     phase: state.phase,
-    units: state.units,
-    supplyCenters: Object.fromEntries(state.supplyCenters),
+    map: buildMapState(state.units, state.supplyCenters),
     orderHistory: state.orderHistory,
     retreatSituations: state.retreatSituations,
     endYear: state.endYear,
