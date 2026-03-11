@@ -10,8 +10,8 @@ import { WebSocket, WebSocketServer } from 'ws';
 
 import { connectAgent } from '../agent/adapter.js';
 import { AnthropicClient } from '../agent/llm/anthropic-client.js';
-import { getAgentConfig, loadConfig, toLLMClientConfig } from '../agent/llm/config.js';
 import type { GameConfig } from '../agent/llm/config.js';
+import { getAgentConfig, loadConfig, toLLMClientConfig } from '../agent/llm/config.js';
 import { LLMAgent } from '../agent/llm/llm-agent.js';
 import { LLMClient, OpenAICompatibleClient } from '../agent/llm/llm-client.js';
 import { RandomAgent } from '../agent/random.js';
@@ -21,7 +21,7 @@ import { createLobbyRouter } from '../game/lobby-router.js';
 import type { GameEvent, TurnRecord } from '../game/manager.js';
 import { createGameRouter } from '../game/router.js';
 import { GameStorage } from '../game/storage.js';
-import { router } from '../game/trpc.js';
+import { createContext, router } from '../game/trpc.js';
 import { logger } from '../util/logger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -60,7 +60,7 @@ interface LobbyRuntime {
   phaseSnapshots: PhaseSnapshot[];
   allMessages: Message[];
   gameId: string;
-  clients: Set<WebSocket>;
+  clients: Map<WebSocket, Power | undefined>; // ws → power (undefined = spectator)
 }
 
 const lobbyRuntimes = new Map<string, LobbyRuntime>();
@@ -68,18 +68,24 @@ const lobbyRuntimes = new Map<string, LobbyRuntime>();
 function cleanupLobbyRuntime(lobbyId: string): void {
   const runtime = lobbyRuntimes.get(lobbyId);
   if (!runtime) return;
-  for (const client of runtime.clients) {
+  for (const client of runtime.clients.keys()) {
     client.close();
   }
   lobbyRuntimes.delete(lobbyId);
 }
 
-function broadcastToLobby(lobbyId: string, data: unknown): void {
+function broadcastToLobby(
+  lobbyId: string,
+  data: unknown,
+  filter?: (power: Power | undefined) => boolean,
+): void {
   const runtime = lobbyRuntimes.get(lobbyId);
   if (!runtime) return;
   const message = JSON.stringify(data);
-  for (const client of runtime.clients) {
-    if (client.readyState === WebSocket.OPEN) client.send(message);
+  for (const [client, power] of runtime.clients) {
+    if (client.readyState === WebSocket.OPEN && (!filter || filter(power))) {
+      client.send(message);
+    }
   }
 }
 
@@ -95,7 +101,14 @@ function startServer(): void {
   const pressDelayMin = parseInt(process.env.PRESS_DELAY_MIN || '0');
   const pressDelayMax = parseInt(process.env.PRESS_DELAY_MAX || '0');
   const defaultAgentConfig: GameConfig = loadConfig();
-  const defaults = { maxYears, phaseDelayMs, remoteTimeoutMs, pressDelayMin, pressDelayMax, agentConfig: defaultAgentConfig };
+  const defaults = {
+    maxYears,
+    phaseDelayMs,
+    remoteTimeoutMs,
+    pressDelayMin,
+    pressDelayMax,
+    agentConfig: defaultAgentConfig,
+  };
 
   // Create LobbyManager
   const lobbyManager = new LobbyManager();
@@ -112,7 +125,7 @@ function startServer(): void {
       phaseSnapshots: [],
       allMessages: [],
       gameId,
-      clients: new Set(),
+      clients: new Map(),
     };
     lobbyRuntimes.set(id, runtime);
 
@@ -146,7 +159,14 @@ function startServer(): void {
       message.gameId = gameId;
       storage.saveMessage(gameId, message);
       runtime.allMessages.push(message);
-      broadcastToLobby(id, { type: 'message', message });
+      broadcastToLobby(id, { type: 'message', message }, (clientPower) => {
+        if (message.to === 'Global') return true;
+        if (!clientPower) return false; // spectators don't see private press
+        if (message.to === clientPower) return true;
+        if (message.from === clientPower) return true;
+        if (Array.isArray(message.to) && message.to.includes(clientPower)) return true;
+        return false;
+      });
     });
 
     // Wire phase events for snapshots + broadcast
@@ -163,38 +183,59 @@ function startServer(): void {
       };
       runtime.phaseSnapshots.push(snapshot);
 
-      broadcastToLobby(id, {
-        type: 'new_phase',
-        snapshotIndex: runtime.phaseSnapshots.length - 1,
-        snapshot,
-      });
+      // Send per-client filtered snapshots to avoid leaking private press
+      const snapshotIndex = runtime.phaseSnapshots.length - 1;
+      for (const [client, clientPower] of runtime.clients) {
+        if (client.readyState !== WebSocket.OPEN) continue;
+        client.send(
+          JSON.stringify({
+            type: 'new_phase',
+            snapshotIndex,
+            snapshot: {
+              ...snapshot,
+              messages: snapshot.messages.filter((msg) => {
+                if (msg.to === 'Global') return true;
+                if (!clientPower) return false;
+                return (
+                  msg.to === clientPower ||
+                  msg.from === clientPower ||
+                  (Array.isArray(msg.to) && msg.to.includes(clientPower))
+                );
+              }),
+            },
+          }),
+        );
+      }
     });
 
     logger.info(`Starting new Diplomacy game (${gameId}) for lobby ${id}...`);
 
     // Run game loop asynchronously (non-blocking)
-    manager.run().then((result) => {
-      storage.completeGame(gameId, result);
-      broadcastToLobby(id, {
-        type: 'game_end',
-        result: {
-          ...result,
-          supplyCenters: Object.fromEntries(result.supplyCenters),
-        },
+    manager
+      .run()
+      .then((result) => {
+        storage.completeGame(gameId, result);
+        broadcastToLobby(id, {
+          type: 'game_end',
+          result: {
+            ...result,
+            supplyCenters: Object.fromEntries(result.supplyCenters),
+          },
+        });
+        lobbyManager.finishLobby(id);
+        cleanupLobbyRuntime(id);
+        logger.info(
+          result.winner
+            ? `Game over! ${result.winner} wins in ${result.year}.`
+            : `Game ended in a draw in year ${result.year}.`,
+        );
+      })
+      .catch((err) => {
+        storage.failGame(gameId);
+        lobbyManager.finishLobby(id);
+        cleanupLobbyRuntime(id);
+        logger.error('Game error:', err);
       });
-      lobbyManager.finishLobby(id);
-      cleanupLobbyRuntime(id);
-      logger.info(
-        result.winner
-          ? `Game over! ${result.winner} wins in ${result.year}.`
-          : `Game ended in a draw in year ${result.year}.`,
-      );
-    }).catch((err) => {
-      storage.failGame(gameId);
-      lobbyManager.finishLobby(id);
-      cleanupLobbyRuntime(id);
-      logger.error('Game error:', err);
-    });
   });
 
   // Create merged AppRouter
@@ -207,16 +248,13 @@ function startServer(): void {
   app.use(express.static(publicDir));
 
   // Mount tRPC router
-  app.use(
-    '/trpc',
-    createExpressMiddleware({ router: appRouter }),
-  );
+  app.use('/trpc', createExpressMiddleware({ router: appRouter, createContext }));
 
   // WebSocket with noServer: true
   const wss = new WebSocketServer({ noServer: true });
 
   server.on('upgrade', (request, socket, head) => {
-    const { pathname } = parseUrl(request.url || '');
+    const { pathname, query } = parseUrl(request.url || '', true);
     const match = pathname?.match(/^\/ws\/(.+)$/);
     if (!match) {
       socket.destroy();
@@ -224,30 +262,57 @@ function startServer(): void {
     }
     const lobbyId = match[1];
     const lobby = lobbyManager.getLobby(lobbyId);
-    if (!lobby || lobby.status === 'waiting') {
+    if (!lobby || lobby.status === 'waiting' || lobby.status === 'starting') {
       socket.destroy();
       return;
     }
+
+    const token = typeof query.token === 'string' ? query.token : undefined;
+
     wss.handleUpgrade(request, socket, head, (ws) => {
-      wss.emit('connection', ws, request, lobbyId);
+      wss.emit('connection', ws, request, lobbyId, token);
     });
   });
 
-  wss.on('connection', (ws: WebSocket, _request: unknown, lobbyId: string) => {
+  wss.on('connection', (ws: WebSocket, _request: unknown, lobbyId: string, token?: string) => {
     const runtime = lobbyRuntimes.get(lobbyId);
     if (!runtime) {
       ws.close();
       return;
     }
 
-    runtime.clients.add(ws);
-    logger.info(`Client connected to lobby ${lobbyId}`);
+    // Resolve power from token, verifying it belongs to this lobby
+    let clientPower: Power | undefined;
+    if (token) {
+      const identity = lobbyManager.validateToken(token);
+      if (identity && 'power' in identity && identity.lobbyId === lobbyId) {
+        clientPower = identity.power;
+      }
+    }
 
-    // Send all accumulated snapshots on connect so client can build slider
+    runtime.clients.set(ws, clientPower);
+    logger.info(
+      `Client connected to lobby ${lobbyId}${clientPower ? ` as ${clientPower}` : ' (spectator)'}`,
+    );
+
+    // Filter press messages in full_history per connection's auth level
+    const filteredSnapshots = runtime.phaseSnapshots.map((s) => ({
+      ...s,
+      messages: s.messages.filter((msg) => {
+        if (msg.to === 'Global') return true;
+        if (!clientPower) return false;
+        return (
+          msg.to === clientPower ||
+          msg.from === clientPower ||
+          (Array.isArray(msg.to) && msg.to.includes(clientPower))
+        );
+      }),
+    }));
+
     ws.send(
       JSON.stringify({
         type: 'full_history',
-        snapshots: runtime.phaseSnapshots,
+        snapshots: filteredSnapshots,
         gameId: runtime.gameId,
       }),
     );
@@ -274,7 +339,9 @@ function startServer(): void {
 
 startServer();
 
-export type AppRouter = ReturnType<typeof router<{
-  lobby: ReturnType<typeof createLobbyRouter>;
-  game: ReturnType<typeof createGameRouter>;
-}>>;
+export type AppRouter = ReturnType<
+  typeof router<{
+    lobby: ReturnType<typeof createLobbyRouter>;
+    game: ReturnType<typeof createGameRouter>;
+  }>
+>;

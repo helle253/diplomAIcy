@@ -137,7 +137,7 @@ export async function connectRemoteAgent(
         for (const o of orders) {
           logger.info(`[${agent.power}]   order: ${JSON.stringify(o)}`);
         }
-        await client.game.submitOrders.mutate({ lobbyId, power: agent.power, orders });
+        await client.game.submitOrders.mutate({ orders });
         logger.info(`[${agent.power}] orders submitted to server`);
       } else if (gameState.phase.type === PhaseType.Retreats) {
         // Only submit if this power has dislodged units
@@ -148,18 +148,21 @@ export async function connectRemoteAgent(
           for (const r of retreats) {
             logger.info(`[${agent.power}]   retreat: ${JSON.stringify(r)}`);
           }
-          await client.game.submitRetreats.mutate({ lobbyId, power: agent.power, retreats });
+          await client.game.submitRetreats.mutate({ retreats });
           logger.info(`[${agent.power}] retreats submitted to server`);
         }
       } else if (gameState.phase.type === PhaseType.Builds) {
-        const { buildCount } = await client.game.getBuildCount.query({ lobbyId, power: agent.power });
+        const { buildCount } = await client.game.getBuildCount.query({
+          lobbyId,
+          power: agent.power,
+        });
         if (buildCount !== 0) {
           logger.info(`[${agent.power}] submitBuilds (buildCount=${buildCount})`);
           const builds = await agent.submitBuilds(gameState, buildCount);
           for (const b of builds) {
             logger.info(`[${agent.power}]   build: ${JSON.stringify(b)}`);
           }
-          await client.game.submitBuilds.mutate({ lobbyId, power: agent.power, builds });
+          await client.game.submitBuilds.mutate({ builds });
           logger.info(`[${agent.power}] builds submitted to server`);
         }
       }
@@ -181,8 +184,6 @@ export async function connectRemoteAgent(
       for (const msg of messages) {
         logger.info(`[${agent.power}] -> ${formatTo(msg.to)}: ${msg.content}`);
         await client.game.sendMessage.mutate({
-          lobbyId,
-          from: msg.from,
           to: msg.to,
           content: msg.content,
         });
@@ -199,6 +200,10 @@ export async function connectRemoteAgent(
   async function handleMessageBatch(messages: Message[]) {
     try {
       const state = await client.game.getState.query({ lobbyId });
+      if ((state as SerializedGameState).gameOver) {
+        logger.info(`[${agent.power}] Game over detected, skipping message batch`);
+        return;
+      }
       const gameState = deserializeGameState(state as SerializedGameState);
 
       let replies: Message[];
@@ -220,8 +225,6 @@ export async function connectRemoteAgent(
       for (const reply of replies) {
         logger.info(`[${agent.power}] -> ${formatTo(reply.to)}: ${reply.content}`);
         await client.game.sendMessage.mutate({
-          lobbyId,
-          from: reply.from,
           to: reply.to,
           content: reply.content,
         });
@@ -271,30 +274,41 @@ export async function connectRemoteAgent(
   }
 
   // Subscribe to phase changes
-  const phaseSub = client.game.onPhaseChange.subscribe({ lobbyId }, {
-    onData(envelope) {
-      const tracked = envelope as unknown as {
-        id: string;
-        data: { gameState: SerializedGameState };
-      };
-      const gameState = deserializeGameState(tracked.data.gameState);
-      const key = phaseKey(gameState);
-      if (key === lastHandledPhase) return;
-      lastHandledPhase = key;
-      enqueuePhase(gameState, tracked.data.gameState.deadlineMs);
+  const phaseSub = client.game.onPhaseChange.subscribe(
+    { lobbyId },
+    {
+      onData(envelope) {
+        const tracked = envelope as unknown as {
+          id: string;
+          data: { gameState: SerializedGameState; deadlineMs?: number };
+        };
+        if (!tracked?.data?.gameState) {
+          logger.warn(`[${agent.power}] Unexpected phase envelope shape, skipping`);
+          return;
+        }
+        const gameState = deserializeGameState(tracked.data.gameState);
+        const key = phaseKey(gameState);
+        if (key === lastHandledPhase) return;
+        lastHandledPhase = key;
+        enqueuePhase(gameState, tracked.data.gameState.deadlineMs ?? 0);
+      },
+      onError(err) {
+        logger.error(`[${agent.power}] onPhaseChange subscription error:`, err);
+      },
     },
-    onError(err) {
-      logger.error(`[${agent.power}] onPhaseChange subscription error:`, err);
-    },
-  });
+  );
   subs.push(phaseSub);
 
   // Subscribe to messages
   const msgSub = client.game.onMessage.subscribe(
-    { lobbyId, power: agent.power },
+    { lobbyId },
     {
       onData(envelope) {
         const tracked = envelope as unknown as { id: string; data: Message };
+        if (!tracked?.data?.from) {
+          logger.warn(`[${agent.power}] Unexpected message envelope shape, skipping`);
+          return;
+        }
         const message = tracked.data;
         if (message.from === agent.power) return;
         logger.info(`[${agent.power}] <- ${message.from}: ${message.content}`);
@@ -322,7 +336,13 @@ export async function connectRemoteAgent(
   // Catch up: act on the current phase if we missed the SSE event
   try {
     const currentState = await client.game.getState.query({ lobbyId });
-    const currentGameState = deserializeGameState(currentState as SerializedGameState);
+    const serialized = currentState as SerializedGameState;
+    if (serialized.gameOver) {
+      logger.info(`[${agent.power}] Game is already over, disconnecting`);
+      unsubscribe();
+      return { unsubscribe };
+    }
+    const currentGameState = deserializeGameState(serialized);
     const key = phaseKey(currentGameState);
     if (
       key !== lastHandledPhase &&
@@ -333,7 +353,7 @@ export async function connectRemoteAgent(
     ) {
       lastHandledPhase = key;
       logger.info(`[${agent.power}] Catching up on current phase: ${currentGameState.phase.type}`);
-      enqueuePhase(currentGameState, (currentState as SerializedGameState).deadlineMs);
+      enqueuePhase(currentGameState, serialized.deadlineMs);
     }
   } catch (err) {
     logger.error(`[${agent.power}] catch-up error (non-fatal):`, err);

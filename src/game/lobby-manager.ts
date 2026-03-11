@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 
 import type { GameConfig } from '../agent/llm/config.js';
+import { Power } from '../engine/types.js';
 import { GameManager } from './manager.js';
 
 export interface LobbyConfig {
@@ -13,13 +14,16 @@ export interface LobbyConfig {
   pressDelayMin: number;
   pressDelayMax: number;
   agentConfig: GameConfig;
+  autostart?: boolean;
 }
 
 export interface Lobby {
   id: string;
   config: LobbyConfig;
-  status: 'waiting' | 'playing' | 'finished';
+  status: 'waiting' | 'starting' | 'playing' | 'finished';
   createdAt: number;
+  creatorToken: string;
+  seats: Map<Power, string>;
   manager: GameManager | null;
 }
 
@@ -33,17 +37,40 @@ export class LobbyManager {
     this._onStart = handler;
   }
 
-  createLobby(config: LobbyConfig): string {
+  createLobby(config: LobbyConfig): { lobbyId: string; creatorToken: string } {
     const id = randomUUID().slice(0, 8);
+    const creatorToken = randomUUID();
     const lobby: Lobby = {
       id,
       config,
       status: 'waiting',
       createdAt: Date.now(),
+      creatorToken,
+      seats: new Map(),
       manager: null,
     };
     this.lobbies.set(id, lobby);
-    return id;
+    return { lobbyId: id, creatorToken };
+  }
+
+  joinLobby(lobbyId: string, power: Power): { seatToken: string } {
+    const lobby = this.lobbies.get(lobbyId);
+    if (!lobby) throw new Error(`Lobby ${lobbyId} not found`);
+    if (lobby.status !== 'waiting') throw new Error(`Lobby ${lobbyId} is not accepting players`);
+    if (lobby.seats.has(power)) throw new Error(`${power} is already claimed in lobby ${lobbyId}`);
+
+    const seatToken = randomUUID();
+    lobby.seats.set(power, seatToken);
+
+    // Autostart if all 7 seats are filled
+    const ALL_POWERS_COUNT = 7;
+    if (lobby.config.autostart && lobby.seats.size === ALL_POWERS_COUNT) {
+      this.startLobby(lobbyId).catch((err) => {
+        console.error(`Autostart failed for lobby ${lobbyId}:`, err);
+      });
+    }
+
+    return { seatToken };
   }
 
   getLobby(id: string): Lobby | undefined {
@@ -59,6 +86,9 @@ export class LobbyManager {
     if (!lobby) throw new Error(`Lobby ${id} not found`);
     if (lobby.status !== 'waiting') throw new Error(`Lobby ${id} is ${lobby.status}, not waiting`);
 
+    // Guard against concurrent starts
+    lobby.status = 'starting';
+
     const config = lobby.config;
     const manager = new GameManager({
       maxYears: config.maxYears,
@@ -71,12 +101,59 @@ export class LobbyManager {
     });
 
     lobby.manager = manager;
+
+    try {
+      // Notify server to wire agents and start the game loop
+      if (this._onStart) await this._onStart(id, manager);
+    } catch (err) {
+      // Roll back on failure
+      lobby.manager = null;
+      lobby.status = 'waiting';
+      throw err;
+    }
+
     lobby.status = 'playing';
 
-    // Notify server to wire agents and start the game loop
-    if (this._onStart) await this._onStart(id, manager);
-
     return manager;
+  }
+
+  kickPlayer(lobbyId: string, power: Power): void {
+    const lobby = this.lobbies.get(lobbyId);
+    if (!lobby) throw new Error(`Lobby ${lobbyId} not found`);
+    if (lobby.status !== 'waiting') throw new Error(`Can only kick players in waiting status`);
+    if (!lobby.seats.has(power)) throw new Error(`${power} has no seat in lobby ${lobbyId}`);
+    lobby.seats.delete(power);
+  }
+
+  rejoinLobby(lobbyId: string, power: Power, oldToken: string): { seatToken: string } {
+    const lobby = this.lobbies.get(lobbyId);
+    if (!lobby) throw new Error(`Lobby ${lobbyId} not found`);
+    if (lobby.status !== 'playing') throw new Error(`Lobby ${lobbyId} is not playing`);
+
+    const currentToken = lobby.seats.get(power);
+    if (!currentToken || currentToken !== oldToken) {
+      throw new Error(`Invalid token for ${power} in lobby ${lobbyId}`);
+    }
+
+    const seatToken = randomUUID();
+    lobby.seats.set(power, seatToken);
+    return { seatToken };
+  }
+
+  validateToken(
+    token: string,
+  ): { lobbyId: string; power: Power } | { lobbyId: string; role: 'creator' } | null {
+    for (const lobby of this.lobbies.values()) {
+      if (lobby.creatorToken === token) {
+        return { lobbyId: lobby.id, role: 'creator' };
+      }
+      for (const [power, seatToken] of lobby.seats) {
+        if (seatToken === token) {
+          return { lobbyId: lobby.id, power };
+        }
+      }
+    }
+    return null;
   }
 
   finishLobby(id: string): void {

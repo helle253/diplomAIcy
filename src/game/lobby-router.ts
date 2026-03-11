@@ -1,8 +1,20 @@
+import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import type { GameConfig } from '../agent/llm/config.js';
-import type { LobbyManager, Lobby } from './lobby-manager.js';
-import { publicProcedure, router } from './trpc.js';
+import { Power } from '../engine/types.js';
+import type { Lobby, LobbyManager } from './lobby-manager.js';
+import { createProtectedProcedures, publicProcedure, router } from './trpc.js';
+
+const powerEnum = z.enum([
+  Power.England,
+  Power.France,
+  Power.Germany,
+  Power.Italy,
+  Power.Austria,
+  Power.Russia,
+  Power.Turkey,
+]);
 
 const agentConfigSchema = z.object({
   type: z.enum(['random', 'llm', 'remote']),
@@ -23,6 +35,7 @@ const lobbyConfigSchema = z.object({
   remoteTimeoutMs: z.number().int().min(0).default(0),
   pressDelayMin: z.number().int().min(0).default(0),
   pressDelayMax: z.number().int().min(0).default(0),
+  autostart: z.boolean().default(false),
   agentConfig: z
     .object({
       defaultAgent: agentConfigSchema,
@@ -40,6 +53,7 @@ function serializeLobby(lobby: Lobby) {
     maxYears: lobby.config.maxYears,
     victoryThreshold: lobby.config.victoryThreshold,
     startYear: lobby.config.startYear,
+    seatCount: lobby.seats.size,
   };
 }
 
@@ -53,42 +67,83 @@ export interface LobbyDefaults {
 }
 
 export function createLobbyRouter(lobbyManager: LobbyManager, defaults: LobbyDefaults) {
+  const { creatorProcedure } = createProtectedProcedures(lobbyManager);
+
   return router({
     list: publicProcedure.query(() => {
       return lobbyManager.listLobbies().map(serializeLobby);
     }),
 
-    get: publicProcedure
-      .input(z.object({ id: z.string() }))
-      .query(({ input }) => {
-        const lobby = lobbyManager.getLobby(input.id);
-        if (!lobby) throw new Error(`Lobby ${input.id} not found`);
-        return {
-          ...serializeLobby(lobby),
-          config: lobby.config,
-        };
-      }),
+    get: publicProcedure.input(z.object({ id: z.string() })).query(({ input }) => {
+      const lobby = lobbyManager.getLobby(input.id);
+      if (!lobby)
+        throw new TRPCError({ code: 'NOT_FOUND', message: `Lobby ${input.id} not found` });
+      // Redact secrets from agentConfig before returning
+      const { agentConfig, ...restConfig } = lobby.config;
+      const redactedAgentConfig = {
+        ...agentConfig,
+        defaultAgent: { ...agentConfig.defaultAgent, apiKey: undefined },
+        powers: agentConfig.powers
+          ? Object.fromEntries(
+              Object.entries(agentConfig.powers).map(([k, v]) => [k, { ...v, apiKey: undefined }]),
+            )
+          : undefined,
+      };
+      return {
+        ...serializeLobby(lobby),
+        config: { ...restConfig, agentConfig: redactedAgentConfig },
+      };
+    }),
 
-    create: publicProcedure
-      .input(lobbyConfigSchema)
+    create: publicProcedure.input(lobbyConfigSchema).mutation(({ input }) => {
+      return lobbyManager.createLobby(input);
+    }),
+
+    join: publicProcedure
+      .input(z.object({ lobbyId: z.string(), power: powerEnum }))
       .mutation(({ input }) => {
-        const id = lobbyManager.createLobby(input);
-        return { id };
+        try {
+          return lobbyManager.joinLobby(input.lobbyId, input.power);
+        } catch (err) {
+          const msg = (err as Error).message;
+          if (msg.includes('already claimed')) {
+            throw new TRPCError({ code: 'CONFLICT', message: msg });
+          }
+          if (msg.includes('not accepting')) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: msg });
+          }
+          throw new TRPCError({ code: 'NOT_FOUND', message: msg });
+        }
       }),
 
-    start: publicProcedure
-      .input(z.object({ id: z.string() }))
-      .mutation(async ({ input }) => {
-        await lobbyManager.startLobby(input.id);
-        return { ok: true };
-      }),
-
-    delete: publicProcedure
-      .input(z.object({ id: z.string() }))
+    rejoin: publicProcedure
+      .input(z.object({ lobbyId: z.string(), power: powerEnum, oldToken: z.string() }))
       .mutation(({ input }) => {
-        lobbyManager.deleteLobby(input.id);
-        return { ok: true };
+        try {
+          return lobbyManager.rejoinLobby(input.lobbyId, input.power, input.oldToken);
+        } catch (err) {
+          const msg = (err as Error).message;
+          if (msg.includes('Invalid token')) {
+            throw new TRPCError({ code: 'UNAUTHORIZED', message: msg });
+          }
+          throw new TRPCError({ code: 'BAD_REQUEST', message: msg });
+        }
       }),
+
+    start: creatorProcedure.mutation(async ({ ctx }) => {
+      await lobbyManager.startLobby(ctx.lobbyId);
+      return { ok: true };
+    }),
+
+    delete: creatorProcedure.mutation(({ ctx }) => {
+      lobbyManager.deleteLobby(ctx.lobbyId);
+      return { ok: true };
+    }),
+
+    kick: creatorProcedure.input(z.object({ power: powerEnum })).mutation(({ ctx, input }) => {
+      lobbyManager.kickPlayer(ctx.lobbyId, input.power);
+      return { ok: true };
+    }),
 
     getDefaults: publicProcedure.query(() => ({
       maxYears: defaults.maxYears,

@@ -109,7 +109,38 @@ async function main() {
     console.log(`Starting random agent for ${power}, connecting to ${server}...`);
   }
 
-  const trpcClient = createGameClient(server);
+  // Step 1: Join lobby to get seat token (unauthenticated client)
+  const joinClient = createGameClient(server);
+  let seatToken: string;
+  try {
+    const result = await joinClient.lobby.join.mutate({ lobbyId, power });
+    seatToken = result.seatToken;
+    console.log(`Joined lobby ${lobbyId} as ${power}`);
+  } catch (err) {
+    console.error(`Failed to join lobby ${lobbyId} as ${power}:`, err);
+    process.exit(1);
+  }
+
+  // Step 2: Wait for lobby to be playing (autostart may be in progress)
+  // LOBBY_READY_TIMEOUT_MS=0 (default) means wait indefinitely
+  const trpcClient = createGameClient(server, seatToken);
+  const readyTimeoutMs = Number(process.env.LOBBY_READY_TIMEOUT_MS ?? 0);
+  const deadline = readyTimeoutMs > 0 ? Date.now() + readyTimeoutMs : Number.POSITIVE_INFINITY;
+
+  while (Date.now() < deadline || deadline === Number.POSITIVE_INFINITY) {
+    try {
+      await trpcClient.game.getState.query({ lobbyId });
+      break; // game is ready
+    } catch {
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+
+  if (deadline !== Number.POSITIVE_INFINITY && Date.now() >= deadline) {
+    throw new Error(`Lobby ${lobbyId} never became playable before timeout (${readyTimeoutMs}ms)`);
+  }
+
+  // Step 3: Connect agent
   await connectRemoteAgent(agent, trpcClient, lobbyId);
 
   // Keep the process alive
