@@ -184,6 +184,7 @@ export interface GameState {
 // === Province State (wire format) ===
 
 export interface ProvinceState {
+  name: string;
   type: ProvinceType;
   supplyCenter: boolean;
   homeCenter: Power | null;

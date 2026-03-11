@@ -36,6 +36,7 @@ export function buildMapState(
     const owner = supplyCenters.get(id) ?? null;
 
     result[id] = {
+      name: prov.name,
       type: prov.type,
       supplyCenter: prov.supplyCenter,
       homeCenter: prov.homeCenter ?? null,

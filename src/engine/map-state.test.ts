@@ -13,12 +13,19 @@ describe('buildMapState', () => {
 
   it('includes static topology for a land province', () => {
     const mun = map['mun'];
+    expect(mun.name).toBe('Munich');
     expect(mun.type).toBe(ProvinceType.Land);
     expect(mun.supplyCenter).toBe(true);
     expect(mun.homeCenter).toBe(Power.Germany);
     expect(mun.adjacent).toContain('bur');
     expect(mun.adjacent).toContain('ruh');
     expect(mun.coasts).toBeNull();
+  });
+
+  it('includes display name for all provinces', () => {
+    for (const [id, prov] of Object.entries(map)) {
+      expect(prov.name, `province ${id} should have a name`).toBeTruthy();
+    }
   });
 
   it('includes static topology for a sea province', () => {

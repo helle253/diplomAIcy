@@ -7,8 +7,9 @@ import { toJSONSchema } from 'zod/v4';
 
 import { buildMapState } from '../engine/map-state.js';
 import { Coast, OrderType, Phase, Power, UnitType } from '../engine/types.js';
+import type { OrderResolution } from '../engine/types.js';
 import type { LobbyManager } from './lobby-manager.js';
-import type { GameManager } from './manager.js';
+import type { GameManager, TurnRecord } from './manager.js';
 import { createProtectedProcedures, publicProcedure, router } from './trpc.js';
 
 const RULES_TEMPLATE = readFileSync(join(process.cwd(), 'src/engine/RULES.md'), 'utf-8');
@@ -79,22 +80,28 @@ const BUILD_JSON_SCHEMA = toJSONSchema(buildOrderSchema);
 
 // ── Serialization helpers ──────────────────────────────────────────────
 
+interface WireOrderRound {
+  phase: Phase;
+  orders: OrderResolution[];
+}
+
 function serializeOrderHistory(
-  history: ReturnType<GameManager['getState']>['orderHistory'],
-): Record<string, typeof history> {
-  const byPower: Record<string, typeof history[number][]> = {};
-  for (const round of history) {
+  turnHistory: TurnRecord[],
+): Record<string, WireOrderRound[]> {
+  const byPower: Record<string, WireOrderRound[]> = {};
+  for (const turn of turnHistory) {
+    if (!turn.orders) continue;
     // Group resolutions in this round by power
-    const grouped = new Map<string, typeof round>();
-    for (const res of round) {
+    const grouped = new Map<string, OrderResolution[]>();
+    for (const res of turn.orders) {
       const arr = grouped.get(res.power) ?? [];
       arr.push(res);
       grouped.set(res.power, arr);
     }
-    // Append each power's slice to their history
-    for (const [power, resolutions] of grouped) {
+    // Append each power's round with phase label
+    for (const [power, orders] of grouped) {
       if (!byPower[power]) byPower[power] = [];
-      byPower[power].push(resolutions);
+      byPower[power].push({ phase: turn.phase, orders });
     }
   }
   return byPower;
@@ -105,7 +112,7 @@ function serializeState(manager: GameManager) {
   return {
     phase: state.phase,
     map: buildMapState(state.units, state.supplyCenters),
-    orderHistory: serializeOrderHistory(state.orderHistory),
+    orderHistory: serializeOrderHistory(manager.getTurnHistory()),
     retreatSituations: state.retreatSituations,
     endYear: state.endYear,
     deadlineMs: manager.getDeadline(),

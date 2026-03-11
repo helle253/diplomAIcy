@@ -9,11 +9,17 @@ import type {
 } from '../../engine/types.js';
 import { UnitType } from '../../engine/types.js';
 
+/** Per-power order round in wire format, with phase label. */
+export interface WireOrderRound {
+  phase: Phase;
+  orders: OrderResolution[];
+}
+
 /** The wire format returned by the tRPC router (unified map state). */
 export interface SerializedGameState {
   phase: Phase;
   map: Record<string, ProvinceState>;
-  orderHistory: Record<string, OrderResolution[][]>;
+  orderHistory: Record<string, WireOrderRound[]>;
   retreatSituations: RetreatSituation[];
   endYear: number;
   deadlineMs: number;
@@ -22,7 +28,7 @@ export interface SerializedGameState {
 
 /** Reconstructs flat OrderResolution[][] from per-power wire format. */
 function deserializeOrderHistory(
-  perPower: Record<string, OrderResolution[][]>,
+  perPower: Record<string, WireOrderRound[]>,
 ): OrderResolution[][] {
   // Find the max number of rounds across all powers
   let maxRounds = 0;
@@ -35,7 +41,7 @@ function deserializeOrderHistory(
     const round: OrderResolution[] = [];
     for (const rounds of Object.values(perPower)) {
       if (i < rounds.length) {
-        round.push(...rounds[i]);
+        round.push(...rounds[i].orders);
       }
     }
     result.push(round);
