@@ -8,3 +8,9 @@ sudo chown -R node:npm /usr/local/share/npm-global/lib/node_modules/@anthropic-a
 curl -fsSL https://raw.githubusercontent.com/PeonPing/peon-ping/main/install.sh | bash -s -- --packs=ra_soviet
 
 $HOME/.claude/hooks/peon-ping/peon.sh packs use ra_soviet
+
+# Pull default Ollama model for integration tests
+echo "Pulling Ollama model for integration tests..."
+curl -sf --retry 10 --retry-delay 2 http://ollama:11434/api/tags >/dev/null 2>&1 && \
+  curl -s http://ollama:11434/api/pull -d '{"name":"qwen2.5:3b"}' | tail -1 || \
+  echo "WARNING: Ollama not reachable — run 'curl http://ollama:11434/api/pull -d \"{\\\"name\\\":\\\"qwen2.5:3b\\\"}\"' manually"

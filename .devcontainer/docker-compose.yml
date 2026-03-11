@@ -6,9 +6,18 @@ services:
     command: sleep infinity
     environment:
       - CLAUDE_CONFIG_DIR=/home/node/.claude
+      - OLLAMA_HOST=http://ollama:11434
     volumes:
       - ../..:/workspaces:cached
       - claude-config:/home/node/.claude
+    depends_on:
+      - ollama
+
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-models:/root/.ollama
 
 volumes:
   claude-config:
+  ollama-models:
