@@ -16,6 +16,7 @@ export interface SerializedGameState {
   retreatSituations: RetreatSituation[];
   endYear: number;
   deadlineMs: number;
+  gameOver?: boolean;
 }
 
 /** Converts the serialized tRPC game state back into a proper GameState with Map. */

@@ -100,7 +100,8 @@ export function createGameRouter(lobbyManager: LobbyManager) {
     // Queries
     getState: publicProcedure.input(lobbyIdInput).query(({ input }) => {
       const manager = resolveManager(lobbyManager, input.lobbyId);
-      return serializeState(manager);
+      const lobby = lobbyManager.getLobby(input.lobbyId)!;
+      return { ...serializeState(manager), gameOver: lobby.status === 'finished' };
     }),
 
     getPhase: publicProcedure.input(lobbyIdInput).query(({ input }) => {

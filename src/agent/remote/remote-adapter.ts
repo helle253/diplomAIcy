@@ -200,6 +200,10 @@ export async function connectRemoteAgent(
   async function handleMessageBatch(messages: Message[]) {
     try {
       const state = await client.game.getState.query({ lobbyId });
+      if ((state as SerializedGameState).gameOver) {
+        logger.info(`[${agent.power}] Game over detected, skipping message batch`);
+        return;
+      }
       const gameState = deserializeGameState(state as SerializedGameState);
 
       let replies: Message[];
@@ -332,7 +336,13 @@ export async function connectRemoteAgent(
   // Catch up: act on the current phase if we missed the SSE event
   try {
     const currentState = await client.game.getState.query({ lobbyId });
-    const currentGameState = deserializeGameState(currentState as SerializedGameState);
+    const serialized = currentState as SerializedGameState;
+    if (serialized.gameOver) {
+      logger.info(`[${agent.power}] Game is already over, disconnecting`);
+      unsubscribe();
+      return { unsubscribe };
+    }
+    const currentGameState = deserializeGameState(serialized);
     const key = phaseKey(currentGameState);
     if (
       key !== lastHandledPhase &&
@@ -343,7 +353,7 @@ export async function connectRemoteAgent(
     ) {
       lastHandledPhase = key;
       logger.info(`[${agent.power}] Catching up on current phase: ${currentGameState.phase.type}`);
-      enqueuePhase(currentGameState, (currentState as SerializedGameState).deadlineMs);
+      enqueuePhase(currentGameState, serialized.deadlineMs);
     }
   } catch (err) {
     logger.error(`[${agent.power}] catch-up error (non-fatal):`, err);
