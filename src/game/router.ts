@@ -216,7 +216,7 @@ export function createGameRouter(lobbyManager: LobbyManager) {
       // Authenticated: see messages addressed to this power (private + global)
       if (ctx.token) {
         const identity = lobbyManager.validateToken(ctx.token);
-        if (identity && 'power' in identity) {
+        if (identity && 'power' in identity && identity.lobbyId === input.lobbyId) {
           return manager.getMessagesFor(identity.power as Power);
         }
       }
