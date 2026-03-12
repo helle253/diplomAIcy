@@ -9,13 +9,12 @@ import { parse as parseUrl } from 'url';
 import { fileURLToPath } from 'url';
 import { WebSocket, WebSocketServer } from 'ws';
 
-import { connectAgent } from '../agent/adapter';
-import { AnthropicClient } from '../agent/llm/anthropic-client';
 import type { GameConfig } from '../agent/llm/config';
 import { getAgentConfig, loadConfig, toLLMClientConfig } from '../agent/llm/config';
-import { LLMAgent } from '../agent/llm/llm-agent';
-import { LLMClient, OpenAICompatibleClient } from '../agent/llm/llm-client';
-import { RandomAgent } from '../agent/random';
+import { OpenAICompatibleClient } from '../agent/llm/llm-client';
+import { connectToolAgent } from '../agent/llm/tool-agent';
+import { connectRandomAgent } from '../agent/random-agent';
+import { createGameClient } from '../agent/remote/client';
 import { Message, Power } from '../engine/types';
 import { describeProcedure } from '../game/describe';
 import { LobbyManager } from '../game/lobby-manager';
@@ -140,22 +139,27 @@ function startServer(): void {
         logger.info(`  ${power}: Remote (waiting for connection)`);
         continue;
       }
-      let agent;
+
+      // Create tRPC client to self (localhost)
+      const joinClient = createGameClient(`http://localhost:${PORT}/trpc`);
+      const { seatToken } = await joinClient.lobby.join.mutate({ lobbyId: id, power });
+      const agentClient = createGameClient(`http://localhost:${PORT}/trpc`, seatToken);
+
       if (agentCfg.type === 'llm') {
-        const clientConfig = toLLMClientConfig(agentCfg);
-        const client: LLMClient =
-          agentCfg.provider === 'anthropic'
-            ? new AnthropicClient(clientConfig)
-            : new OpenAICompatibleClient(clientConfig);
-        agent = new LLMAgent(power, client);
-        logger.info(`  ${power}: LLM (${agentCfg.provider ?? 'openai'} / ${clientConfig.model})`);
+        if (agentCfg.provider === 'anthropic') {
+          throw new Error(
+            'Anthropic provider does not support tool calling yet. Use openai provider.',
+          );
+        }
+        const llmClient = new OpenAICompatibleClient(toLLMClientConfig(agentCfg));
+        connectToolAgent(agentClient, llmClient, power, id);
+        logger.info(
+          `  ${power}: LLM tool-calling (${agentCfg.provider ?? 'openai'} / ${toLLMClientConfig(agentCfg).model})`,
+        );
       } else {
-        agent = new RandomAgent(power);
+        connectRandomAgent(agentClient, power, id);
         logger.info(`  ${power}: Random`);
       }
-
-      await agent.initialize(manager.getState());
-      connectAgent(agent, manager);
     }
 
     // Persist and broadcast messages in real-time

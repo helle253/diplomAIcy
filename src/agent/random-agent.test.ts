@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { Power, UnitType } from '../engine/types';
+import { PhaseType, Power, Season, UnitType } from '../engine/types';
 import { generateRandomBuilds, generateRandomOrders, generateRandomRetreats } from './random-agent';
 
 describe('Random agent order generation', () => {
   it('generates one order per unit', () => {
     const state = {
-      phase: { season: 'Spring' as const, year: 1901, type: 'Orders' as const },
+      phase: { season: Season.Spring, year: 1901, type: PhaseType.Orders },
       units: [
         { type: UnitType.Fleet, power: Power.England, province: 'lon' },
         { type: UnitType.Army, power: Power.England, province: 'lvp' },
@@ -30,7 +30,7 @@ describe('Random agent order generation', () => {
 
   it('generates retreats for dislodged units', () => {
     const state = {
-      phase: { season: 'Fall' as const, year: 1901, type: 'Retreats' as const },
+      phase: { season: Season.Fall, year: 1901, type: PhaseType.Retreats },
       units: [],
       supplyCenters: new Map<string, Power>(),
       orderHistory: [],
@@ -50,7 +50,7 @@ describe('Random agent order generation', () => {
 
   it('generates build orders for positive build count', () => {
     const state = {
-      phase: { season: 'Fall' as const, year: 1901, type: 'Builds' as const },
+      phase: { season: Season.Fall, year: 1901, type: PhaseType.Builds },
       units: [],
       supplyCenters: new Map([['lon', Power.England], ['edi', Power.England], ['lvp', Power.England]]),
       orderHistory: [],
@@ -67,7 +67,7 @@ describe('Random agent order generation', () => {
 
   it('generates remove orders for negative build count', () => {
     const state = {
-      phase: { season: 'Fall' as const, year: 1901, type: 'Builds' as const },
+      phase: { season: Season.Fall, year: 1901, type: PhaseType.Builds },
       units: [
         { type: UnitType.Army, power: Power.England, province: 'lon' },
         { type: UnitType.Fleet, power: Power.England, province: 'nth' },
@@ -84,7 +84,7 @@ describe('Random agent order generation', () => {
 
   it('returns empty array for zero build count', () => {
     const state = {
-      phase: { season: 'Fall' as const, year: 1901, type: 'Builds' as const },
+      phase: { season: Season.Fall, year: 1901, type: PhaseType.Builds },
       units: [],
       supplyCenters: new Map<string, Power>(),
       orderHistory: [],
@@ -97,7 +97,7 @@ describe('Random agent order generation', () => {
 
   it('returns disband when no valid retreat destinations', () => {
     const state = {
-      phase: { season: 'Fall' as const, year: 1901, type: 'Retreats' as const },
+      phase: { season: Season.Fall, year: 1901, type: PhaseType.Retreats },
       units: [],
       supplyCenters: new Map<string, Power>(),
       orderHistory: [],
