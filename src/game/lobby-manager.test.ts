@@ -14,6 +14,7 @@ const DEFAULT_CONFIG: LobbyConfig = {
   pressDelayMin: 0,
   pressDelayMax: 0,
   agentConfig: { defaultAgent: { type: 'random' } },
+  allowDraws: true,
 };
 
 describe('LobbyManager', () => {

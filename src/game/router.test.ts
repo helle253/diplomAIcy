@@ -19,6 +19,7 @@ function setupTestGame() {
     pressDelayMin: 0,
     pressDelayMax: 0,
     agentConfig: { defaultAgent: { type: 'random' } },
+    allowDraws: true,
   });
 
   // Manually attach a GameManager (skip agent wiring — we just need state)

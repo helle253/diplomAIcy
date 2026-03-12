@@ -17,6 +17,7 @@ export interface LobbyConfig {
   autostart?: boolean;
   postGamePress?: boolean;
   fastAdjudication?: boolean;
+  allowDraws?: boolean;
 }
 
 export interface Lobby {
@@ -103,6 +104,7 @@ export class LobbyManager {
       pressDelayMin: config.pressDelayMin,
       pressDelayMax: config.pressDelayMax,
       fastAdjudication: config.fastAdjudication,
+      allowDraws: config.allowDraws,
     });
 
     lobby.manager = manager;

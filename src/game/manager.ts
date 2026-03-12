@@ -26,6 +26,7 @@ export interface GameManagerConfig {
   pressDelayMin?: number;
   pressDelayMax?: number;
   fastAdjudication?: boolean;
+  allowDraws?: boolean;
 }
 
 const ALL_POWERS = [
@@ -83,6 +84,9 @@ export class GameManager {
   private remoteTimeoutMs: number;
   private victoryThreshold: number;
   private _deadlineMs = 0; // unix timestamp when current phase's submission window closes (0 = no deadline)
+  private allowDraws: boolean;
+  private drawVotes = new Set<Power>();
+  private drawResolve: (() => void) | null = null;
   readonly bus: MessageBus;
 
   // Promise gates for collecting agent submissions
@@ -102,6 +106,7 @@ export class GameManager {
       victoryThreshold = 18,
       startYear = 1901,
       fastAdjudication = true,
+      allowDraws = true,
     } = config;
     this.bus = new MessageBus({ pressDelayMin, pressDelayMax });
     this.startYear = startYear;
@@ -110,6 +115,7 @@ export class GameManager {
     this.remoteTimeoutMs = remoteTimeoutMs;
     this.victoryThreshold = victoryThreshold;
     this.fastAdjudication = fastAdjudication;
+    this.allowDraws = allowDraws;
     this.state = {
       phase: { year: startYear, season: Season.Spring, type: PhaseType.Diplomacy },
       units: STARTING_UNITS.map((u) => ({ ...u })),
@@ -177,6 +183,36 @@ export class GameManager {
     return this._deadlineMs;
   }
 
+  proposeDraw(power: Power): boolean {
+    if (!this.allowDraws) {
+      logger.warn(`[${power}] draw proposal rejected — draws are disabled`);
+      return false;
+    }
+    this.drawVotes.add(power);
+    const activePowers = this.getActivePowers();
+    logger.info(
+      `[${power}] proposed a draw (${this.drawVotes.size}/${activePowers.length} votes)`,
+    );
+
+    // Broadcast draw proposal as a global message
+    this.bus.send({
+      from: power,
+      to: 'Global',
+      content: `${power} proposes a draw (${this.drawVotes.size}/${activePowers.length} votes).`,
+      phase: this.state.phase,
+      timestamp: Date.now(),
+    });
+
+    if (activePowers.every((p) => this.drawVotes.has(p))) {
+      if (this.drawResolve) this.drawResolve();
+    }
+    return true;
+  }
+
+  getDrawVotes(): Power[] {
+    return [...this.drawVotes];
+  }
+
   /** Player-facing game configuration for rules templating. */
   getGameConfig() {
     return {
@@ -185,6 +221,7 @@ export class GameManager {
       endYear: this.endYear,
       phaseDeadlineMs: this.remoteTimeoutMs,
       fastAdjudication: this.fastAdjudication,
+      allowDraws: this.allowDraws,
     };
   }
 
@@ -231,12 +268,32 @@ export class GameManager {
     while (this.state.phase.year <= this.endYear) {
       // Spring
       await this.runDiplomacyPhase(Season.Spring);
+      const springDraw = this.checkDrawVote();
+      if (springDraw) {
+        await this.emit({
+          type: 'game_end',
+          phase: this.state.phase,
+          gameState: this.state,
+          result: springDraw,
+        });
+        return springDraw;
+      }
       await this.runOrdersPhase(Season.Spring);
       const springVictory = await this.checkVictory();
       if (springVictory) return springVictory;
 
       // Fall
       await this.runDiplomacyPhase(Season.Fall);
+      const fallDraw = this.checkDrawVote();
+      if (fallDraw) {
+        await this.emit({
+          type: 'game_end',
+          phase: this.state.phase,
+          gameState: this.state,
+          result: fallDraw,
+        });
+        return fallDraw;
+      }
       await this.runOrdersPhase(Season.Fall);
 
       // Update supply center ownership after Fall
@@ -299,6 +356,9 @@ export class GameManager {
   }
 
   private async runDiplomacyPhase(season: Season): Promise<void> {
+    this.drawVotes.clear();
+    this.drawResolve = null;
+
     if (this.phaseDelayMs > 0 && this.fastAdjudication) {
       // Set up ready gates before startPhase so that phase change listeners
       // (which fire during startPhase) can resolve them immediately.
@@ -321,8 +381,13 @@ export class GameManager {
 
       await this.startPhase({ year: this.state.phase.year, season, type: PhaseType.Diplomacy });
 
+      const drawPromise = new Promise<void>((resolve) => {
+        this.drawResolve = resolve;
+      });
+
       await Promise.race([
         allReady,
+        drawPromise,
         new Promise<void>((resolve) => setTimeout(resolve, this.phaseDelayMs)),
       ]);
 
@@ -331,7 +396,13 @@ export class GameManager {
       await this.startPhase({ year: this.state.phase.year, season, type: PhaseType.Diplomacy });
 
       if (this.phaseDelayMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, this.phaseDelayMs));
+        const drawPromise = new Promise<void>((resolve) => {
+          this.drawResolve = resolve;
+        });
+        await Promise.race([
+          new Promise((resolve) => setTimeout(resolve, this.phaseDelayMs)),
+          drawPromise,
+        ]);
       }
     }
   }
@@ -685,6 +756,20 @@ export class GameManager {
 
   private eliminateDeadPowers(): void {
     // Powers with no units AND no supply centers are eliminated
+  }
+
+  private checkDrawVote(): GameResult | null {
+    if (!this.allowDraws) return null;
+    const activePowers = this.getActivePowers();
+    if (activePowers.length > 0 && activePowers.every((p) => this.drawVotes.has(p))) {
+      return {
+        winner: null,
+        year: this.state.phase.year,
+        supplyCenters: new Map(this.state.supplyCenters),
+        eliminatedPowers: this.getEliminatedPowers(),
+      };
+    }
+    return null;
   }
 
   private async checkVictory(): Promise<GameResult | null> {
