@@ -36,6 +36,7 @@ const lobbyConfigSchema = z.object({
   pressDelayMin: z.number().int().min(0).default(0),
   pressDelayMax: z.number().int().min(0).default(0),
   autostart: z.boolean().default(false),
+  fastAdjudication: z.boolean().default(true),
   agentConfig: z
     .object({
       defaultAgent: agentConfigSchema,
@@ -63,6 +64,7 @@ export interface LobbyDefaults {
   remoteTimeoutMs: number;
   pressDelayMin: number;
   pressDelayMax: number;
+  fastAdjudication: boolean;
   agentConfig: GameConfig;
 }
 
@@ -153,6 +155,7 @@ export function createLobbyRouter(lobbyManager: LobbyManager, defaults: LobbyDef
       remoteTimeoutMs: defaults.remoteTimeoutMs,
       pressDelayMin: defaults.pressDelayMin,
       pressDelayMax: defaults.pressDelayMax,
+      fastAdjudication: defaults.fastAdjudication,
       agentConfig: defaults.agentConfig,
     })),
   });

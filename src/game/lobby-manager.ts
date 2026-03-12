@@ -16,6 +16,7 @@ export interface LobbyConfig {
   agentConfig: GameConfig;
   autostart?: boolean;
   postGamePress?: boolean;
+  fastAdjudication?: boolean;
 }
 
 export interface Lobby {
@@ -101,6 +102,7 @@ export class LobbyManager {
       remoteTimeoutMs: config.remoteTimeoutMs,
       pressDelayMin: config.pressDelayMin,
       pressDelayMax: config.pressDelayMax,
+      fastAdjudication: config.fastAdjudication,
     });
 
     lobby.manager = manager;

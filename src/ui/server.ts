@@ -101,6 +101,7 @@ function startServer(): void {
   const remoteTimeoutMs = parseInt(process.env.REMOTE_TIMEOUT || '0');
   const pressDelayMin = parseInt(process.env.PRESS_DELAY_MIN || '0');
   const pressDelayMax = parseInt(process.env.PRESS_DELAY_MAX || '0');
+  const fastAdjudication = process.env.FAST_ADJUDICATION !== 'false';
   const defaultAgentConfig: GameConfig = loadConfig();
   const defaults = {
     maxYears,
@@ -108,6 +109,7 @@ function startServer(): void {
     remoteTimeoutMs,
     pressDelayMin,
     pressDelayMax,
+    fastAdjudication,
     agentConfig: defaultAgentConfig,
   };
 
