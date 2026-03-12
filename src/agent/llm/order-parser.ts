@@ -148,11 +148,14 @@ export function parseOrders(text: string, state: GameState, power: Power): Order
         // Supported unit must exist
         if (!state.units.some((u) => u.province === supported)) break;
         const dest = resolveProvince(item.destination);
+        // If destination === supportedUnit, it's a support-hold (not a move-to-self)
+        // LLMs sometimes emit {"supportedUnit":"tri","destination":"tri"} for support-hold
+        const finalDest = dest === supported ? undefined : (dest ?? undefined);
         orders.set(unitProv, {
           type: OrderType.Support,
           unit: unitProv,
           supportedUnit: supported,
-          destination: dest ?? undefined,
+          destination: finalDest,
         });
         break;
       }

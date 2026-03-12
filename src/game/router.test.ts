@@ -23,7 +23,13 @@ function setupTestGame() {
 
   // Manually attach a GameManager (skip agent wiring — we just need state)
   const lobby = lm.getLobby(lobbyId)!;
-  lobby.manager = new GameManager({ maxYears: 1, phaseDelayMs: 0 });
+  lobby.manager = new GameManager({
+    maxYears: 1,
+    phaseDelayMs: 0,
+    victoryThreshold: 18,
+    startYear: 1901,
+    remoteTimeoutMs: 0,
+  });
   lobby.status = 'playing';
 
   const gameRouter = createGameRouter(lm);
@@ -47,7 +53,6 @@ describe('game router wire format', () => {
       const { caller, lobbyId } = setupTestGame();
       const state = await caller.game.getState({ lobbyId });
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentionally checking old fields are gone
       const raw = state as Record<string, unknown>;
       expect(raw['units']).toBeUndefined();
       expect(raw['supplyCenters']).toBeUndefined();

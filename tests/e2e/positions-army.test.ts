@@ -326,8 +326,10 @@ test.describe('Army placement', () => {
       const unit: TestUnit = { type: 'Army', power: 'England', province: prov };
       server.setSnapshot(makeSnapshot([unit]));
       await page.goto(server.url);
-      await page.waitForSelector('.unit-marker', { state: 'attached', timeout: 10_000 });
-      await page.waitForTimeout(500);
+      await page.waitForSelector('.unit-marker circle, .unit-marker rect', {
+        state: 'attached',
+        timeout: 10_000,
+      });
 
       const result = await getPositionData(page, prov);
 

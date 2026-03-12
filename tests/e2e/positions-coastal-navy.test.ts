@@ -130,8 +130,10 @@ test.describe('Coastal provinces — fleet placement', () => {
       const unit: TestUnit = { type: 'Fleet', power: 'England', province: prov };
       server.setSnapshot(makeSnapshot([unit]));
       await page.goto(server.url);
-      await page.waitForSelector('.unit-marker', { state: 'attached', timeout: 10_000 });
-      await page.waitForTimeout(500);
+      await page.waitForSelector('.unit-marker circle, .unit-marker rect', {
+        state: 'attached',
+        timeout: 10_000,
+      });
 
       const d = await getUnitPositionData(page, prov);
       const margin = 15;

@@ -16,6 +16,7 @@ import { LLMAgent } from '../agent/llm/llm-agent.js';
 import { LLMClient, OpenAICompatibleClient } from '../agent/llm/llm-client.js';
 import { RandomAgent } from '../agent/random.js';
 import { Message, Power } from '../engine/types.js';
+import { describeProcedure } from '../game/describe.js';
 import { LobbyManager } from '../game/lobby-manager.js';
 import { createLobbyRouter } from '../game/lobby-router.js';
 import type { GameEvent, TurnRecord } from '../game/manager.js';
@@ -241,7 +242,7 @@ function startServer(): void {
   // Create merged AppRouter
   const lobbyRouter = createLobbyRouter(lobbyManager, defaults);
   const gameRouter = createGameRouter(lobbyManager);
-  const appRouter = router({ lobby: lobbyRouter, game: gameRouter });
+  const appRouter = router({ describe: describeProcedure, lobby: lobbyRouter, game: gameRouter });
 
   // Serve static files from Vite build output
   const publicDir = join(__dirname, 'public');
@@ -341,6 +342,7 @@ startServer();
 
 export type AppRouter = ReturnType<
   typeof router<{
+    describe: typeof describeProcedure;
     lobby: ReturnType<typeof createLobbyRouter>;
     game: ReturnType<typeof createGameRouter>;
   }>
