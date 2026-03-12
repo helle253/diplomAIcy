@@ -23,7 +23,13 @@ function setupTestGame() {
 
   // Manually attach a GameManager (skip agent wiring — we just need state)
   const lobby = lm.getLobby(lobbyId)!;
-  lobby.manager = new GameManager({ maxYears: 1, phaseDelayMs: 0 });
+  lobby.manager = new GameManager({
+    maxYears: 1,
+    phaseDelayMs: 0,
+    victoryThreshold: 18,
+    startYear: 1901,
+    remoteTimeoutMs: 0,
+  });
   lobby.status = 'playing';
 
   const gameRouter = createGameRouter(lm);
