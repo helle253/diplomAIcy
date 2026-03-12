@@ -15,7 +15,7 @@ import {
   Season,
 } from '../engine/types.js';
 import { logger } from '../util/logger.js';
-import { MessageBus, MessageBusConfig } from './message-bus.js';
+import { MessageBus } from './message-bus.js';
 
 export interface GameManagerConfig {
   maxYears?: number;

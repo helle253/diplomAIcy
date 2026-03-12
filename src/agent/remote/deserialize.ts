@@ -27,9 +27,7 @@ export interface SerializedGameState {
 }
 
 /** Reconstructs flat OrderResolution[][] from per-power wire format. */
-function deserializeOrderHistory(
-  perPower: Record<string, WireOrderRound[]>,
-): OrderResolution[][] {
+function deserializeOrderHistory(perPower: Record<string, WireOrderRound[]>): OrderResolution[][] {
   // Find the max number of rounds across all powers
   let maxRounds = 0;
   for (const rounds of Object.values(perPower)) {

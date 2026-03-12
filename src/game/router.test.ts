@@ -47,7 +47,6 @@ describe('game router wire format', () => {
       const { caller, lobbyId } = setupTestGame();
       const state = await caller.game.getState({ lobbyId });
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentionally checking old fields are gone
       const raw = state as Record<string, unknown>;
       expect(raw['units']).toBeUndefined();
       expect(raw['supplyCenters']).toBeUndefined();

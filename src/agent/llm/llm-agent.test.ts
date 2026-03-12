@@ -9,8 +9,8 @@ import {
   PhaseType,
   Power,
   RetreatSituation,
-  SupportOrder,
   Season,
+  SupportOrder,
   UnitType,
 } from '../../engine/types.js';
 import { LLMAgent } from './llm-agent.js';

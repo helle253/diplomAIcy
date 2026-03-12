@@ -1,13 +1,12 @@
+import { tracked, TRPCError } from '@trpc/server';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-
-import { tracked, TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { toJSONSchema } from 'zod/v4';
 
 import { buildMapState } from '../engine/map-state.js';
-import { Coast, OrderType, Phase, Power, UnitType } from '../engine/types.js';
 import type { OrderResolution } from '../engine/types.js';
+import { Coast, OrderType, Phase, Power, UnitType } from '../engine/types.js';
 import type { LobbyManager } from './lobby-manager.js';
 import type { GameManager, TurnRecord } from './manager.js';
 import { createProtectedProcedures, publicProcedure, router } from './trpc.js';
@@ -85,9 +84,7 @@ interface WireOrderRound {
   orders: OrderResolution[];
 }
 
-function serializeOrderHistory(
-  turnHistory: TurnRecord[],
-): Record<string, WireOrderRound[]> {
+function serializeOrderHistory(turnHistory: TurnRecord[]): Record<string, WireOrderRound[]> {
   const byPower: Record<string, WireOrderRound[]> = {};
   for (const turn of turnHistory) {
     if (!turn.orders) continue;

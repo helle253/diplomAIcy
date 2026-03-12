@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Power, PhaseType, Season, Message } from '../engine/types.js';
+
+import { Message, PhaseType, Power, Season } from '../engine/types.js';
 import { MessageBus } from './message-bus.js';
 
 describe('MessageBus', () => {
