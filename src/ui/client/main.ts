@@ -66,6 +66,7 @@ interface LobbyInfo {
   maxYears: number;
   victoryThreshold: number;
   startYear: number;
+  allowDraws: boolean;
 }
 
 // --- Constants ---------------------------------------------------------------
@@ -911,7 +912,7 @@ function renderLobbies(lobbies: LobbyInfo[]): void {
         statusBadge(l.status) +
         `</div>` +
         `<div class="text-[11px] text-gray-500 space-y-0.5">` +
-        `<div>Start: ${l.startYear} &middot; Max years: ${l.maxYears} &middot; Victory: ${l.victoryThreshold}</div>` +
+        `<div>Start: ${l.startYear} &middot; Max years: ${l.maxYears} &middot; Victory: ${l.victoryThreshold}${l.allowDraws ? '' : ' &middot; No draws'}</div>` +
         `</div>` +
         (l.status === 'waiting'
           ? `<button class="lobby-start-btn mt-2" data-lobby-start="${escapeHtml(l.id)}">Start Game</button>`
@@ -992,6 +993,7 @@ createLobbyForm.addEventListener('submit', async (e) => {
     victoryThreshold: Number(fd.get('victoryThreshold')),
     startYear: Number(fd.get('startYear')),
     phaseDelayMs: Number(fd.get('phaseDelayMs')),
+    allowDraws: !!fd.get('allowDraws'),
     agentConfig: {
       defaultAgent: {
         type: fd.get('agentType') as string,

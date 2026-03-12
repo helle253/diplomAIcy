@@ -175,8 +175,20 @@ export class GameManager {
       return false;
     }
     this.drawVotes.add(power);
-    logger.info(`[${power}] proposed a draw (${this.drawVotes.size}/${this.getActivePowers().length} votes)`);
     const activePowers = this.getActivePowers();
+    logger.info(
+      `[${power}] proposed a draw (${this.drawVotes.size}/${activePowers.length} votes)`,
+    );
+
+    // Broadcast draw proposal as a global message
+    this.bus.send({
+      from: power,
+      to: 'Global',
+      content: `${power} proposes a draw (${this.drawVotes.size}/${activePowers.length} votes).`,
+      phase: this.state.phase,
+      timestamp: Date.now(),
+    });
+
     if (activePowers.every((p) => this.drawVotes.has(p))) {
       if (this.drawResolve) this.drawResolve();
     }
@@ -243,7 +255,12 @@ export class GameManager {
       await this.runDiplomacyPhase(Season.Spring);
       const springDraw = this.checkDrawVote();
       if (springDraw) {
-        await this.emit({ type: 'game_end', phase: this.state.phase, gameState: this.state, result: springDraw });
+        await this.emit({
+          type: 'game_end',
+          phase: this.state.phase,
+          gameState: this.state,
+          result: springDraw,
+        });
         return springDraw;
       }
       await this.runOrdersPhase(Season.Spring);
@@ -254,7 +271,12 @@ export class GameManager {
       await this.runDiplomacyPhase(Season.Fall);
       const fallDraw = this.checkDrawVote();
       if (fallDraw) {
-        await this.emit({ type: 'game_end', phase: this.state.phase, gameState: this.state, result: fallDraw });
+        await this.emit({
+          type: 'game_end',
+          phase: this.state.phase,
+          gameState: this.state,
+          result: fallDraw,
+        });
         return fallDraw;
       }
       await this.runOrdersPhase(Season.Fall);

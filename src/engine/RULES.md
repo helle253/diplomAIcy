@@ -140,7 +140,9 @@ For multi-coast home SCs (St. Petersburg):
 
 ## Victory and Game End
 
-A power wins by controlling **{{VICTORY_THRESHOLD}} or more supply centers**. If no power reaches the victory threshold by **{{END_YEAR}}** (the final year), the game ends in a draw among all surviving powers (those with at least one unit remaining). The game starts in **{{START_YEAR}}**.
+A power wins by controlling **{{VICTORY_THRESHOLD}} or more supply centers**. The game starts in **{{START_YEAR}}**.
+
+{{DRAW_RULES}}
 
 **Phase deadline:** {{DEADLINE}}.
 
