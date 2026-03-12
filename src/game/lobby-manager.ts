@@ -15,6 +15,7 @@ export interface LobbyConfig {
   pressDelayMax: number;
   agentConfig: GameConfig;
   autostart?: boolean;
+  postGamePress?: boolean;
 }
 
 export interface Lobby {
