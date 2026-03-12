@@ -146,6 +146,7 @@ function serializeState(manager: GameManager) {
     retreatSituations: state.retreatSituations,
     endYear: state.endYear,
     deadlineMs: manager.getDeadline(),
+    drawVotes: manager.getDrawVotes(),
   };
 }
 
@@ -264,6 +265,12 @@ export function createGameRouter(lobbyManager: LobbyManager) {
         manager.submitBuilds(ctx.power, input.builds);
         return { ok: true };
       }),
+
+    proposeDraw: playerProcedure.mutation(({ ctx }) => {
+      const manager = resolveManager(lobbyManager, ctx.lobbyId);
+      const accepted = manager.proposeDraw(ctx.power);
+      return { accepted };
+    }),
 
     sendMessage: playerProcedure
       .input(
