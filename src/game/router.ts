@@ -288,6 +288,12 @@ export function createGameRouter(lobbyManager: LobbyManager) {
         return { ok: true };
       }),
 
+    submitReady: playerProcedure.mutation(({ ctx }) => {
+      const manager = resolveManager(lobbyManager, ctx.lobbyId);
+      manager.submitReady(ctx.power);
+      return { ok: true };
+    }),
+
     // Subscriptions
     onPhaseChange: publicProcedure.input(lobbyIdInput).subscription(async function* ({
       input,
