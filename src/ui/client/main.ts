@@ -366,6 +366,7 @@ function updateUnits(): void {
 
     const g = document.createElementNS(ns, 'g');
     g.classList.add('unit-marker');
+    g.setAttribute('data-province', province);
 
     if (unit.type === 'Army') {
       const rect = document.createElementNS(ns, 'rect');
