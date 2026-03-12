@@ -1,4 +1,4 @@
-import { PROVINCES } from '../../engine/map.js';
+import { PROVINCES } from '../../engine/map';
 import {
   BuildOrder,
   Coast,
@@ -12,7 +12,7 @@ import {
   RetreatSituation,
   Unit,
   UnitType,
-} from '../../engine/types.js';
+} from '../../engine/types';
 
 // Build lookup maps for province resolution
 const PROVINCE_BY_NAME = new Map<string, string>();

@@ -1,10 +1,10 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import type { GameConfig } from '../agent/llm/config.js';
-import { Power } from '../engine/types.js';
-import type { Lobby, LobbyManager } from './lobby-manager.js';
-import { createProtectedProcedures, publicProcedure, router } from './trpc.js';
+import type { GameConfig } from '../agent/llm/config';
+import { Power } from '../engine/types';
+import type { Lobby, LobbyManager } from './lobby-manager';
+import { createProtectedProcedures, publicProcedure, router } from './trpc';
 
 const powerEnum = z.enum([
   Power.England,

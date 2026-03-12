@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PROVINCES, STARTING_SUPPLY_CENTERS, STARTING_UNITS } from '../engine/map.js';
+import { PROVINCES, STARTING_SUPPLY_CENTERS, STARTING_UNITS } from '../engine/map';
 import {
   Coast,
   GameState,
@@ -13,8 +13,8 @@ import {
   Season,
   Unit,
   UnitType,
-} from '../engine/types.js';
-import { RandomAgent } from './random.js';
+} from '../engine/types';
+import { RandomAgent } from './random';
 
 // ============================================================================
 // Helper: create a minimal GameState

@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Development Commands
 
 ```bash
-yarn build            # tsc + vite build
+yarn build            # tsc --noEmit + vite build
 yarn test             # vitest run (all tests)
 yarn test -- src/engine/resolver.test.ts   # run a single test file
 yarn test -- -t "convoy"                   # run tests matching a name pattern
@@ -14,8 +14,8 @@ yarn test:e2e         # vite build + playwright tests (screenshot comparisons)
 yarn test:e2e:update  # update e2e screenshot snapshots
 yarn lint             # eslint src/
 yarn format           # prettier --write src/
-yarn dev              # concurrent tsc --watch + vite dev server + node --watch
-yarn start            # production build + run server on port 3000
+yarn dev              # concurrent tsc --watch + vite dev server + tsx --watch
+yarn start            # vite build + tsx server on port 3000
 ```
 
 ## Architecture
@@ -34,7 +34,7 @@ This is an agent-oriented Diplomacy game engine where AI agents play against eac
 
 ### Key Patterns
 
-- **ESM with `.js` extensions** — all imports use `.js` even for `.ts` source files (Node16 module resolution)
+- **ESM with bundler resolution** — imports use extensionless paths; `tsx` runs TypeScript directly at runtime
 - **Promise-gate pattern** — GameManager creates a deferred promise per power, resolves it when that power submits; phase advances when all resolve
 - **tRPC for agent API** — queries (`getState`, `getPhase`), mutations (`submitOrders`, `submitRetreats`, `submitBuilds`, `sendMessage`), SSE subscriptions (`onPhaseChange`, `onMessage`)
 - **Supply centers as `Map<string, Power>`** — serialized as `Record<string, Power>` over the wire, deserialized back to `Map` in `remote/deserialize.ts`
@@ -42,7 +42,8 @@ This is an agent-oriented Diplomacy game engine where AI agents play against eac
 
 ## Code Conventions
 
-- TypeScript strict mode, ES2022 target, `declaration: false` (needed for tRPC compatibility)
+- TypeScript strict mode, ES2022 target, bundler module resolution, `declaration: false` (needed for tRPC compatibility)
+- `tsx` for runtime execution; `tsc` for type-checking (JS output in `dist/` is unused)
 - `@typescript-eslint/no-explicit-any: error` — no `any` types
 - Sorted imports enforced by `eslint-plugin-simple-import-sort`
 - Unused imports are errors (`eslint-plugin-unused-imports`)

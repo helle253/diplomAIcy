@@ -1,4 +1,4 @@
-import { PROVINCES } from '../../engine/map.js';
+import { PROVINCES } from '../../engine/map';
 import {
   GameState,
   Message,
@@ -7,7 +7,7 @@ import {
   RetreatSituation,
   Unit,
   UnitType,
-} from '../../engine/types.js';
+} from '../../engine/types';
 
 function unitStr(u: Unit): string {
   const t = u.type === UnitType.Army ? 'A' : 'F';

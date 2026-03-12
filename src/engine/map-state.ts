@@ -1,5 +1,5 @@
-import { PROVINCES } from './map.js';
-import type { Power, ProvinceState, Unit } from './types.js';
+import { PROVINCES } from './map';
+import type { Power, ProvinceState, Unit } from './types';
 
 export function buildMapState(
   units: Unit[],

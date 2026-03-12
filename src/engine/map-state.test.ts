@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { PROVINCES, STARTING_SUPPLY_CENTERS, STARTING_UNITS } from './map.js';
-import { buildMapState } from './map-state.js';
-import { Coast, Power, ProvinceType, UnitType } from './types.js';
+import { PROVINCES, STARTING_SUPPLY_CENTERS, STARTING_UNITS } from './map';
+import { buildMapState } from './map-state';
+import { Coast, Power, ProvinceType, UnitType } from './types';
 
 describe('buildMapState', () => {
   const map = buildMapState(STARTING_UNITS, STARTING_SUPPLY_CENTERS);

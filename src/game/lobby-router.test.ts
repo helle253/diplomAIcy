@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import type { LobbyConfig } from './lobby-manager.js';
-import { LobbyManager } from './lobby-manager.js';
-import { createLobbyRouter, type LobbyDefaults } from './lobby-router.js';
-import { createContext, router } from './trpc.js';
+import type { LobbyConfig } from './lobby-manager';
+import { LobbyManager } from './lobby-manager';
+import { createLobbyRouter, type LobbyDefaults } from './lobby-router';
+import { createContext, router } from './trpc';
 
 const DEFAULT_CONFIG: LobbyConfig = {
   name: 'Test Game',

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { connectAgent } from '../agent/adapter.js';
-import { DiplomacyAgent } from '../agent/interface.js';
-import { RandomAgent } from '../agent/random.js';
-import { STARTING_UNITS } from '../engine/map.js';
+import { connectAgent } from '../agent/adapter';
+import { DiplomacyAgent } from '../agent/interface';
+import { RandomAgent } from '../agent/random';
+import { STARTING_UNITS } from '../engine/map';
 import {
   BuildOrder,
   GameState,
@@ -15,8 +15,8 @@ import {
   RetreatOrder,
   RetreatSituation,
   Season,
-} from '../engine/types.js';
-import { GameEvent, GameManager } from './manager.js';
+} from '../engine/types';
+import { GameEvent, GameManager } from './manager';
 
 const ALL_POWERS = [
   Power.England,

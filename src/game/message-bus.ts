@@ -1,4 +1,4 @@
-import { Message, Phase, Power } from '../engine/types.js';
+import { Message, Phase, Power } from '../engine/types';
 
 export type MessageListener = (message: Message) => void;
 

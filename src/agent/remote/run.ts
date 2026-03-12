@@ -1,13 +1,13 @@
 import 'dotenv/config';
 
-import { Power } from '../../engine/types.js';
-import { AnthropicClient } from '../llm/anthropic-client.js';
-import { AgentConfig, getAgentConfig, loadConfig, toLLMClientConfig } from '../llm/config.js';
-import { LLMAgent } from '../llm/llm-agent.js';
-import { LLMClient, OpenAICompatibleClient } from '../llm/llm-client.js';
-import { RandomAgent } from '../random.js';
-import { createGameClient } from './client.js';
-import { connectRemoteAgent } from './remote-adapter.js';
+import { Power } from '../../engine/types';
+import { AnthropicClient } from '../llm/anthropic-client';
+import { AgentConfig, getAgentConfig, loadConfig, toLLMClientConfig } from '../llm/config';
+import { LLMAgent } from '../llm/llm-agent';
+import { LLMClient, OpenAICompatibleClient } from '../llm/llm-client';
+import { RandomAgent } from '../random';
+import { createGameClient } from './client';
+import { connectRemoteAgent } from './remote-adapter';
 
 const VALID_POWERS = new Set<string>(Object.values(Power));
 

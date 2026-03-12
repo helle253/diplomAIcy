@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { PROVINCES } from './map.js';
-import { resolveOrders } from './resolver.js';
-import { Coast, Order, OrderStatus, OrderType, Power, Unit, UnitType } from './types.js';
+import { PROVINCES } from './map';
+import { resolveOrders } from './resolver';
+import { Coast, Order, OrderStatus, OrderType, Power, Unit, UnitType } from './types';
 
 // ============================================================================
 // Helper: find the resolution for the unit originally at a given province

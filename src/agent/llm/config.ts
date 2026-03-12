@@ -1,9 +1,9 @@
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
-import { Power } from '../../engine/types.js';
-import { logger } from '../../util/logger.js';
-import { LLMClientConfig } from './llm-client.js';
+import { Power } from '../../engine/types';
+import { logger } from '../../util/logger';
+import { LLMClientConfig } from './llm-client';
 
 export interface AgentConfig {
   type: 'random' | 'llm' | 'remote';

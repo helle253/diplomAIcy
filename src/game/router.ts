@@ -3,12 +3,12 @@ import { readFileSync } from 'fs';
 import { z } from 'zod';
 import { toJSONSchema } from 'zod/v4';
 
-import { buildMapState } from '../engine/map-state.js';
-import type { OrderResolution } from '../engine/types.js';
-import { Coast, OrderType, Phase, Power, UnitType } from '../engine/types.js';
-import type { LobbyManager } from './lobby-manager.js';
-import type { GameManager, TurnRecord } from './manager.js';
-import { createProtectedProcedures, publicProcedure, router } from './trpc.js';
+import { buildMapState } from '../engine/map-state';
+import type { OrderResolution } from '../engine/types';
+import { Coast, OrderType, Phase, Power, UnitType } from '../engine/types';
+import type { LobbyManager } from './lobby-manager';
+import type { GameManager, TurnRecord } from './manager';
+import { createProtectedProcedures, publicProcedure, router } from './trpc';
 
 const RULES_TEMPLATE = readFileSync(new URL('../engine/RULES.md', import.meta.url), 'utf-8');
 

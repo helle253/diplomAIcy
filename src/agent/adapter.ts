@@ -1,7 +1,7 @@
-import { PhaseType } from '../engine/types.js';
-import { GameManager } from '../game/manager.js';
-import { logger } from '../util/logger.js';
-import { DiplomacyAgent } from './interface.js';
+import { PhaseType } from '../engine/types';
+import { GameManager } from '../game/manager';
+import { logger } from '../util/logger';
+import { DiplomacyAgent } from './interface';
 
 /**
  * Connects a DiplomacyAgent to a GameManager, bridging the two interfaces.

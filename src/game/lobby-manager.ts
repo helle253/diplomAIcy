@@ -1,8 +1,8 @@
 import { randomUUID } from 'crypto';
 
-import type { GameConfig } from '../agent/llm/config.js';
-import { Power } from '../engine/types.js';
-import { GameManager, type GameResult } from './manager.js';
+import type { GameConfig } from '../agent/llm/config';
+import { Power } from '../engine/types';
+import { GameManager, type GameResult } from './manager';
 
 export interface LobbyConfig {
   name: string;

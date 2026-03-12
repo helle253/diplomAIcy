@@ -1,4 +1,4 @@
-import { publicProcedure } from './trpc.js';
+import { publicProcedure } from './trpc';
 
 /**
  * Self-describing API metadata endpoint.

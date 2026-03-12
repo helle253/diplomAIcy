@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { PROVINCES } from '../engine/map.js';
-import { Power, ProvinceType, UnitType } from '../engine/types.js';
-import { LobbyManager } from './lobby-manager.js';
-import { GameManager } from './manager.js';
-import { createGameRouter } from './router.js';
-import { createContext, router } from './trpc.js';
+import { PROVINCES } from '../engine/map';
+import { Power, ProvinceType, UnitType } from '../engine/types';
+import { LobbyManager } from './lobby-manager';
+import { GameManager } from './manager';
+import { createGameRouter } from './router';
+import { createContext, router } from './trpc';
 
 function setupTestGame() {
   const lm = new LobbyManager();

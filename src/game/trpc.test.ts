@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { createContext } from './trpc.js';
+import { createContext } from './trpc';
 
 type MockReq = {
   headers: Record<string, string | string[] | undefined>;

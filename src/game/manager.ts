@@ -1,5 +1,5 @@
-import { PROVINCES, STARTING_SUPPLY_CENTERS, STARTING_UNITS } from '../engine/map.js';
-import { ResolutionResult, resolveOrders } from '../engine/resolver.js';
+import { PROVINCES, STARTING_SUPPLY_CENTERS, STARTING_UNITS } from '../engine/map';
+import { ResolutionResult, resolveOrders } from '../engine/resolver';
 import {
   BuildOrder,
   Coast,
@@ -13,9 +13,9 @@ import {
   Power,
   RetreatOrder,
   Season,
-} from '../engine/types.js';
-import { logger } from '../util/logger.js';
-import { MessageBus } from './message-bus.js';
+} from '../engine/types';
+import { logger } from '../util/logger';
+import { MessageBus } from './message-bus';
 
 export interface GameManagerConfig {
   maxYears?: number;

@@ -6,8 +6,8 @@ import type {
   ProvinceState,
   RetreatSituation,
   Unit,
-} from '../../engine/types.js';
-import { UnitType } from '../../engine/types.js';
+} from '../../engine/types';
+import { UnitType } from '../../engine/types';
 
 /** Per-power order round in wire format, with phase label. */
 export interface WireOrderRound {

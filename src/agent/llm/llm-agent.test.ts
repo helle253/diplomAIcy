@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { STARTING_SUPPLY_CENTERS, STARTING_UNITS } from '../../engine/map.js';
+import { STARTING_SUPPLY_CENTERS, STARTING_UNITS } from '../../engine/map';
 import {
   Coast,
   GameState,
@@ -12,9 +12,9 @@ import {
   Season,
   SupportOrder,
   UnitType,
-} from '../../engine/types.js';
-import { LLMAgent } from './llm-agent.js';
-import { ChatMessage, LLMClient } from './llm-client.js';
+} from '../../engine/types';
+import { LLMAgent } from './llm-agent';
+import { ChatMessage, LLMClient } from './llm-client';
 import {
   extractJSON,
   parseBatchNegotiationResponse,
@@ -22,8 +22,8 @@ import {
   parseMessages,
   parseOrders,
   parseRetreats,
-} from './order-parser.js';
-import { buildOrdersPrompt, buildSystemPrompt, serializeGameState } from './prompts.js';
+} from './order-parser';
+import { buildOrdersPrompt, buildSystemPrompt, serializeGameState } from './prompts';
 
 // ============================================================================
 // Helpers

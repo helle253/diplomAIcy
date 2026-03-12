@@ -1,7 +1,7 @@
 import { createTRPCClient, httpLink, httpSubscriptionLink, splitLink } from '@trpc/client';
 import { EventSource } from 'eventsource';
 
-import type { AppRouter } from '../../ui/server.js';
+import type { AppRouter } from '../../ui/server';
 
 /**
  * Creates a typed tRPC client that connects to the game server.

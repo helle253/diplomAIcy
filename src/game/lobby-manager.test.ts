@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { Power } from '../engine/types.js';
-import { LobbyConfig, LobbyManager } from './lobby-manager.js';
-import { GameManager } from './manager.js';
+import { Power } from '../engine/types';
+import { LobbyConfig, LobbyManager } from './lobby-manager';
+import { GameManager } from './manager';
 
 const DEFAULT_CONFIG: LobbyConfig = {
   name: 'Test Game',

@@ -1,8 +1,8 @@
 import Database from 'better-sqlite3';
 import { randomUUID } from 'crypto';
 
-import { Message, Phase, Power } from '../engine/types.js';
-import type { GameResult, TurnRecord } from './manager.js';
+import { Message, Phase, Power } from '../engine/types';
+import type { GameResult, TurnRecord } from './manager';
 
 export interface StoredGame {
   id: string;

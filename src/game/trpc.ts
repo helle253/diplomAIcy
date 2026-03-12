@@ -1,8 +1,8 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import { parse as parseUrl } from 'url';
 
-import type { Power } from '../engine/types.js';
-import type { LobbyManager } from './lobby-manager.js';
+import type { Power } from '../engine/types';
+import type { LobbyManager } from './lobby-manager';
 
 export interface TRPCContext {
   token: string | null;

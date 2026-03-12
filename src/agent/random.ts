@@ -1,4 +1,4 @@
-import { PROVINCES } from '../engine/map.js';
+import { PROVINCES } from '../engine/map';
 import {
   BuildOrder,
   Coast,
@@ -12,8 +12,8 @@ import {
   RetreatSituation,
   Unit,
   UnitType,
-} from '../engine/types.js';
-import { BatchMessageResult, DiplomacyAgent } from './interface.js';
+} from '../engine/types';
+import { BatchMessageResult, DiplomacyAgent } from './interface';
 
 function pickRandom<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];

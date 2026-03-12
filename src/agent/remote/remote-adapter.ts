@@ -1,11 +1,11 @@
 import type { Unsubscribable } from '@trpc/server/observable';
 
-import type { Message } from '../../engine/types.js';
-import { PhaseType } from '../../engine/types.js';
-import { logger } from '../../util/logger.js';
-import type { DiplomacyAgent } from '../interface.js';
-import type { GameClient } from './client.js';
-import { deserializeGameState, type SerializedGameState } from './deserialize.js';
+import type { Message } from '../../engine/types';
+import { PhaseType } from '../../engine/types';
+import { logger } from '../../util/logger';
+import type { DiplomacyAgent } from '../interface';
+import type { GameClient } from './client';
+import { deserializeGameState, type SerializedGameState } from './deserialize';
 
 function formatTo(to: Message['to']): string {
   return Array.isArray(to) ? to.join(', ') : to;

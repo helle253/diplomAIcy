@@ -7,17 +7,17 @@ import {
   Power,
   RetreatOrder,
   RetreatSituation,
-} from '../../engine/types.js';
-import { logger } from '../../util/logger.js';
-import { BatchMessageResult, DiplomacyAgent } from '../interface.js';
-import { ChatMessage, LLMClient } from './llm-client.js';
+} from '../../engine/types';
+import { logger } from '../../util/logger';
+import { BatchMessageResult, DiplomacyAgent } from '../interface';
+import { ChatMessage, LLMClient } from './llm-client';
 import {
   parseBatchNegotiationResponse,
   parseBuildOrders,
   parseMessages,
   parseOrders,
   parseRetreats,
-} from './order-parser.js';
+} from './order-parser';
 import {
   buildBatchNegotiationPrompt,
   buildBuildsPrompt,
@@ -25,7 +25,7 @@ import {
   buildOrdersPrompt,
   buildRetreatsPrompt,
   buildSystemPrompt,
-} from './prompts.js';
+} from './prompts';
 
 const MAX_RESPONSES_PER_PHASE = -1;
 

@@ -29,7 +29,7 @@ MAX_YEARS="${MAX_YEARS:-5}" \
 PHASE_DELAY="${PHASE_DELAY:-5000}" \
 REMOTE_TIMEOUT="${REMOTE_TIMEOUT:-120000}" \
 DIPLOMAICY_CONFIG=diplomaicy.config.remote.json \
-  node dist/ui/server.js &
+  npx tsx src/ui/server.ts &
 PIDS+=($!)
 
 # Wait for server to be ready
@@ -53,7 +53,7 @@ for power in "${POWERS[@]}"; do
     TYPE_FLAG="--type $AGENT_TYPE"
   fi
   DIPLOMAICY_CONFIG="$AGENT_CONFIG" \
-    node dist/agent/remote/run.js --power "$power" --server "$SERVER_URL" $TYPE_FLAG &
+    npx tsx src/agent/remote/run.ts --power "$power" --server "$SERVER_URL" $TYPE_FLAG &
   PIDS+=($!)
   sleep 3
 done

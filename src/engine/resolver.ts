@@ -12,7 +12,7 @@ import {
   SupportOrder,
   Unit,
   UnitType,
-} from './types.js';
+} from './types';
 
 // === Result type ===
 

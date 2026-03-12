@@ -1,4 +1,4 @@
-import { ChatMessage, LLMClient, LLMClientConfig } from './llm-client.js';
+import { ChatMessage, LLMClient, LLMClientConfig } from './llm-client';
 
 /**
  * LLM client for the Anthropic Messages API.

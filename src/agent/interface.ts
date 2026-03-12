@@ -6,7 +6,7 @@ import {
   Power,
   RetreatOrder,
   RetreatSituation,
-} from '../engine/types.js';
+} from '../engine/types';
 
 /** Result from batch message processing — replies to send now, deferred messages to revisit later */
 export interface BatchMessageResult {

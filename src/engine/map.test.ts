@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { PROVINCES, STARTING_SUPPLY_CENTERS, STARTING_UNITS } from './map.js';
-import { Coast, Power, ProvinceType, UnitType } from './types.js';
+import { PROVINCES, STARTING_SUPPLY_CENTERS, STARTING_UNITS } from './map';
+import { Coast, Power, ProvinceType, UnitType } from './types';
 
 // ============================================================================
 // Structural Validation
