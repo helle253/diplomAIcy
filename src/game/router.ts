@@ -1,18 +1,16 @@
-import { readFileSync } from 'fs';
-import { join } from 'path';
-
 import { tracked, TRPCError } from '@trpc/server';
+import { readFileSync } from 'fs';
 import { z } from 'zod';
 import { toJSONSchema } from 'zod/v4';
 
 import { buildMapState } from '../engine/map-state.js';
-import { Coast, OrderType, Phase, Power, UnitType } from '../engine/types.js';
 import type { OrderResolution } from '../engine/types.js';
+import { Coast, OrderType, Phase, Power, UnitType } from '../engine/types.js';
 import type { LobbyManager } from './lobby-manager.js';
 import type { GameManager, TurnRecord } from './manager.js';
 import { createProtectedProcedures, publicProcedure, router } from './trpc.js';
 
-const RULES_TEMPLATE = readFileSync(join(process.cwd(), 'src/engine/RULES.md'), 'utf-8');
+const RULES_TEMPLATE = readFileSync(new URL('../engine/RULES.md', import.meta.url), 'utf-8');
 
 // ── Zod schemas ────────────────────────────────────────────────────────
 
@@ -72,11 +70,11 @@ const buildOrderSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('Waive') }),
 ]);
 
-// ── Precomputed JSON schemas ──────────────────────────────────────────
+// ── Precomputed JSON schemas (match submission body shapes) ──────────
 
-const ORDER_JSON_SCHEMA = toJSONSchema(orderSchema);
-const RETREAT_JSON_SCHEMA = toJSONSchema(retreatOrderSchema);
-const BUILD_JSON_SCHEMA = toJSONSchema(buildOrderSchema);
+const ORDER_JSON_SCHEMA = toJSONSchema(z.object({ orders: z.array(orderSchema) }));
+const RETREAT_JSON_SCHEMA = toJSONSchema(z.object({ retreats: z.array(retreatOrderSchema) }));
+const BUILD_JSON_SCHEMA = toJSONSchema(z.object({ builds: z.array(buildOrderSchema) }));
 
 // ── Serialization helpers ──────────────────────────────────────────────
 
@@ -85,9 +83,7 @@ interface WireOrderRound {
   orders: OrderResolution[];
 }
 
-function serializeOrderHistory(
-  turnHistory: TurnRecord[],
-): Record<string, WireOrderRound[]> {
+function serializeOrderHistory(turnHistory: TurnRecord[]): Record<string, WireOrderRound[]> {
   const byPower: Record<string, WireOrderRound[]> = {};
   for (const turn of turnHistory) {
     if (!turn.orders) continue;
@@ -117,15 +113,18 @@ function buildPowerSummary(manager: GameManager): Record<string, PowerSummary> {
   const state = manager.getState();
   const summary: Record<string, PowerSummary> = {};
 
+  // Initialize all powers (including eliminated ones)
+  for (const power of Object.values(Power)) {
+    summary[power] = { units: 0, supplyCenters: 0, buildCount: 0 };
+  }
+
   // Count units per power
   for (const unit of state.units) {
-    if (!summary[unit.power]) summary[unit.power] = { units: 0, supplyCenters: 0, buildCount: 0 };
     summary[unit.power].units++;
   }
 
   // Count SCs per power
   for (const [, power] of state.supplyCenters) {
-    if (!summary[power]) summary[power] = { units: 0, supplyCenters: 0, buildCount: 0 };
     summary[power].supplyCenters++;
   }
 

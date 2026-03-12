@@ -59,9 +59,7 @@ export class OpenAICompatibleClient implements LLMClient {
 
         if (!response.ok) {
           const text = await response.text().catch(() => '');
-          const err = new Error(
-            `LLM API error ${response.status}: ${text.slice(0, 200)}`,
-          );
+          const err = new Error(`LLM API error ${response.status}: ${text.slice(0, 200)}`);
           // Retry on 429 or 5xx
           if (response.status === 429 || response.status >= 500) {
             const retryAfter = response.headers.get('retry-after');
