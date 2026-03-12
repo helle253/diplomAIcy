@@ -1,19 +1,16 @@
 import 'dotenv/config';
 
-import { AnthropicClient } from '../../../src/agent/llm/anthropic-client';
 import {
   AgentConfig,
   getAgentConfig,
   loadConfig,
   toLLMClientConfig,
 } from '../../../src/agent/llm/config';
-import { LLMAgent } from '../../../src/agent/llm/llm-agent';
-import { LLMClient, OpenAICompatibleClient } from '../../../src/agent/llm/llm-client';
-import { RandomAgent } from '../../../src/agent/random';
+import { OpenAICompatibleClient } from '../../../src/agent/llm/llm-client';
+import { connectToolAgent } from '../../../src/agent/llm/tool-agent';
+import { connectRandomAgent } from '../../../src/agent/random-agent';
 import { createGameClient } from '../../../src/agent/remote/client';
-import { connectRemoteAgent } from '../../../src/agent/remote/remote-adapter';
 import { Power } from '../../../src/engine/types';
-import { NoteKeepingClient } from './note-keeping-client';
 
 const VALID_POWERS = new Set<string>(Object.values(Power));
 
@@ -65,13 +62,6 @@ function parseArgs(): {
   return { power, server, type, lobbyId, notesDir };
 }
 
-function createLLMClient(cfg: AgentConfig): LLMClient {
-  const clientConfig = toLLMClientConfig(cfg);
-  return cfg.provider === 'anthropic'
-    ? new AnthropicClient(clientConfig)
-    : new OpenAICompatibleClient(clientConfig);
-}
-
 function resolveAgentConfig(power: Power, typeOverride?: string): AgentConfig {
   const gameConfig = loadConfig();
   const cfg = getAgentConfig(gameConfig, power);
@@ -91,28 +81,8 @@ function resolveAgentConfig(power: Power, typeOverride?: string): AgentConfig {
 }
 
 async function main() {
-  const { power, server, type, lobbyId, notesDir } = parseArgs();
+  const { power, server, type, lobbyId, notesDir: _notesDir } = parseArgs();
   const cfg = resolveAgentConfig(power, type);
-
-  let agent;
-  if (cfg.type === 'llm') {
-    if (!cfg.baseUrl || !cfg.apiKey || !cfg.model) {
-      console.error(
-        `LLM agent for ${power} requires baseUrl, apiKey, model.\n` +
-          `Set via config file or env vars: LLM_BASE_URL, LLM_API_KEY, LLM_MODEL`,
-      );
-      process.exit(1);
-    }
-    const innerClient = createLLMClient(cfg);
-    const client = new NoteKeepingClient(innerClient, notesDir, power, lobbyId);
-    agent = new LLMAgent(power, client);
-    console.log(
-      `Starting llm agent for ${power} (${cfg.provider}/${cfg.model}) with notes -> ${notesDir}/${lobbyId}/${power}.md`,
-    );
-  } else {
-    agent = new RandomAgent(power);
-    console.log(`Starting random agent for ${power}, connecting to ${server}...`);
-  }
 
   // Join lobby
   const joinClient = createGameClient(server);
@@ -145,7 +115,27 @@ async function main() {
   }
 
   // Connect agent
-  await connectRemoteAgent(agent, trpcClient, lobbyId);
+  if (cfg.type === 'llm') {
+    if (!cfg.baseUrl || !cfg.apiKey || !cfg.model) {
+      console.error(
+        `LLM agent for ${power} requires baseUrl, apiKey, model.\n` +
+          `Set via config file or env vars: LLM_BASE_URL, LLM_API_KEY, LLM_MODEL`,
+      );
+      process.exit(1);
+    }
+    if (cfg.provider === 'anthropic') {
+      console.error('Anthropic provider does not support tool calling yet. Use openai provider.');
+      process.exit(1);
+    }
+    const llmClient = new OpenAICompatibleClient(toLLMClientConfig(cfg));
+    console.log(
+      `Starting tool-calling agent for ${power} (${cfg.provider ?? 'openai'}/${cfg.model}), connecting to ${server}...`,
+    );
+    await connectToolAgent(trpcClient, llmClient, power, lobbyId);
+  } else {
+    console.log(`Starting random agent for ${power}, connecting to ${server}...`);
+    await connectRandomAgent(trpcClient, power, lobbyId);
+  }
 
   // Keep alive
   await new Promise(() => {});
