@@ -470,8 +470,9 @@ function updateArrows(): void {
   const prevSnap = currentIndex > 0 ? snapshots[currentIndex - 1] : snap;
   const unitTypeMap = new Map<string, { type: 'Army' | 'Fleet'; coast?: string }>();
   if (prevSnap) {
-    for (const u of prevSnap.gameState.units) {
-      unitTypeMap.set(u.province, { type: u.type, coast: u.coast });
+    for (const [province, prov] of Object.entries(prevSnap.gameState.map)) {
+      if (!prov.unit) continue;
+      unitTypeMap.set(province, { type: prov.unit.type, coast: prov.unit.coast ?? undefined });
     }
   }
 
