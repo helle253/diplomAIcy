@@ -83,6 +83,10 @@ Each sub-agent prompt MUST include:
 
 - Returns: phase, units, supplyCenters, orderHistory, retreatSituations, endYear, deadlineMs, gameOver
 
+**getRules**: `GET /trpc/game.getRules?input={"lobbyId":"..."}`
+
+- Returns: `{rules: "..."}` — full Diplomacy rules with game-specific values (victory threshold, end year, deadlines). Agents should fetch this once after joining.
+
 **getBuildCount**: `GET /trpc/game.getBuildCount?input={"lobbyId":"...","power":"..."}`
 
 - Returns: `{buildCount: N}` (positive=build, negative=remove)
@@ -165,4 +169,4 @@ Agents WILL use wrong province IDs (nwy instead of nor, mid instead of mao). Inv
 
 None currently.
 
-See `RULES.md` in this skill directory for Diplomacy rules agents need to know (especially: invalid orders silently become Hold).
+Agents should call `GET /trpc/game.getRules?input={"lobbyId":"..."}` to get the full Diplomacy rules with game-specific values (victory threshold, end year, deadlines). Include this endpoint in each agent's prompt so they fetch rules after joining. Key rule: invalid orders silently become Hold.
