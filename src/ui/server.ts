@@ -2,6 +2,7 @@ import 'dotenv/config';
 
 import { createExpressMiddleware } from '@trpc/server/adapters/express';
 import express from 'express';
+import { existsSync } from 'fs';
 import { createServer } from 'http';
 import { dirname, join } from 'path';
 import { parse as parseUrl } from 'url';
@@ -247,7 +248,10 @@ function startServer(): void {
   const appRouter = router({ describe: describeProcedure, lobby: lobbyRouter, game: gameRouter });
 
   // Serve static files from Vite build output
-  const publicDir = join(__dirname, 'public');
+  // Works with both `tsx src/ui/server.ts` (__dirname=src/ui) and `node dist/ui/server.js` (__dirname=dist/ui)
+  const publicDir = existsSync(join(__dirname, 'public'))
+    ? join(__dirname, 'public')
+    : join(__dirname, '..', '..', 'dist', 'ui', 'public');
   app.use(express.static(publicDir));
 
   // Mount tRPC router
