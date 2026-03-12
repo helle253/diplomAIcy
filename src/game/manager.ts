@@ -15,7 +15,7 @@ import {
   Season,
 } from '../engine/types.js';
 import { logger } from '../util/logger.js';
-import { MessageBus, MessageBusConfig } from './message-bus.js';
+import { MessageBus } from './message-bus.js';
 
 export interface GameManagerConfig {
   maxYears?: number;
@@ -76,6 +76,7 @@ export class GameManager {
   private turnHistory: TurnRecord[] = [];
   private eventListeners: GameEventListener[] = [];
   private phaseChangeListeners: PhaseChangeListener[] = [];
+  private startYear: number;
   private endYear: number;
   private phaseDelayMs: number;
   private remoteTimeoutMs: number;
@@ -99,6 +100,7 @@ export class GameManager {
       startYear = 1901,
     } = config;
     this.bus = new MessageBus({ pressDelayMin, pressDelayMax });
+    this.startYear = startYear;
     this.endYear = startYear - 1 + maxYears;
     this.phaseDelayMs = phaseDelayMs;
     this.remoteTimeoutMs = remoteTimeoutMs;
@@ -159,6 +161,16 @@ export class GameManager {
   /** Unix timestamp (ms) when the current phase's submission window closes. 0 = no deadline. */
   getDeadline(): number {
     return this._deadlineMs;
+  }
+
+  /** Player-facing game configuration for rules templating. */
+  getGameConfig() {
+    return {
+      victoryThreshold: this.victoryThreshold,
+      startYear: this.startYear,
+      endYear: this.endYear,
+      phaseDeadlineMs: this.remoteTimeoutMs,
+    };
   }
 
   // ── Event subscriptions ──────────────────────────────────────────────

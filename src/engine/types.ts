@@ -168,6 +168,8 @@ export interface OrderResolution {
   power: Power;
   status: OrderStatus;
   reason?: string;
+  /** Present when the submitted order was invalid and got converted (usually to Hold). */
+  originalOrder?: Order;
 }
 
 // === Game State ===
@@ -179,6 +181,19 @@ export interface GameState {
   orderHistory: OrderResolution[][];
   retreatSituations: RetreatSituation[];
   endYear: number; // final year of the game (e.g. 1901 for a 1-year game)
+}
+
+// === Province State (wire format) ===
+
+export interface ProvinceState {
+  name: string;
+  type: ProvinceType;
+  supplyCenter: boolean;
+  homeCenter: Power | null;
+  adjacent: string[];
+  coasts: Record<string, string[]> | null;
+  owner: Power | null;
+  unit: { type: UnitType; power: Power; coast: string | null } | null;
 }
 
 // === Messages (for negotiation) ===

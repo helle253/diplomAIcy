@@ -1,10 +1,16 @@
 import { tracked, TRPCError } from '@trpc/server';
+import { readFileSync } from 'fs';
 import { z } from 'zod';
+import { toJSONSchema } from 'zod/v4';
 
+import { buildMapState } from '../engine/map-state.js';
+import type { OrderResolution } from '../engine/types.js';
 import { Coast, OrderType, Phase, Power, UnitType } from '../engine/types.js';
 import type { LobbyManager } from './lobby-manager.js';
-import type { GameManager } from './manager.js';
+import type { GameManager, TurnRecord } from './manager.js';
 import { createProtectedProcedures, publicProcedure, router } from './trpc.js';
+
+const RULES_TEMPLATE = readFileSync(new URL('../engine/RULES.md', import.meta.url), 'utf-8');
 
 // ── Zod schemas ────────────────────────────────────────────────────────
 
@@ -64,15 +70,79 @@ const buildOrderSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('Waive') }),
 ]);
 
+// ── Precomputed JSON schemas (match submission body shapes) ──────────
+
+const ORDER_JSON_SCHEMA = toJSONSchema(z.object({ orders: z.array(orderSchema) }));
+const RETREAT_JSON_SCHEMA = toJSONSchema(z.object({ retreats: z.array(retreatOrderSchema) }));
+const BUILD_JSON_SCHEMA = toJSONSchema(z.object({ builds: z.array(buildOrderSchema) }));
+
 // ── Serialization helpers ──────────────────────────────────────────────
+
+interface WireOrderRound {
+  phase: Phase;
+  orders: OrderResolution[];
+}
+
+function serializeOrderHistory(turnHistory: TurnRecord[]): Record<string, WireOrderRound[]> {
+  const byPower: Record<string, WireOrderRound[]> = {};
+  for (const turn of turnHistory) {
+    if (!turn.orders) continue;
+    // Group resolutions in this round by power
+    const grouped = new Map<string, OrderResolution[]>();
+    for (const res of turn.orders) {
+      const arr = grouped.get(res.power) ?? [];
+      arr.push(res);
+      grouped.set(res.power, arr);
+    }
+    // Append each power's round with phase label
+    for (const [power, orders] of grouped) {
+      if (!byPower[power]) byPower[power] = [];
+      byPower[power].push({ phase: turn.phase, orders });
+    }
+  }
+  return byPower;
+}
+
+interface PowerSummary {
+  units: number;
+  supplyCenters: number;
+  buildCount: number;
+}
+
+function buildPowerSummary(manager: GameManager): Record<string, PowerSummary> {
+  const state = manager.getState();
+  const summary: Record<string, PowerSummary> = {};
+
+  // Initialize all powers (including eliminated ones)
+  for (const power of Object.values(Power)) {
+    summary[power] = { units: 0, supplyCenters: 0, buildCount: 0 };
+  }
+
+  // Count units per power
+  for (const unit of state.units) {
+    summary[unit.power].units++;
+  }
+
+  // Count SCs per power
+  for (const [, power] of state.supplyCenters) {
+    summary[power].supplyCenters++;
+  }
+
+  // Compute buildCount (SC - units)
+  for (const power of Object.keys(summary)) {
+    summary[power].buildCount = summary[power].supplyCenters - summary[power].units;
+  }
+
+  return summary;
+}
 
 function serializeState(manager: GameManager) {
   const state = manager.getState();
   return {
     phase: state.phase,
-    units: state.units,
-    supplyCenters: Object.fromEntries(state.supplyCenters),
-    orderHistory: state.orderHistory,
+    map: buildMapState(state.units, state.supplyCenters),
+    powers: buildPowerSummary(manager),
+    orderHistory: serializeOrderHistory(manager.getTurnHistory()),
     retreatSituations: state.retreatSituations,
     endYear: state.endYear,
     deadlineMs: manager.getDeadline(),
@@ -115,6 +185,26 @@ export function createGameRouter(lobbyManager: LobbyManager) {
         const manager = resolveManager(lobbyManager, input.lobbyId);
         return { buildCount: manager.getBuildCount(input.power) };
       }),
+
+    getRules: publicProcedure.input(lobbyIdInput).query(({ input }) => {
+      const manager = resolveManager(lobbyManager, input.lobbyId);
+      const config = manager.getGameConfig();
+      const deadlineStr =
+        config.phaseDeadlineMs > 0
+          ? `${Math.round(config.phaseDeadlineMs / 1000)} seconds per phase`
+          : 'No time limit — phases resolve when all orders are submitted';
+      const rules = RULES_TEMPLATE.replace('{{VICTORY_THRESHOLD}}', String(config.victoryThreshold))
+        .replace('{{END_YEAR}}', String(config.endYear))
+        .replace('{{START_YEAR}}', String(config.startYear))
+        .replace('{{DEADLINE}}', deadlineStr);
+      return { rules };
+    }),
+
+    getSchemas: publicProcedure.query(() => ({
+      orders: ORDER_JSON_SCHEMA,
+      retreats: RETREAT_JSON_SCHEMA,
+      builds: BUILD_JSON_SCHEMA,
+    })),
 
     getActivePowers: publicProcedure.input(lobbyIdInput).query(({ input }) => {
       const manager = resolveManager(lobbyManager, input.lobbyId);

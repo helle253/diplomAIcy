@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 
+import { PROVINCES } from '../../src/engine/map.js';
 import {
   makeSnapshot,
   STARTING_SC,
@@ -8,6 +9,10 @@ import {
   type TestServer,
   type TestUnit,
 } from './test-server.js';
+
+const SC_PROVINCES = Object.entries(PROVINCES)
+  .filter(([, p]) => p.supplyCenter)
+  .map(([id]) => id);
 
 let server: TestServer;
 
@@ -37,17 +42,20 @@ async function getUnitPositions(page: import('@playwright/test').Page) {
     const layer = document.querySelector('#units-layer');
     if (!layer) return [];
     const markers = layer.querySelectorAll('.unit-marker');
-    const results: { cx: number; cy: number }[] = [];
+    const results: { province: string; cx: number; cy: number }[] = [];
     for (const g of markers) {
+      const province = g.getAttribute('data-province') ?? '';
       const circle = g.querySelector('circle');
       const rect = g.querySelector('rect');
       if (circle) {
         results.push({
+          province,
           cx: parseFloat(circle.getAttribute('cx')!),
           cy: parseFloat(circle.getAttribute('cy')!),
         });
       } else if (rect) {
         results.push({
+          province,
           cx: parseFloat(rect.getAttribute('x')!) + 7,
           cy: parseFloat(rect.getAttribute('y')!) + 7,
         });
@@ -137,12 +145,13 @@ test('starting units — each token inside its province bounds', async ({ page }
   const positions = await getUnitPositions(page);
   expect(positions).toHaveLength(STARTING_UNITS.length);
 
-  for (let i = 0; i < STARTING_UNITS.length; i++) {
-    const unit = STARTING_UNITS[i];
+  for (const unit of STARTING_UNITS) {
+    const pos = positions.find((p) => p.province === unit.province);
+    expect(pos, `unit marker for ${unit.province}`).toBeDefined();
     const bbox = await getProvinceBBox(page, unit.province);
     expect(bbox, `bbox for ${unit.province}`).not.toBeNull();
     assertUnitInProvince(
-      positions[i],
+      pos!,
       bbox!,
       `${unit.power} ${unit.type} ${unit.province}${unit.coast ? '/' + unit.coast : ''}`,
     );
@@ -214,18 +223,18 @@ const LAND_PROVINCES = [
 ];
 
 test.describe('region shading', () => {
-  test('every land province shades for each power', async ({ page }) => {
-    // Assign every land province to a power (cycling through them)
+  test('every supply center shades for each power', async ({ page }) => {
+    // Assign every supply center to a power (cycling through them)
     const powers = ['England', 'France', 'Germany', 'Italy', 'Austria', 'Russia', 'Turkey'];
     const sc: Record<string, string> = {};
-    for (let i = 0; i < LAND_PROVINCES.length; i++) {
-      sc[LAND_PROVINCES[i]] = powers[i % powers.length];
+    for (let i = 0; i < SC_PROVINCES.length; i++) {
+      sc[SC_PROVINCES[i]] = powers[i % powers.length];
     }
 
     server.setSnapshot(makeSnapshot([], sc));
     await waitForMap(page);
 
-    for (const province of LAND_PROVINCES) {
+    for (const province of SC_PROVINCES) {
       const expectedPower = sc[province];
       const group = page.locator(`.province-group[data-province="${province}"]`);
       await expect(group, `${province} shaded as ${expectedPower}`).toHaveClass(

@@ -8,6 +8,9 @@ import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import { WebSocket, WebSocketServer } from 'ws';
 
+import { buildMapState } from '../../src/engine/map-state.js';
+import type { Power, Unit } from '../../src/engine/types.js';
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC_DIR = join(__dirname, '../../dist/ui/public');
 
@@ -22,8 +25,7 @@ export interface TestSnapshot {
   phase: { year: number; season: string; type: string };
   gameState: {
     phase: { year: number; season: string; type: string };
-    units: TestUnit[];
-    supplyCenters: Record<string, string>;
+    map: Record<string, unknown>;
     retreatSituations: unknown[];
   };
   turnRecord?: unknown;
@@ -95,9 +97,19 @@ export function makeSnapshot(
   phase = { year: 1901, season: 'Spring', type: 'Diplomacy' },
   turnRecord?: unknown,
 ): TestSnapshot {
+  const engineUnits: Unit[] = units.map((u) => ({
+    type: u.type as Unit['type'],
+    power: u.power as Power,
+    province: u.province,
+    ...(u.coast ? { coast: u.coast as Unit['coast'] } : {}),
+  }));
+  const scMap = new Map<string, Power>(
+    Object.entries(supplyCenters).map(([k, v]) => [k, v as Power]),
+  );
+  const map = buildMapState(engineUnits, scMap);
   return {
     phase,
-    gameState: { phase, units, supplyCenters, retreatSituations: [] },
+    gameState: { phase, map, retreatSituations: [] },
     turnRecord,
     messages: [],
   };
