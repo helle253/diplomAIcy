@@ -11,6 +11,10 @@ export default defineConfig({
   use: {
     browserName: 'chromium',
     viewport: { width: 1280, height: 900 },
+    // Disable CSS animations/transitions so screenshots capture final state
+    contextOptions: {
+      reducedMotion: 'reduce',
+    },
   },
   projects: [{ name: 'chromium', use: { browserName: 'chromium' } }],
 });
