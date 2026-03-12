@@ -1,11 +1,11 @@
-import { describe, expect, it, afterEach, beforeEach } from 'vitest';
-import { mkdtemp, readFile as fsReadFile, rm, mkdir as fsMkdir, writeFile as fsWriteFile } from 'fs/promises';
+import { mkdir as fsMkdir, mkdtemp, readFile as fsReadFile, rm, writeFile as fsWriteFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { ChatMessage, LLMClient } from '../../../src/agent/llm/llm-client';
 
-import { extractNotesBlock, parsePhaseFromPrompt, NoteKeepingClient } from './note-keeping-client';
+import { extractNotesBlock, NoteKeepingClient, parsePhaseFromPrompt } from './note-keeping-client';
 
 describe('extractNotesBlock', () => {
   it('extracts notes from a response with json + notes fences', () => {

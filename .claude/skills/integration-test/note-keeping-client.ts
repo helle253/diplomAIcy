@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir } from 'fs/promises';
+import { appendFile, readFile, mkdir } from 'fs/promises';
 import { dirname, join } from 'path';
 
 import type { ChatMessage, LLMClient } from '../../../src/agent/llm/llm-client';
@@ -128,15 +128,6 @@ Notes are optional — if you have nothing to record, just submit your main resp
 
     // Ensure directory exists and append
     await mkdir(dirname(this.notesFilePath), { recursive: true });
-    const existing = await this.readRawFile();
-    await writeFile(this.notesFilePath, existing + header + formatted);
-  }
-
-  private async readRawFile(): Promise<string> {
-    try {
-      return await readFile(this.notesFilePath, 'utf-8');
-    } catch {
-      return '';
-    }
+    await appendFile(this.notesFilePath, header + formatted);
   }
 }
