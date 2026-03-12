@@ -190,9 +190,7 @@ export class GameManager {
     }
     this.drawVotes.add(power);
     const activePowers = this.getActivePowers();
-    logger.info(
-      `[${power}] proposed a draw (${this.drawVotes.size}/${activePowers.length} votes)`,
-    );
+    logger.info(`[${power}] proposed a draw (${this.drawVotes.size}/${activePowers.length} votes)`);
 
     // Broadcast draw proposal as a global message
     this.bus.send({
