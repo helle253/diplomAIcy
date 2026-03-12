@@ -384,3 +384,103 @@ describe('GameManager — Config object', () => {
     expect(result.winner).toBe(Power.England);
   });
 });
+
+// ============================================================================
+// 8. DRAW VOTING
+// ============================================================================
+
+describe('GameManager — Draw voting', () => {
+  it('draw proposal by all active powers ends the game', async () => {
+    const manager = new GameManager({ maxYears: 50 });
+    connectAllHold(manager);
+
+    manager.onPhaseChange((phase) => {
+      if (phase.type === PhaseType.Diplomacy) {
+        for (const power of manager.getActivePowers()) {
+          manager.proposeDraw(power);
+        }
+      }
+    });
+
+    const result = await manager.run();
+    expect(result.winner).toBeNull();
+    expect(result.year).toBe(1901);
+  });
+
+  it('partial draw votes do not end the game', async () => {
+    const manager = new GameManager({ maxYears: 1 });
+    connectAllHold(manager);
+
+    manager.onPhaseChange((phase) => {
+      if (phase.type === PhaseType.Diplomacy) {
+        manager.proposeDraw(Power.England);
+      }
+    });
+
+    const result = await manager.run();
+    expect(result.winner).toBeNull();
+  });
+
+  it('draw votes reset each diplomacy phase', async () => {
+    const manager = new GameManager({ maxYears: 1 });
+    connectAllHold(manager);
+
+    let phaseCount = 0;
+    manager.onPhaseChange((phase) => {
+      if (phase.type === PhaseType.Diplomacy) {
+        phaseCount++;
+        if (phaseCount === 1) {
+          manager.proposeDraw(Power.England);
+          manager.proposeDraw(Power.France);
+        }
+      }
+    });
+
+    const result = await manager.run();
+    expect(result.winner).toBeNull();
+  });
+
+  it('allowDraws=false rejects draw proposals', async () => {
+    const manager = new GameManager({ maxYears: 1, allowDraws: false });
+    connectAllHold(manager);
+
+    manager.onPhaseChange((phase) => {
+      if (phase.type === PhaseType.Diplomacy) {
+        for (const power of manager.getActivePowers()) {
+          manager.proposeDraw(power);
+        }
+      }
+    });
+
+    const result = await manager.run();
+    expect(result.winner).toBeNull();
+  });
+
+  it('proposeDraw returns true when accepted, false when rejected', async () => {
+    const manager = new GameManager({ maxYears: 1 });
+    connectAllHold(manager);
+
+    let accepted: boolean | undefined;
+    manager.onPhaseChange((phase) => {
+      if (phase.type === PhaseType.Diplomacy) {
+        accepted = manager.proposeDraw(Power.England);
+      }
+    });
+
+    const managerNoDraws = new GameManager({ maxYears: 1, allowDraws: false });
+    connectAllHold(managerNoDraws);
+
+    let rejected: boolean | undefined;
+    managerNoDraws.onPhaseChange((phase) => {
+      if (phase.type === PhaseType.Diplomacy) {
+        rejected = managerNoDraws.proposeDraw(Power.England);
+      }
+    });
+
+    await manager.run();
+    await managerNoDraws.run();
+
+    expect(accepted).toBe(true);
+    expect(rejected).toBe(false);
+  });
+});
