@@ -60,7 +60,7 @@ LOBBY_ID="<lobby-id-from-step-3>"
 
 for power in "${POWERS[@]}"; do
   DIPLOMAICY_CONFIG=diplomaicy.config.ollama.json \
-  npx tsx src/agent/remote/run.ts --power "$power" --lobby "$LOBBY_ID" --type llm &
+  npx tsx .claude/skills/integration-test/run-with-notes.ts --power "$power" --lobby "$LOBBY_ID" --type llm --notes-dir "game-notes" &
   echo "Launched $power agent (PID $!)"
   sleep 3
 done
@@ -128,6 +128,15 @@ LLM_BASE_URL=http://localhost:11434/v1  # or wherever Ollama is
 3. **Agent crashes** — check background job output. Common cause: Ollama OOM on large models
 4. **Phase progression** — game should advance through Spring 1901 Orders → Fall 1901 Orders → Winter 1901 Builds → etc.
 5. **Diplomacy messages** — agents should be sending press messages via `sendMessage`
+
+## Reviewing Agent Notes
+
+After the game, each agent's notes are in `game-notes/{lobbyId}/{Power}.md`. These contain:
+
+- **Strategy sections** — the agent's plans, alliance assessments, and reflections on what worked
+- **UX Feedback sections** — observations about prompt clarity, format confusion, and suggestions
+
+Review these to understand agent behavior and identify prompt improvements.
 
 ## Troubleshooting
 
