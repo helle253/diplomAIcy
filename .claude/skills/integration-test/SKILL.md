@@ -10,7 +10,7 @@ Run a full Diplomacy game with 7 Ollama-powered remote agents playing all powers
 ## Prerequisites
 
 - Ollama service running (available at `http://ollama:11434` in devcontainer)
-- A model pulled (default: `qwen2.5:3b`). To pull: `curl http://ollama:11434/api/pull -d '{"name":"qwen2.5:3b"}'`
+- A model pulled (default: `qwen2.5:7b`). To pull: `curl http://ollama:11434/api/pull -d '{"name":"qwen2.5:7b"}'`
 - Verify Ollama is reachable: `curl -s http://ollama:11434/api/tags`
 
 ## Setup
@@ -103,9 +103,9 @@ Any Ollama model works. Smaller models are faster but produce worse orders:
 | Model          | Size | Quality                   | Speed     |
 | -------------- | ---- | ------------------------- | --------- |
 | `qwen2.5:0.5b` | 0.5B | Low (many invalid orders) | Very fast |
-| `qwen2.5:3b`   | 3B   | Moderate (default)        | Fast      |
+| `qwen2.5:3b`   | 3B   | Moderate                  | Fast      |
 | `llama3.2`     | 3B   | Moderate                  | Fast      |
-| `qwen2.5:7b`   | 7B   | Good                      | Slower    |
+| `qwen2.5:7b`   | 7B   | Good (default, 8K ctx)    | Moderate  |
 
 ### Using a different Ollama host
 
@@ -142,7 +142,7 @@ Review these to understand agent behavior and identify prompt improvements.
 
 **"Ollama not reachable"** — The Ollama service may not have started. Check `docker compose ps` and ensure the ollama service is running.
 
-**"model not found"** — Pull the model first: `curl http://ollama:11434/api/pull -d '{"name":"qwen2.5:3b"}'`
+**"model not found"** — Pull the model first: `curl http://ollama:11434/api/pull -d '{"name":"qwen2.5:7b"}'`
 
 **Agents hang** — The model may be too slow. Try a smaller model or increase timeouts.
 

@@ -13,10 +13,13 @@ export interface LLMClientConfig {
   model: string;
   temperature?: number;
   maxTokens?: number;
+  numCtx?: number;
 }
 
 export class OpenAICompatibleClient implements LLMClient {
-  private config: Required<LLMClientConfig>;
+  private config: Required<Omit<LLMClientConfig, 'numCtx'>>;
+
+  private numCtx?: number;
 
   constructor(config: LLMClientConfig) {
     this.config = {
@@ -26,16 +29,22 @@ export class OpenAICompatibleClient implements LLMClient {
       temperature: config.temperature ?? 0.7,
       maxTokens: config.maxTokens ?? 2048,
     };
+    this.numCtx = config.numCtx;
   }
 
   async complete(messages: ChatMessage[]): Promise<string> {
     const url = `${this.config.baseUrl}/chat/completions`;
-    const body = {
+    const body: Record<string, unknown> = {
       model: this.config.model,
       messages,
       temperature: this.config.temperature,
       max_tokens: this.config.maxTokens,
     };
+
+    // Ollama supports num_ctx via options to control context window size
+    if (this.numCtx) {
+      body.options = { num_ctx: this.numCtx };
+    }
 
     const MAX_RETRIES = 6;
     let lastError: Error | null = null;

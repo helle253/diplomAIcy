@@ -12,5 +12,5 @@ $HOME/.claude/hooks/peon-ping/peon.sh packs use ra_soviet
 # Pull default Ollama model for integration tests
 echo "Pulling Ollama model for integration tests..."
 curl -sf --retry 10 --retry-delay 2 http://ollama:11434/api/tags >/dev/null 2>&1 && \
-  curl -s http://ollama:11434/api/pull -d '{"name":"qwen2.5:3b"}' | tail -1 || \
-  echo "WARNING: Ollama not reachable — run 'curl http://ollama:11434/api/pull -d \"{\\\"name\\\":\\\"qwen2.5:3b\\\"}\"' manually"
+  curl -s http://ollama:11434/api/pull -d '{"name":"qwen2.5:7b"}' | tail -1 || \
+  echo "WARNING: Ollama not reachable — run 'curl http://ollama:11434/api/pull -d \"{\\\"name\\\":\\\"qwen2.5:7b\\\"}\"' manually"

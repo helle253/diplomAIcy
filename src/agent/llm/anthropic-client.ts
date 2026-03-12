@@ -5,7 +5,7 @@ import { ChatMessage, LLMClient, LLMClientConfig } from './llm-client';
  * Uses the same LLMClientConfig but hits /v1/messages instead of /chat/completions.
  */
 export class AnthropicClient implements LLMClient {
-  private config: Required<LLMClientConfig>;
+  private config: Required<Omit<LLMClientConfig, 'numCtx'>>;
 
   constructor(config: LLMClientConfig) {
     this.config = {
