@@ -35,7 +35,7 @@ Wait for `Diplomacy game server running at http://localhost:3000`.
 ```bash
 curl -s -X POST http://localhost:3000/trpc/lobby.create \
   -H "Content-Type: application/json" \
-  -d '{"name":"Ollama Integration Test","maxYears":2,"autostart":true,"fastAdjudication":false,"agentConfig":{"defaultAgent":{"type":"remote"}},"remoteTimeoutMs":120000}'
+  -d '{"name":"Ollama Integration Test","maxYears":2,"autostart":true,"fastAdjudication":false,"agentConfig":{"defaultAgent":{"type":"remote"}},"remoteTimeoutMs":600000}'
 ```
 
 Response: `{"result":{"data":{"lobbyId":"...","creatorToken":"..."}}}`. Extract `lobbyId` from `result.data`. `maxYears: 2` keeps the test short (1901-1902). `fastAdjudication: false` means agents don't need to call `submitReady`.
