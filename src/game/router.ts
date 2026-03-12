@@ -193,10 +193,14 @@ export function createGameRouter(lobbyManager: LobbyManager) {
         config.phaseDeadlineMs > 0
           ? `${Math.round(config.phaseDeadlineMs / 1000)} seconds per phase`
           : 'No time limit — phases resolve when all orders are submitted';
+      const fastAdjStr = config.fastAdjudication
+        ? 'Enabled — the diplomacy phase ends as soon as all powers signal ready (via submitReady). Send your messages promptly; once all powers are ready, negotiations close immediately'
+        : 'Disabled — the diplomacy phase always runs for the full duration regardless of readiness';
       const rules = RULES_TEMPLATE.replace('{{VICTORY_THRESHOLD}}', String(config.victoryThreshold))
         .replace('{{END_YEAR}}', String(config.endYear))
         .replace('{{START_YEAR}}', String(config.startYear))
-        .replace('{{DEADLINE}}', deadlineStr);
+        .replace('{{DEADLINE}}', deadlineStr)
+        .replace('{{FAST_ADJUDICATION}}', fastAdjStr);
       return { rules };
     }),
 
