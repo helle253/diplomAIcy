@@ -124,8 +124,10 @@ for (const prov of BICOASTAL) {
       const unit: TestUnit = { type: 'Fleet', power: 'England', province: prov, coast: 'nc' };
       server.setSnapshot(makeSnapshot([unit]));
       await page.goto(server.url);
-      await page.waitForSelector('.unit-marker', { state: 'attached', timeout: 10_000 });
-      await page.waitForTimeout(500);
+      await page.waitForSelector('.unit-marker circle, .unit-marker rect', {
+        state: 'attached',
+        timeout: 10_000,
+      });
       const d = await getUnitPositionData(page, prov);
       expect(d.unitCX).toBeGreaterThanOrEqual(d.bbox.minX - 15);
       expect(d.unitCX).toBeLessThanOrEqual(d.bbox.maxX + 15);
@@ -146,8 +148,10 @@ for (const prov of BICOASTAL) {
       const unit: TestUnit = { type: 'Fleet', power: 'England', province: prov, coast: 'sc' };
       server.setSnapshot(makeSnapshot([unit]));
       await page.goto(server.url);
-      await page.waitForSelector('.unit-marker', { state: 'attached', timeout: 10_000 });
-      await page.waitForTimeout(500);
+      await page.waitForSelector('.unit-marker circle, .unit-marker rect', {
+        state: 'attached',
+        timeout: 10_000,
+      });
       const d = await getUnitPositionData(page, prov);
       expect(d.unitCX).toBeGreaterThanOrEqual(d.bbox.minX - 15);
       expect(d.unitCX).toBeLessThanOrEqual(d.bbox.maxX + 15);
@@ -169,8 +173,10 @@ for (const prov of BICOASTAL) {
       const ncUnit: TestUnit = { type: 'Fleet', power: 'England', province: prov, coast: 'nc' };
       server.setSnapshot(makeSnapshot([ncUnit]));
       await page.goto(server.url);
-      await page.waitForSelector('.unit-marker', { state: 'attached', timeout: 10_000 });
-      await page.waitForTimeout(500);
+      await page.waitForSelector('.unit-marker circle, .unit-marker rect', {
+        state: 'attached',
+        timeout: 10_000,
+      });
       const ncPos = await page.evaluate(() => {
         const marker = document.querySelector('.unit-marker')!;
         const circle = marker.querySelector('circle');
@@ -190,8 +196,10 @@ for (const prov of BICOASTAL) {
       const scUnit: TestUnit = { type: 'Fleet', power: 'England', province: prov, coast: 'sc' };
       server.setSnapshot(makeSnapshot([scUnit]));
       await page.goto(server.url);
-      await page.waitForSelector('.unit-marker', { state: 'attached', timeout: 10_000 });
-      await page.waitForTimeout(500);
+      await page.waitForSelector('.unit-marker circle, .unit-marker rect', {
+        state: 'attached',
+        timeout: 10_000,
+      });
       const scPos = await page.evaluate(() => {
         const marker = document.querySelector('.unit-marker')!;
         const circle = marker.querySelector('circle');

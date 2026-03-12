@@ -22,8 +22,10 @@ test.afterAll(async () => {
 /** Wait for the map SVG and units layer to render. */
 async function waitForMap(page: import('@playwright/test').Page) {
   await page.goto(server.url);
-  await page.waitForSelector('#units-layer', { state: 'attached', timeout: 10_000 });
-  await page.waitForTimeout(500);
+  await page.waitForSelector('#map-container svg .province-group', {
+    state: 'attached',
+    timeout: 10_000,
+  });
 }
 
 /**
