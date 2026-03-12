@@ -75,7 +75,7 @@ function resolveAgentConfig(power: Power, typeOverride?: string): AgentConfig {
     cfg.type = 'llm';
   }
 
-  // For LLM agents, env vars fill in any missing fields (backward compat)
+  // For LLM agents, env vars fill in fields not set by the config file
   if (cfg.type === 'llm') {
     cfg.provider ??= (process.env.LLM_PROVIDER as AgentConfig['provider']) ?? 'openai';
     cfg.baseUrl ??= process.env.LLM_BASE_URL;

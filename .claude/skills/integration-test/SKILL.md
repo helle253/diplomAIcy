@@ -25,7 +25,7 @@ yarn build
 ### 2. Start the server
 
 ```bash
-node dist/ui/server.js &
+npx tsx src/ui/server.ts &
 ```
 
 Wait for `Diplomacy game server running at http://localhost:3000`.
@@ -33,12 +33,12 @@ Wait for `Diplomacy game server running at http://localhost:3000`.
 ### 3. Create a lobby
 
 ```bash
-curl -s -X POST 'http://localhost:3000/trpc/lobby.create?batch=1' \
+curl -s -X POST http://localhost:3000/trpc/lobby.create \
   -H "Content-Type: application/json" \
-  -d '{"0":{"json":{"name":"Ollama Integration Test","maxYears":2,"autostart":true,"fastAdjudication":false,"agentConfig":{"defaultAgent":{"type":"remote"}},"remoteTimeoutMs":120000}}}'
+  -d '{"name":"Ollama Integration Test","maxYears":2,"autostart":true,"fastAdjudication":false,"agentConfig":{"defaultAgent":{"type":"remote"}},"remoteTimeoutMs":120000}'
 ```
 
-The response is batched: `[{"result":{"data":{"id":"...","token":"..."}}}]`. Extract the `id` field as `lobbyId`. `maxYears: 2` keeps the test short (1901-1902). `fastAdjudication: false` means agents don't need to call `submitReady`.
+Response: `{"result":{"data":{"lobbyId":"...","creatorToken":"..."}}}`. Extract `lobbyId` from `result.data`. `maxYears: 2` keeps the test short (1901-1902). `fastAdjudication: false` means agents don't need to call `submitReady`.
 
 ### 4. Create game-notes directory
 
@@ -59,11 +59,8 @@ POWERS=(England France Germany Italy Austria Russia Turkey)
 LOBBY_ID="<lobby-id-from-step-3>"
 
 for power in "${POWERS[@]}"; do
-  LLM_PROVIDER=openai \
-  LLM_BASE_URL=http://ollama:11434/v1 \
-  LLM_MODEL=qwen2.5:3b \
-  LLM_API_KEY=ollama \
-  node dist/agent/remote/run.js --power "$power" --lobby "$LOBBY_ID" --type llm &
+  DIPLOMAICY_CONFIG=diplomaicy.config.ollama.json \
+  npx tsx src/agent/remote/run.ts --power "$power" --lobby "$LOBBY_ID" --type llm &
   echo "Launched $power agent (PID $!)"
   sleep 3
 done
@@ -76,16 +73,16 @@ You MUST run this via the Bash tool — these are native remote agent processes,
 Poll game state periodically (replace `LOBBY_ID` with the actual lobby ID):
 
 ```bash
-curl -s 'http://localhost:3000/trpc/game.getState?batch=1&input=%7B%220%22%3A%7B%22json%22%3A%7B%22lobbyId%22%3A%22LOBBY_ID%22%7D%7D%7D' | python3 -m json.tool
+curl -s "http://localhost:3000/trpc/game.getState?input=%7B%22lobbyId%22%3A%22LOBBY_ID%22%7D" | python3 -m json.tool
 ```
 
 Check lobby status for game completion:
 
 ```bash
-curl -s 'http://localhost:3000/trpc/lobby.get?batch=1&input=%7B%220%22%3A%7B%22json%22%3A%7B%22id%22%3A%22LOBBY_ID%22%7D%7D%7D' | python3 -m json.tool
+curl -s "http://localhost:3000/trpc/lobby.get?input=%7B%22id%22%3A%22LOBBY_ID%22%7D" | python3 -m json.tool
 ```
 
-Responses are batched arrays: data is at `[0].result.data`.
+Response data is at `result.data`.
 
 Update referee notes at milestones (yearly, on retreats, at game end).
 
