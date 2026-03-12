@@ -28,7 +28,7 @@
       <!-- Create Lobby Modal -->
       <div
         id="create-lobby-modal"
-        class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+        class="fixed inset-0 z-50 flex hidden items-center justify-center bg-black/60"
       >
         <div class="w-full max-w-md rounded border border-[#0f3460] bg-[#16213e] p-6">
           <h2 class="mb-4 text-sm font-bold tracking-wide text-[#e94560] uppercase">
@@ -37,18 +37,19 @@
           <form id="create-lobby-form" class="flex flex-col gap-3">
             <label class="lobby-field">
               <span class="lobby-label">Game Name</span>
-              <input
-                type="text"
-                name="name"
-                required
-                placeholder="My Game"
-                class="lobby-input"
-              />
+              <input type="text" name="name" required placeholder="My Game" class="lobby-input" />
             </label>
             <div class="grid grid-cols-2 gap-3">
               <label class="lobby-field">
                 <span class="lobby-label">Max Years</span>
-                <input type="number" name="maxYears" value="10" min="1" max="100" class="lobby-input" />
+                <input
+                  type="number"
+                  name="maxYears"
+                  value="10"
+                  min="1"
+                  max="100"
+                  class="lobby-input"
+                />
               </label>
               <label class="lobby-field">
                 <span class="lobby-label">Victory Threshold</span>
@@ -74,13 +75,7 @@
               </label>
               <label class="lobby-field">
                 <span class="lobby-label">Phase Delay (ms)</span>
-                <input
-                  type="number"
-                  name="phaseDelayMs"
-                  value="0"
-                  min="0"
-                  class="lobby-input"
-                />
+                <input type="number" name="phaseDelayMs" value="0" min="0" class="lobby-input" />
               </label>
             </div>
             <label class="lobby-field">
@@ -112,7 +107,7 @@
     </div>
 
     <!-- ==================== Game View ==================== -->
-    <div id="game-view" class="hidden flex h-screen flex-col overflow-hidden">
+    <div id="game-view" class="flex hidden h-screen flex-col overflow-hidden">
       <!-- Header -->
       <header
         class="flex items-center justify-between border-b border-[#0f3460] bg-[#16213e] px-5 py-2"

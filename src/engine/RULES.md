@@ -20,7 +20,7 @@ Some coastal provinces have multiple coasts (Spain, St. Petersburg, Bulgaria). W
 
 ## Supply Centers
 
-34 of the 75 provinces are supply centers (SCs). Each power starts with 3-4 home SCs. A power controls an SC if it has a unit in that province at the end of a Fall turn. The number of units a power may have equals the number of SCs it controls.
+34 of the 75 provinces are supply centers (SCs). Each power starts with 3-4 home SCs. A power takes control of an SC by occupying it with a unit at the end of a Fall turn, and keeps control until another power captures that center at the end of a Fall turn. The number of units a power may have equals the number of SCs it controls.
 
 ## Phase Sequence
 

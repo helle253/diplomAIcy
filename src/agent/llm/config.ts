@@ -47,8 +47,7 @@ function interpolateConfig(obj: Record<string, unknown>): Record<string, unknown
 
 export function loadConfig(configPath?: string): GameConfig {
   const path =
-    configPath ??
-    resolve(process.cwd(), process.env.DIPLOMAICY_CONFIG ?? 'diplomaicy.config.json');
+    configPath ?? resolve(process.cwd(), process.env.DIPLOMAICY_CONFIG ?? 'diplomaicy.config.json');
   let raw: string;
   try {
     raw = readFileSync(path, 'utf-8');

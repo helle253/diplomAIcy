@@ -53,10 +53,7 @@ export class MessageBus {
   /** Get messages addressed to a specific power */
   getMessagesFor(power: Power): Message[] {
     return this.messages.filter(
-      (m) =>
-        m.to === 'Global' ||
-        m.to === power ||
-        (Array.isArray(m.to) && m.to.includes(power)),
+      (m) => m.to === 'Global' || m.to === power || (Array.isArray(m.to) && m.to.includes(power)),
     );
   }
 
@@ -76,9 +73,7 @@ export class MessageBus {
       return;
     }
 
-    const delay =
-      this.pressDelayMin +
-      Math.random() * (this.pressDelayMax - this.pressDelayMin);
+    const delay = this.pressDelayMin + Math.random() * (this.pressDelayMax - this.pressDelayMin);
 
     const timer = setTimeout(() => {
       this.pendingTimers = this.pendingTimers.filter((t) => t !== timer);

@@ -10,6 +10,7 @@ import {
   Power,
   RetreatSituation,
   Season,
+  SupportOrder,
   UnitType,
 } from '../../engine/types.js';
 import { LLMAgent } from './llm-agent.js';
@@ -128,6 +129,22 @@ describe('parseOrders', () => {
       supportedUnit: 'par',
       destination: 'bur',
     });
+  });
+
+  it('normalizes support-move-to-self as support-hold', () => {
+    const state = makeState();
+    // LLMs sometimes emit destination === supportedUnit for support-hold
+    const text =
+      '```json\n[{"unit": "mar", "type": "support", "supportedUnit": "par", "destination": "par"}]\n```';
+    const orders = parseOrders(text, state, Power.France);
+    const marOrder = orders.find((o) => o.unit === 'mar');
+    expect(marOrder).toEqual({
+      type: OrderType.Support,
+      unit: 'mar',
+      supportedUnit: 'par',
+      // destination should be undefined (support-hold), not 'par'
+    });
+    expect((marOrder as SupportOrder).destination).toBeUndefined();
   });
 
   it('parses convoy orders', () => {

@@ -16,7 +16,7 @@ import {
   RetreatSituation,
   Season,
 } from '../engine/types.js';
-import { GameEvent, GameManager, GameManagerConfig } from './manager.js';
+import { GameEvent, GameManager } from './manager.js';
 
 const ALL_POWERS = [
   Power.England,

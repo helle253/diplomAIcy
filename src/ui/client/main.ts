@@ -89,6 +89,7 @@ let currentIndex = 0;
 let isLive = true;
 let activeChannel = 'All';
 let svgRoot: SVGSVGElement | null = null;
+let arrowsLayer: SVGGElement | null = null;
 let unitsLayer: SVGGElement | null = null;
 
 let currentWs: WebSocket | null = null;
@@ -190,10 +191,21 @@ async function loadSVG(): Promise<void> {
     }
   });
 
-  // Create units layer at the end of the SVG
+  // Create arrow defs for markers
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  defs.setAttribute('id', 'arrow-defs');
+  svg.appendChild(defs);
+
+  // Create units layer
   unitsLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
   unitsLayer.setAttribute('id', 'units-layer');
   svg.appendChild(unitsLayer);
+
+  // Create arrows layer (above units so arrows are visible over tokens)
+  arrowsLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  arrowsLayer.setAttribute('id', 'arrows-layer');
+  arrowsLayer.setAttribute('pointer-events', 'none');
+  svg.appendChild(arrowsLayer);
 
   mapContainer.innerHTML = '';
   mapContainer.appendChild(svg);
@@ -242,6 +254,7 @@ function updateAll(): void {
   updatePhaseDisplay();
   updateSlider();
   updateProvinceColors();
+  updateArrows();
   updateUnits();
   updateSCSummary();
   renderChatTabs();
@@ -353,6 +366,7 @@ function updateUnits(): void {
 
     const g = document.createElementNS(ns, 'g');
     g.classList.add('unit-marker');
+    g.setAttribute('data-province', province);
 
     if (unit.type === 'Army') {
       const rect = document.createElementNS(ns, 'rect');
@@ -380,6 +394,212 @@ function updateUnits(): void {
     g.appendChild(label);
 
     unitsLayer.appendChild(g);
+  }
+}
+
+// --- Movement Arrows ---------------------------------------------------------
+
+/** Get or create an arrowhead marker for a given color, returning its url(#id). */
+function ensureArrowMarker(color: string): string {
+  const id = `arrow-${color.replace('#', '')}`;
+  if (svgRoot?.querySelector(`#${id}`)) return `url(#${id})`;
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const defs = svgRoot?.querySelector('#arrow-defs');
+  if (!defs) return '';
+
+  const marker = document.createElementNS(ns, 'marker');
+  marker.setAttribute('id', id);
+  marker.setAttribute('viewBox', '0 0 10 10');
+  marker.setAttribute('refX', '8');
+  marker.setAttribute('refY', '5');
+  marker.setAttribute('markerWidth', '6');
+  marker.setAttribute('markerHeight', '6');
+  marker.setAttribute('orient', 'auto-start-reverse');
+
+  const path = document.createElementNS(ns, 'path');
+  path.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
+  path.setAttribute('fill', color);
+  marker.appendChild(path);
+  defs.appendChild(marker);
+
+  return `url(#${id})`;
+}
+
+/** Resolve the SVG pixel position for a province (using text position + unit offsets). */
+function provincePosition(
+  province: string,
+  unitType: 'Army' | 'Fleet' = 'Army',
+  coast?: string,
+): { cx: number; cy: number } | null {
+  const group = svgRoot?.querySelector(`.province-group[data-province="${province}"]`);
+  if (!group) return null;
+  const pos = getTextPosition(group);
+  if (!pos) return null;
+  return unitPosition(pos, province, unitType, coast);
+}
+
+interface OrderResolutionWire {
+  order: {
+    type: string;
+    unit: string;
+    destination?: string;
+    coast?: string;
+    supportedUnit?: string;
+    viaConvoy?: boolean;
+  };
+  power: string;
+  status: string;
+  reason?: string;
+}
+
+function updateArrows(): void {
+  if (!arrowsLayer) return;
+  arrowsLayer.innerHTML = '';
+
+  const snap = currentSnapshot();
+  if (!snap?.turnRecord) return;
+
+  // turnRecord is typed as unknown — cast to the wire format
+  const record = snap.turnRecord as { orders?: OrderResolutionWire[] };
+  if (!record.orders || !Array.isArray(record.orders)) return;
+
+  const ns = 'http://www.w3.org/2000/svg';
+
+  // We need to know unit types for position lookups.
+  // Build a map from the *previous* snapshot's units (since orders reference origin provinces).
+  const prevSnap = currentIndex > 0 ? snapshots[currentIndex - 1] : snap;
+  const unitTypeMap = new Map<string, { type: 'Army' | 'Fleet'; coast?: string }>();
+  if (prevSnap) {
+    for (const [province, prov] of Object.entries(prevSnap.gameState.map)) {
+      if (!prov.unit) continue;
+      unitTypeMap.set(province, { type: prov.unit.type, coast: prov.unit.coast ?? undefined });
+    }
+  }
+
+  const blackMarkerUrl = ensureArrowMarker('#000000');
+  const redMarkerUrl = ensureArrowMarker('#cc0000');
+
+  for (const res of record.orders) {
+    const { order, status } = res;
+    const unitInfo = unitTypeMap.get(order.unit);
+    const unitType = unitInfo?.type ?? 'Army';
+
+    if (order.type === 'Move' && order.destination) {
+      const from = provincePosition(order.unit, unitType, unitInfo?.coast);
+      const to = provincePosition(order.destination, unitType, order.coast);
+      if (!from || !to) continue;
+
+      const dx = to.cx - from.cx;
+      const dy = to.cy - from.cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const shorten = dist > 0 ? 10 : 0;
+      const startX = from.cx + (dx / dist) * shorten;
+      const startY = from.cy + (dy / dist) * shorten;
+      const endX = to.cx - (dx / dist) * shorten;
+      const endY = to.cy - (dy / dist) * shorten;
+
+      if (status === 'Succeeds') {
+        // Solid black arrow
+        const line = document.createElementNS(ns, 'line');
+        line.setAttribute('x1', String(startX));
+        line.setAttribute('y1', String(startY));
+        line.setAttribute('x2', String(endX));
+        line.setAttribute('y2', String(endY));
+        line.setAttribute('stroke', '#000000');
+        line.setAttribute('stroke-width', '2.5');
+        line.setAttribute('stroke-opacity', '0.85');
+        line.setAttribute('marker-end', blackMarkerUrl);
+        arrowsLayer.appendChild(line);
+      } else {
+        // Bounced move: single solid red arrow
+        const line = document.createElementNS(ns, 'line');
+        line.setAttribute('x1', String(startX));
+        line.setAttribute('y1', String(startY));
+        line.setAttribute('x2', String(endX));
+        line.setAttribute('y2', String(endY));
+        line.setAttribute('stroke', '#cc0000');
+        line.setAttribute('stroke-width', '2.5');
+        line.setAttribute('stroke-opacity', '0.75');
+        line.setAttribute('marker-end', redMarkerUrl);
+        arrowsLayer.appendChild(line);
+      }
+    } else if (order.type === 'Support' && order.supportedUnit) {
+      const from = provincePosition(order.unit, unitType, unitInfo?.coast);
+      const supportedInfo = unitTypeMap.get(order.supportedUnit);
+      const supportedPos = provincePosition(
+        order.supportedUnit,
+        supportedInfo?.type ?? 'Army',
+        supportedInfo?.coast,
+      );
+      if (!from || !supportedPos) continue;
+
+      const supportColor = status === 'Succeeds' ? '#000000' : '#cc0000';
+      const opacity = '0.7';
+
+      if (order.destination) {
+        // Support-to-move: line to midpoint of movement, then tween toward destination
+        const destPos = provincePosition(
+          order.destination,
+          supportedInfo?.type ?? 'Army',
+          order.coast,
+        );
+        if (!destPos) continue;
+
+        const midX = (supportedPos.cx + destPos.cx) / 2;
+        const midY = (supportedPos.cy + destPos.cy) / 2;
+
+        // End point: 3/4 of the way from origin to destination
+        const endX = supportedPos.cx + (destPos.cx - supportedPos.cx) * 0.75;
+        const endY = supportedPos.cy + (destPos.cy - supportedPos.cy) * 0.75;
+
+        const supportPath = document.createElementNS(ns, 'path');
+        supportPath.setAttribute(
+          'd',
+          `M ${from.cx} ${from.cy} L ${midX} ${midY} L ${endX} ${endY}`,
+        );
+        supportPath.setAttribute('stroke', supportColor);
+        supportPath.setAttribute('stroke-width', '2');
+        supportPath.setAttribute('stroke-opacity', opacity);
+        supportPath.setAttribute('stroke-dasharray', '6,4');
+        supportPath.setAttribute('fill', 'none');
+        arrowsLayer.appendChild(supportPath);
+
+        // Circle at the end
+        const circle = document.createElementNS(ns, 'circle');
+        circle.setAttribute('cx', String(endX));
+        circle.setAttribute('cy', String(endY));
+        circle.setAttribute('r', '8');
+        circle.setAttribute('stroke', supportColor);
+        circle.setAttribute('stroke-width', '2');
+        circle.setAttribute('stroke-opacity', opacity);
+        circle.setAttribute('fill', 'none');
+        arrowsLayer.appendChild(circle);
+      } else {
+        // Support-to-hold: straight dotted line + circle at supported unit
+        const line = document.createElementNS(ns, 'line');
+        line.setAttribute('x1', String(from.cx));
+        line.setAttribute('y1', String(from.cy));
+        line.setAttribute('x2', String(supportedPos.cx));
+        line.setAttribute('y2', String(supportedPos.cy));
+        line.setAttribute('stroke', supportColor);
+        line.setAttribute('stroke-width', '2');
+        line.setAttribute('stroke-opacity', opacity);
+        line.setAttribute('stroke-dasharray', '6,4');
+        arrowsLayer.appendChild(line);
+
+        const circle = document.createElementNS(ns, 'circle');
+        circle.setAttribute('cx', String(supportedPos.cx));
+        circle.setAttribute('cy', String(supportedPos.cy));
+        circle.setAttribute('r', '8');
+        circle.setAttribute('stroke', supportColor);
+        circle.setAttribute('stroke-width', '2');
+        circle.setAttribute('stroke-opacity', opacity);
+        circle.setAttribute('fill', 'none');
+        arrowsLayer.appendChild(circle);
+      }
+    }
+    // Hold and Convoy orders — no arrows for now
   }
 }
 
