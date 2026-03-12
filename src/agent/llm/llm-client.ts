@@ -1,10 +1,37 @@
-export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
+export interface ToolCall {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+}
+
+export type ChatMessage =
+  | { role: 'system'; content: string }
+  | { role: 'user'; content: string }
+  | { role: 'assistant'; content: string; tool_calls?: ToolCall[] }
+  | { role: 'tool'; tool_call_id: string; content: string };
+
+export interface ToolDefinition {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
+
+export interface ToolExecutor {
+  isReady: boolean;
+  execute(name: string, args: Record<string, unknown>): Promise<string>;
 }
 
 export interface LLMClient {
   complete(messages: ChatMessage[]): Promise<string>;
+  runToolLoop?(
+    messages: ChatMessage[],
+    tools: ToolDefinition[],
+    executor: ToolExecutor,
+    maxIterations?: number,
+  ): Promise<string>;
 }
 
 export interface LLMClientConfig {
@@ -32,20 +59,7 @@ export class OpenAICompatibleClient implements LLMClient {
     this.numCtx = config.numCtx;
   }
 
-  async complete(messages: ChatMessage[]): Promise<string> {
-    const url = `${this.config.baseUrl}/chat/completions`;
-    const body: Record<string, unknown> = {
-      model: this.config.model,
-      messages,
-      temperature: this.config.temperature,
-      max_tokens: this.config.maxTokens,
-    };
-
-    // Ollama supports num_ctx via options to control context window size
-    if (this.numCtx) {
-      body.options = { num_ctx: this.numCtx };
-    }
-
+  private async fetchWithRetry(url: string, body: Record<string, unknown>): Promise<unknown> {
     const MAX_RETRIES = 6;
     let lastError: Error | null = null;
 
@@ -84,16 +98,7 @@ export class OpenAICompatibleClient implements LLMClient {
           throw err;
         }
 
-        const data = (await response.json()) as {
-          choices?: { message?: { content?: string } }[];
-        };
-
-        const content = data.choices?.[0]?.message?.content;
-        if (typeof content !== 'string') {
-          throw new Error('Unexpected LLM response shape: no choices[0].message.content');
-        }
-
-        return content;
+        return await response.json();
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
         // Network errors are retryable
@@ -105,5 +110,117 @@ export class OpenAICompatibleClient implements LLMClient {
     }
 
     throw lastError ?? new Error('LLM request failed after retries');
+  }
+
+  async complete(messages: ChatMessage[]): Promise<string> {
+    const url = `${this.config.baseUrl}/chat/completions`;
+    const body: Record<string, unknown> = {
+      model: this.config.model,
+      messages,
+      temperature: this.config.temperature,
+      max_tokens: this.config.maxTokens,
+    };
+
+    // Ollama supports num_ctx via options to control context window size
+    if (this.numCtx) {
+      body.options = { num_ctx: this.numCtx };
+    }
+
+    const data = (await this.fetchWithRetry(url, body)) as {
+      choices?: { message?: { content?: string } }[];
+    };
+
+    const content = data.choices?.[0]?.message?.content;
+    if (typeof content !== 'string') {
+      throw new Error('Unexpected LLM response shape: no choices[0].message.content');
+    }
+
+    return content;
+  }
+
+  async runToolLoop(
+    messages: ChatMessage[],
+    tools: ToolDefinition[],
+    executor: ToolExecutor,
+    maxIterations = 30,
+  ): Promise<string> {
+    const conversation = [...messages];
+
+    for (let i = 0; i < maxIterations; i++) {
+      const url = `${this.config.baseUrl}/chat/completions`;
+      const body: Record<string, unknown> = {
+        model: this.config.model,
+        messages: conversation,
+        temperature: this.config.temperature,
+        max_tokens: this.config.maxTokens,
+      };
+
+      if (tools.length > 0) {
+        body.tools = tools;
+        body.tool_choice = 'auto';
+      }
+
+      if (this.numCtx) {
+        body.options = { num_ctx: this.numCtx };
+      }
+
+      const response = await this.fetchWithRetry(url, body);
+      const data = response as {
+        choices?: [
+          {
+            message?: {
+              role?: string;
+              content?: string | null;
+              tool_calls?: ToolCall[];
+            };
+          },
+        ];
+      };
+
+      const assistantMsg = data.choices?.[0]?.message;
+      if (!assistantMsg) {
+        throw new Error('Unexpected LLM response shape: no choices[0].message');
+      }
+
+      const content = assistantMsg.content ?? '';
+      const toolCalls = assistantMsg.tool_calls;
+
+      // No tool calls — model is done
+      if (!toolCalls || toolCalls.length === 0) {
+        return content;
+      }
+
+      // Append assistant message with tool calls
+      conversation.push({
+        role: 'assistant',
+        content,
+        tool_calls: toolCalls,
+      });
+
+      // Execute each tool call
+      for (const tc of toolCalls) {
+        let args: Record<string, unknown> = {};
+        try {
+          args = JSON.parse(tc.function.arguments) as Record<string, unknown>;
+        } catch {
+          // If args can't be parsed, pass empty object
+        }
+
+        const result = await executor.execute(tc.function.name, args);
+        conversation.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: result,
+        });
+      }
+
+      // Check if executor is ready (model called ready() tool)
+      if (executor.isReady) {
+        return content;
+      }
+    }
+
+    // Max iterations reached
+    return '';
   }
 }
