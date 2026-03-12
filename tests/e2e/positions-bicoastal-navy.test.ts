@@ -128,6 +128,7 @@ for (const prov of BICOASTAL) {
         state: 'attached',
         timeout: 10_000,
       });
+
       const d = await getUnitPositionData(page, prov);
       expect(d.unitCX).toBeGreaterThanOrEqual(d.bbox.minX - 15);
       expect(d.unitCX).toBeLessThanOrEqual(d.bbox.maxX + 15);
@@ -152,6 +153,7 @@ for (const prov of BICOASTAL) {
         state: 'attached',
         timeout: 10_000,
       });
+
       const d = await getUnitPositionData(page, prov);
       expect(d.unitCX).toBeGreaterThanOrEqual(d.bbox.minX - 15);
       expect(d.unitCX).toBeLessThanOrEqual(d.bbox.maxX + 15);
