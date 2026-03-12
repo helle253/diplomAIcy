@@ -9,8 +9,9 @@ Run a full Diplomacy game with 7 Ollama-powered remote agents playing all powers
 
 ## Prerequisites
 
-- Ollama service running (available at `http://ollama:11434` in devcontainer)
-- A model pulled (default: `qwen2.5:7b`). To pull: `curl http://ollama:11434/api/pull -d '{"name":"qwen2.5:7b"}'`
+- Start Ollama (opt-in, not running by default): `.devcontainer/start-ollama.sh`
+  - This starts the Ollama Docker service and pulls the default model (`qwen2.5:7b`)
+  - Pass a different model name as an argument: `.devcontainer/start-ollama.sh qwen2.5:3b`
 - Verify Ollama is reachable: `curl -s http://ollama:11434/api/tags`
 
 ## Setup
@@ -140,7 +141,7 @@ Review these to understand agent behavior and identify prompt improvements.
 
 ## Troubleshooting
 
-**"Ollama not reachable"** — The Ollama service may not have started. Check `docker compose ps` and ensure the ollama service is running.
+**"Ollama not reachable"** — Ollama doesn't start by default. Run `.devcontainer/start-ollama.sh` to start it.
 
 **"model not found"** — Pull the model first: `curl http://ollama:11434/api/pull -d '{"name":"qwen2.5:7b"}'`
 

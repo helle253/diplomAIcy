@@ -10,11 +10,10 @@ services:
     volumes:
       - ../..:/workspaces:cached
       - claude-config:/home/node/.claude
-    depends_on:
-      - ollama
 
   ollama:
     image: ollama/ollama:latest
+    profiles: ["integration"]
     volumes:
       - ollama-models:/root/.ollama
 
