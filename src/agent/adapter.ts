@@ -20,6 +20,12 @@ export function connectAgent(agent: DiplomacyAgent, manager: GameManager): void 
       logger.error(`[${agent.power}] onPhaseStart error:`, err);
     }
 
+    // Signal ready after press is sent during diplomacy
+    if (phase.type === PhaseType.Diplomacy) {
+      manager.submitReady(agent.power);
+      return;
+    }
+
     // Submit appropriate actions based on phase type
     try {
       if (phase.type === PhaseType.Orders) {

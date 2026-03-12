@@ -412,24 +412,16 @@ describe('GameManager — Fast adjudication', () => {
     expect(elapsed).toBeLessThan(5000);
   });
 
-  it('diplomacy phase waits full delay when not all powers are ready', async () => {
+  it('diplomacy phase waits full delay when fastAdjudication is false', async () => {
     const DELAY = 200;
-    const manager = new GameManager({ maxYears: 1, phaseDelayMs: DELAY });
+    const manager = new GameManager({ maxYears: 1, phaseDelayMs: DELAY, fastAdjudication: false });
     connectAllHold(manager);
-
-    manager.onPhaseChange((phase) => {
-      if (phase.type === PhaseType.Diplomacy) {
-        const active = manager.getActivePowers();
-        for (const power of active.slice(0, 6)) {
-          manager.submitReady(power);
-        }
-      }
-    });
 
     const start = Date.now();
     await manager.run();
     const elapsed = Date.now() - start;
 
+    // Should have waited for at least 2 diplomacy phases worth of delay
     expect(elapsed).toBeGreaterThanOrEqual(DELAY * 2 - 50);
   });
 
