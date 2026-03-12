@@ -2,7 +2,7 @@ import { PROVINCES } from '../../engine/map';
 import { GameState, OrderType, Power, UnitType } from '../../engine/types';
 import type { ToolDefinition, ToolExecutor } from './llm-client';
 
-interface GameClient {
+export interface ToolGameClient {
   game: {
     submitOrders: { mutate: (input: { orders: unknown[] }) => Promise<{ ok: boolean }> };
     submitRetreats: { mutate: (input: { retreats: unknown[] }) => Promise<{ ok: boolean }> };
@@ -41,7 +41,7 @@ export class GameToolExecutor implements ToolExecutor {
   isReady = false;
 
   constructor(
-    private client: GameClient,
+    private client: ToolGameClient,
     private gameState: GameState,
     private power: Power,
   ) {}
