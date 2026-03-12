@@ -70,11 +70,11 @@ const buildOrderSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('Waive') }),
 ]);
 
-// ── Precomputed JSON schemas ──────────────────────────────────────────
+// ── Precomputed JSON schemas (match submission body shapes) ──────────
 
-const ORDER_JSON_SCHEMA = toJSONSchema(orderSchema);
-const RETREAT_JSON_SCHEMA = toJSONSchema(retreatOrderSchema);
-const BUILD_JSON_SCHEMA = toJSONSchema(buildOrderSchema);
+const ORDER_JSON_SCHEMA = toJSONSchema(z.object({ orders: z.array(orderSchema) }));
+const RETREAT_JSON_SCHEMA = toJSONSchema(z.object({ retreats: z.array(retreatOrderSchema) }));
+const BUILD_JSON_SCHEMA = toJSONSchema(z.object({ builds: z.array(buildOrderSchema) }));
 
 // ── Serialization helpers ──────────────────────────────────────────────
 
