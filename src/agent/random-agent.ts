@@ -1,6 +1,7 @@
 import type { Unsubscribable } from '@trpc/server/observable';
 
 import { PROVINCES } from '../engine/map';
+import type { Unit } from '../engine/types';
 import {
   BuildOrder,
   Coast,
@@ -13,7 +14,6 @@ import {
   RetreatOrder,
   UnitType,
 } from '../engine/types';
-import type { Unit } from '../engine/types';
 import { logger } from '../util/logger';
 import type { GameClient } from './remote/client';
 import { deserializeGameState, type SerializedGameState } from './remote/deserialize';
@@ -219,27 +219,27 @@ export function generateRandomBuilds(
 
 const DIPLOMACY_TEMPLATES = [
   'I propose we work together this turn.',
-  'Let\'s coordinate our moves against our mutual enemies.',
+  "Let's coordinate our moves against our mutual enemies.",
   'I have no hostile intentions toward you.',
   'Can we agree to a ceasefire?',
-  'I\'m planning to move east - stay out of my way.',
-  'I\'ll support your position if you support mine.',
-  'Watch out - I think you\'re about to be attacked.',
-  'Let\'s form an alliance against the strongest power.',
+  "I'm planning to move east - stay out of my way.",
+  "I'll support your position if you support mine.",
+  "Watch out - I think you're about to be attacked.",
+  "Let's form an alliance against the strongest power.",
   'I need your help. Can we talk?',
-  'I\'m willing to offer a non-aggression pact.',
-  'Don\'t trust what the others are telling you.',
-  'I\'ll leave your borders alone if you leave mine alone.',
+  "I'm willing to offer a non-aggression pact.",
+  "Don't trust what the others are telling you.",
+  "I'll leave your borders alone if you leave mine alone.",
 ];
 
 const REPLY_TEMPLATES = [
-  'Agreed, let\'s work together.',
-  'I\'ll consider your proposal.',
+  "Agreed, let's work together.",
+  "I'll consider your proposal.",
   'That sounds reasonable.',
-  'I\'m not sure I can trust you on this.',
+  "I'm not sure I can trust you on this.",
   'Interesting. Tell me more.',
   'I have a counter-proposal for you.',
-  'Let\'s see how the board develops first.',
+  "Let's see how the board develops first.",
   'You have my support — for now.',
 ];
 

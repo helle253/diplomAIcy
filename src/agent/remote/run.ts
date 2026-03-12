@@ -4,9 +4,8 @@ import { Power } from '../../engine/types';
 import { AgentConfig, getAgentConfig, loadConfig, toLLMClientConfig } from '../llm/config';
 import { OpenAICompatibleClient } from '../llm/llm-client';
 import { connectToolAgent } from '../llm/tool-agent';
-import { RandomAgent } from '../random';
+import { connectRandomAgent } from '../random-agent';
 import { createGameClient } from './client';
-import { connectRemoteAgent } from './remote-adapter';
 
 const VALID_POWERS = new Set<string>(Object.values(Power));
 
@@ -134,7 +133,7 @@ async function main() {
     await connectToolAgent(trpcClient, llmClient, power, lobbyId);
   } else {
     console.log(`Starting random agent for ${power}, connecting to ${server}...`);
-    await connectRemoteAgent(new RandomAgent(power), trpcClient, lobbyId);
+    await connectRandomAgent(trpcClient, power, lobbyId);
   }
 
   // Keep the process alive

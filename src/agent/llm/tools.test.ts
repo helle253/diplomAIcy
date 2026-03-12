@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { Power, UnitType } from '../../engine/types';
+import { PhaseType, Power, Season, UnitType } from '../../engine/types';
 import { GameToolExecutor } from './tools';
 
 function makeState(overrides = {}) {
   return {
-    phase: { season: 'Spring', year: 1901, type: 'Orders' },
+    phase: { season: Season.Spring, year: 1901, type: PhaseType.Orders },
     units: [
       { type: UnitType.Fleet, power: Power.England, province: 'lon' },
       { type: UnitType.Fleet, power: Power.England, province: 'edi' },

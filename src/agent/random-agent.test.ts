@@ -52,7 +52,11 @@ describe('Random agent order generation', () => {
     const state = {
       phase: { season: Season.Fall, year: 1901, type: PhaseType.Builds },
       units: [],
-      supplyCenters: new Map([['lon', Power.England], ['edi', Power.England], ['lvp', Power.England]]),
+      supplyCenters: new Map([
+        ['lon', Power.England],
+        ['edi', Power.England],
+        ['lvp', Power.England],
+      ]),
       orderHistory: [],
       retreatSituations: [],
       endYear: 1910,
