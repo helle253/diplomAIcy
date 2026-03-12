@@ -25,6 +25,7 @@ export interface GameManagerConfig {
   remoteTimeoutMs?: number;
   pressDelayMin?: number;
   pressDelayMax?: number;
+  fastAdjudication?: boolean;
 }
 
 const ALL_POWERS = [
@@ -88,6 +89,8 @@ export class GameManager {
   private orderGates = new Map<Power, (orders: Order[]) => void>();
   private retreatGates = new Map<Power, (retreats: RetreatOrder[]) => void>();
   private buildGates = new Map<Power, (builds: BuildOrder[]) => void>();
+  private readyGates = new Map<Power, () => void>();
+  private fastAdjudication: boolean;
 
   constructor(config: GameManagerConfig = {}) {
     const {
@@ -98,6 +101,7 @@ export class GameManager {
       pressDelayMax = 0,
       victoryThreshold = 18,
       startYear = 1901,
+      fastAdjudication = true,
     } = config;
     this.bus = new MessageBus({ pressDelayMin, pressDelayMax });
     this.startYear = startYear;
@@ -105,6 +109,7 @@ export class GameManager {
     this.phaseDelayMs = phaseDelayMs;
     this.remoteTimeoutMs = remoteTimeoutMs;
     this.victoryThreshold = victoryThreshold;
+    this.fastAdjudication = fastAdjudication;
     this.state = {
       phase: { year: startYear, season: Season.Spring, type: PhaseType.Diplomacy },
       units: STARTING_UNITS.map((u) => ({ ...u })),
@@ -154,6 +159,15 @@ export class GameManager {
     gate(builds);
   }
 
+  submitReady(power: Power): void {
+    const gate = this.readyGates.get(power);
+    if (!gate) {
+      logger.warn(`[${power}] submitReady ignored — not expecting ready signal`);
+      return;
+    }
+    gate();
+  }
+
   sendMessage(message: Message): void {
     this.bus.send(message);
   }
@@ -170,6 +184,7 @@ export class GameManager {
       startYear: this.startYear,
       endYear: this.endYear,
       phaseDeadlineMs: this.remoteTimeoutMs,
+      fastAdjudication: this.fastAdjudication,
     };
   }
 
@@ -284,11 +299,40 @@ export class GameManager {
   }
 
   private async runDiplomacyPhase(season: Season): Promise<void> {
-    await this.startPhase({ year: this.state.phase.year, season, type: PhaseType.Diplomacy });
+    if (this.phaseDelayMs > 0 && this.fastAdjudication) {
+      // Set up ready gates before startPhase so that phase change listeners
+      // (which fire during startPhase) can resolve them immediately.
+      const activePowers = this.getActivePowers();
+      let readyCount = 0;
+      let resolveAllReady: () => void;
+      const allReady = new Promise<void>((resolve) => {
+        resolveAllReady = resolve;
+      });
 
-    // Diplomacy phase lasts for phaseDelay — agents can send messages during this time
-    if (this.phaseDelayMs > 0) {
-      await new Promise((resolve) => setTimeout(resolve, this.phaseDelayMs));
+      for (const power of activePowers) {
+        this.readyGates.set(power, () => {
+          this.readyGates.delete(power);
+          readyCount++;
+          if (readyCount >= activePowers.length) {
+            resolveAllReady();
+          }
+        });
+      }
+
+      await this.startPhase({ year: this.state.phase.year, season, type: PhaseType.Diplomacy });
+
+      await Promise.race([
+        allReady,
+        new Promise<void>((resolve) => setTimeout(resolve, this.phaseDelayMs)),
+      ]);
+
+      this.readyGates.clear();
+    } else {
+      await this.startPhase({ year: this.state.phase.year, season, type: PhaseType.Diplomacy });
+
+      if (this.phaseDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, this.phaseDelayMs));
+      }
     }
   }
 
