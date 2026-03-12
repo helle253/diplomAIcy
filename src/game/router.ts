@@ -1,6 +1,5 @@
 import { tracked, TRPCError } from '@trpc/server';
 import { readFileSync } from 'fs';
-import { join } from 'path';
 import { z } from 'zod';
 import { toJSONSchema } from 'zod/v4';
 
@@ -11,7 +10,7 @@ import type { LobbyManager } from './lobby-manager.js';
 import type { GameManager, TurnRecord } from './manager.js';
 import { createProtectedProcedures, publicProcedure, router } from './trpc.js';
 
-const RULES_TEMPLATE = readFileSync(join(process.cwd(), 'src/engine/RULES.md'), 'utf-8');
+const RULES_TEMPLATE = readFileSync(new URL('../engine/RULES.md', import.meta.url), 'utf-8');
 
 // ── Zod schemas ────────────────────────────────────────────────────────
 
@@ -114,15 +113,18 @@ function buildPowerSummary(manager: GameManager): Record<string, PowerSummary> {
   const state = manager.getState();
   const summary: Record<string, PowerSummary> = {};
 
+  // Initialize all powers (including eliminated ones)
+  for (const power of Object.values(Power)) {
+    summary[power] = { units: 0, supplyCenters: 0, buildCount: 0 };
+  }
+
   // Count units per power
   for (const unit of state.units) {
-    if (!summary[unit.power]) summary[unit.power] = { units: 0, supplyCenters: 0, buildCount: 0 };
     summary[unit.power].units++;
   }
 
   // Count SCs per power
   for (const [, power] of state.supplyCenters) {
-    if (!summary[power]) summary[power] = { units: 0, supplyCenters: 0, buildCount: 0 };
     summary[power].supplyCenters++;
   }
 
