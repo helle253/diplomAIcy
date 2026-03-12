@@ -18,9 +18,9 @@
     "format": "prettier --write 'src/**/*.{ts,js,css,html}'",
     "agent": "tsx src/agent/remote/run.ts",
     "start:remote": "DIPLOMAICY_CONFIG=diplomaicy.config.remote.json yarn start",
-    "play:llm": "yarn build && bash scripts/play-llm.sh",
-    "play:random": "AGENT_TYPE=random yarn build && bash scripts/play-llm.sh",
-    "play:mixed": "AGENT_CONFIG=diplomaicy.config.mixed.json AGENT_TYPE= yarn build && bash scripts/play-llm.sh"
+    "play:llm": "vite build && bash scripts/play-llm.sh",
+    "play:random": "AGENT_TYPE=random vite build && bash scripts/play-llm.sh",
+    "play:mixed": "AGENT_CONFIG=diplomaicy.config.mixed.json AGENT_TYPE= vite build && bash scripts/play-llm.sh"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
