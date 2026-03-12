@@ -1,6 +1,5 @@
 import 'dotenv/config';
 
-import { Power } from '../../../src/engine/types';
 import { AnthropicClient } from '../../../src/agent/llm/anthropic-client';
 import {
   AgentConfig,
@@ -13,7 +12,7 @@ import { LLMClient, OpenAICompatibleClient } from '../../../src/agent/llm/llm-cl
 import { RandomAgent } from '../../../src/agent/random';
 import { createGameClient } from '../../../src/agent/remote/client';
 import { connectRemoteAgent } from '../../../src/agent/remote/remote-adapter';
-
+import { Power } from '../../../src/engine/types';
 import { NoteKeepingClient } from './note-keeping-client';
 
 const VALID_POWERS = new Set<string>(Object.values(Power));

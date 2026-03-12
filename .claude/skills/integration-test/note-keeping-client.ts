@@ -1,4 +1,4 @@
-import { appendFile, readFile, mkdir } from 'fs/promises';
+import { appendFile, mkdir, readFile } from 'fs/promises';
 import { dirname, join } from 'path';
 
 import type { ChatMessage, LLMClient } from '../../../src/agent/llm/llm-client';
