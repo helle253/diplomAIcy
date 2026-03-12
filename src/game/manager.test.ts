@@ -386,7 +386,61 @@ describe('GameManager — Config object', () => {
 });
 
 // ============================================================================
-// 8. DRAW VOTING
+// 8. FAST ADJUDICATION
+// ============================================================================
+
+describe('GameManager — Fast adjudication', () => {
+  it('diplomacy phase ends early when all powers call submitReady', async () => {
+    const manager = new GameManager({ maxYears: 1, phaseDelayMs: 60_000 });
+
+    for (const power of ALL_POWERS) {
+      connectAgent(new HoldAgent(power), manager);
+    }
+
+    manager.onPhaseChange((phase) => {
+      if (phase.type === PhaseType.Diplomacy) {
+        for (const power of ALL_POWERS) {
+          manager.submitReady(power);
+        }
+      }
+    });
+
+    const start = Date.now();
+    await manager.run();
+    const elapsed = Date.now() - start;
+
+    expect(elapsed).toBeLessThan(5000);
+  });
+
+  it('diplomacy phase waits full delay when fastAdjudication is false', async () => {
+    const DELAY = 200;
+    const manager = new GameManager({ maxYears: 1, phaseDelayMs: DELAY, fastAdjudication: false });
+    connectAllHold(manager);
+
+    const start = Date.now();
+    await manager.run();
+    const elapsed = Date.now() - start;
+
+    // Should have waited for at least 2 diplomacy phases worth of delay
+    expect(elapsed).toBeGreaterThanOrEqual(DELAY * 2 - 50);
+  });
+
+  it('submitReady is ignored when not in diplomacy phase', () => {
+    const manager = new GameManager();
+    manager.submitReady(Power.England);
+  });
+
+  it('getGameConfig includes fastAdjudication', () => {
+    const manager = new GameManager();
+    expect(manager.getGameConfig().fastAdjudication).toBe(true);
+
+    const manager2 = new GameManager({ fastAdjudication: false });
+    expect(manager2.getGameConfig().fastAdjudication).toBe(false);
+  });
+});
+
+// ============================================================================
+// 9. DRAW VOTING
 // ============================================================================
 
 describe('GameManager — Draw voting', () => {

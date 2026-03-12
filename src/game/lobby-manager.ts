@@ -16,6 +16,7 @@ export interface LobbyConfig {
   agentConfig: GameConfig;
   autostart?: boolean;
   postGamePress?: boolean;
+  fastAdjudication?: boolean;
   allowDraws?: boolean;
 }
 
@@ -102,6 +103,7 @@ export class LobbyManager {
       remoteTimeoutMs: config.remoteTimeoutMs,
       pressDelayMin: config.pressDelayMin,
       pressDelayMax: config.pressDelayMax,
+      fastAdjudication: config.fastAdjudication,
       allowDraws: config.allowDraws,
     });
 

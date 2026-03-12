@@ -191,6 +191,16 @@ export async function connectRemoteAgent(
     } catch (err) {
       logger.error(`[${agent.power}] onPhaseStart error:`, err);
     }
+
+    // Signal ready after diplomacy press is sent
+    if (gameState.phase.type === PhaseType.Diplomacy) {
+      try {
+        await client.game.submitReady.mutate();
+        logger.info(`[${agent.power}] signaled ready for adjudication`);
+      } catch (err) {
+        logger.error(`[${agent.power}] submitReady error:`, err);
+      }
+    }
   }
 
   // ── Message batch handler ─────────────────────────────────────────

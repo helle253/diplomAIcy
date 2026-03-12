@@ -993,6 +993,7 @@ createLobbyForm.addEventListener('submit', async (e) => {
     victoryThreshold: Number(fd.get('victoryThreshold')),
     startYear: Number(fd.get('startYear')),
     phaseDelayMs: Number(fd.get('phaseDelayMs')),
+    fastAdjudication: (fd.get('fastAdjudication') as string) === 'on',
     allowDraws: !!fd.get('allowDraws'),
     agentConfig: {
       defaultAgent: {

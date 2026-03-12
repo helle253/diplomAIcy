@@ -30,6 +30,7 @@ const DEFAULTS: LobbyDefaults = {
   pressDelayMin: 0,
   pressDelayMax: 0,
   agentConfig: { defaultAgent: { type: 'random' } },
+  fastAdjudication: true,
 };
 
 function createCaller(lobbyManager: LobbyManager) {

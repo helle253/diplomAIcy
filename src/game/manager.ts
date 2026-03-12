@@ -25,6 +25,7 @@ export interface GameManagerConfig {
   remoteTimeoutMs?: number;
   pressDelayMin?: number;
   pressDelayMax?: number;
+  fastAdjudication?: boolean;
   allowDraws?: boolean;
 }
 
@@ -92,6 +93,8 @@ export class GameManager {
   private orderGates = new Map<Power, (orders: Order[]) => void>();
   private retreatGates = new Map<Power, (retreats: RetreatOrder[]) => void>();
   private buildGates = new Map<Power, (builds: BuildOrder[]) => void>();
+  private readyGates = new Map<Power, () => void>();
+  private fastAdjudication: boolean;
 
   constructor(config: GameManagerConfig = {}) {
     const {
@@ -102,6 +105,7 @@ export class GameManager {
       pressDelayMax = 0,
       victoryThreshold = 18,
       startYear = 1901,
+      fastAdjudication = true,
       allowDraws = true,
     } = config;
     this.bus = new MessageBus({ pressDelayMin, pressDelayMax });
@@ -110,6 +114,7 @@ export class GameManager {
     this.phaseDelayMs = phaseDelayMs;
     this.remoteTimeoutMs = remoteTimeoutMs;
     this.victoryThreshold = victoryThreshold;
+    this.fastAdjudication = fastAdjudication;
     this.allowDraws = allowDraws;
     this.state = {
       phase: { year: startYear, season: Season.Spring, type: PhaseType.Diplomacy },
@@ -160,6 +165,15 @@ export class GameManager {
     gate(builds);
   }
 
+  submitReady(power: Power): void {
+    const gate = this.readyGates.get(power);
+    if (!gate) {
+      logger.warn(`[${power}] submitReady ignored — not expecting ready signal`);
+      return;
+    }
+    gate();
+  }
+
   sendMessage(message: Message): void {
     this.bus.send(message);
   }
@@ -176,9 +190,7 @@ export class GameManager {
     }
     this.drawVotes.add(power);
     const activePowers = this.getActivePowers();
-    logger.info(
-      `[${power}] proposed a draw (${this.drawVotes.size}/${activePowers.length} votes)`,
-    );
+    logger.info(`[${power}] proposed a draw (${this.drawVotes.size}/${activePowers.length} votes)`);
 
     // Broadcast draw proposal as a global message
     this.bus.send({
@@ -206,6 +218,7 @@ export class GameManager {
       startYear: this.startYear,
       endYear: this.endYear,
       phaseDeadlineMs: this.remoteTimeoutMs,
+      fastAdjudication: this.fastAdjudication,
       allowDraws: this.allowDraws,
     };
   }
@@ -343,16 +356,52 @@ export class GameManager {
   private async runDiplomacyPhase(season: Season): Promise<void> {
     this.drawVotes.clear();
     this.drawResolve = null;
-    await this.startPhase({ year: this.state.phase.year, season, type: PhaseType.Diplomacy });
 
-    if (this.phaseDelayMs > 0) {
+    if (this.phaseDelayMs > 0 && this.fastAdjudication) {
+      // Set up ready gates before startPhase so that phase change listeners
+      // (which fire during startPhase) can resolve them immediately.
+      const activePowers = this.getActivePowers();
+      let readyCount = 0;
+      let resolveAllReady: () => void;
+      const allReady = new Promise<void>((resolve) => {
+        resolveAllReady = resolve;
+      });
+
+      for (const power of activePowers) {
+        this.readyGates.set(power, () => {
+          this.readyGates.delete(power);
+          readyCount++;
+          if (readyCount >= activePowers.length) {
+            resolveAllReady();
+          }
+        });
+      }
+
+      await this.startPhase({ year: this.state.phase.year, season, type: PhaseType.Diplomacy });
+
       const drawPromise = new Promise<void>((resolve) => {
         this.drawResolve = resolve;
       });
+
       await Promise.race([
-        new Promise((resolve) => setTimeout(resolve, this.phaseDelayMs)),
+        allReady,
         drawPromise,
+        new Promise<void>((resolve) => setTimeout(resolve, this.phaseDelayMs)),
       ]);
+
+      this.readyGates.clear();
+    } else {
+      await this.startPhase({ year: this.state.phase.year, season, type: PhaseType.Diplomacy });
+
+      if (this.phaseDelayMs > 0) {
+        const drawPromise = new Promise<void>((resolve) => {
+          this.drawResolve = resolve;
+        });
+        await Promise.race([
+          new Promise((resolve) => setTimeout(resolve, this.phaseDelayMs)),
+          drawPromise,
+        ]);
+      }
     }
   }
 

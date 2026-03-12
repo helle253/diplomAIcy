@@ -146,6 +146,8 @@ A power wins by controlling **{{VICTORY_THRESHOLD}} or more supply centers**. Th
 
 **Phase deadline:** {{DEADLINE}}.
 
+**Fast adjudication:** {{FAST_ADJUDICATION}}.
+
 ## Timeouts
 
 If a phase has a deadline and a power does not submit in time:
