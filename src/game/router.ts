@@ -211,6 +211,22 @@ export function createGameRouter(lobbyManager: LobbyManager) {
       return manager.getActivePowers();
     }),
 
+    getResult: publicProcedure.input(lobbyIdInput).query(({ input }) => {
+      const lobby = lobbyManager.getLobby(input.lobbyId);
+      if (!lobby) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: `Lobby ${input.lobbyId} not found` });
+      }
+      if (lobby.status !== 'finished' || !lobby.result) {
+        return null;
+      }
+      return {
+        winner: lobby.result.winner,
+        year: lobby.result.year,
+        supplyCenters: Object.fromEntries(lobby.result.supplyCenters),
+        eliminatedPowers: lobby.result.eliminatedPowers,
+      };
+    }),
+
     // Mutations
     submitOrders: playerProcedure
       .input(z.object({ orders: z.array(orderSchema) }))

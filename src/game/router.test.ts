@@ -130,6 +130,14 @@ describe('game router wire format', () => {
     });
   });
 
+  describe('getResult', () => {
+    it('returns null when game is still in progress', async () => {
+      const { caller, lobbyId } = setupTestGame();
+      const result = await caller.game.getResult({ lobbyId });
+      expect(result).toBeNull();
+    });
+  });
+
   describe('getRules', () => {
     it('returns rules as markdown string with game config substituted', async () => {
       const { caller, lobbyId } = setupTestGame();
