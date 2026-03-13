@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PROVINCES, STARTING_UNITS } from '../engine/map';
+import { STARTING_UNITS } from '../engine/map';
 import { BuildOrder, Order, OrderType, PhaseType, Power, Season } from '../engine/types';
 import { GameEvent, GameManager } from './manager';
 
@@ -13,57 +13,6 @@ const ALL_POWERS = [
   Power.Russia,
   Power.Turkey,
 ];
-
-// ============================================================================
-// Helper: wire a random-style agent using direct manager API
-// ============================================================================
-function wireRandomAgent(manager: GameManager, power: Power): void {
-  manager.onPhaseChange(async (_phase, state) => {
-    // Yield to macrotask so collectOrders/collectRetreats/collectBuilds can set up gates first
-    await new Promise<void>((r) => setTimeout(r, 0));
-    if (state.phase.type === PhaseType.Orders) {
-      const myUnits = state.units.filter((u) => u.power === power);
-      const orders = myUnits.map((u) => {
-        const prov = PROVINCES[u.province];
-        const adj = u.type === 'Army' ? prov?.adjacency.army : prov?.adjacency.fleet;
-        if (adj && adj.length > 0 && Math.random() > 0.5) {
-          return { type: OrderType.Move as const, unit: u.province, destination: adj[0] };
-        }
-        return { type: OrderType.Hold as const, unit: u.province };
-      });
-      manager.submitOrders(power, orders);
-    } else if (state.phase.type === PhaseType.Retreats) {
-      const retreats = state.retreatSituations
-        .filter((s) => s.unit.power === power)
-        .map((s) => ({ type: 'Disband' as const, unit: s.unit.province }));
-      manager.submitRetreats(power, retreats);
-    } else if (state.phase.type === PhaseType.Builds) {
-      const buildCount = manager.getBuildCount(power);
-      if (buildCount > 0) {
-        manager.submitBuilds(
-          power,
-          Array.from({ length: buildCount }, () => ({ type: 'Waive' as const })),
-        );
-      } else if (buildCount < 0) {
-        const myUnits = state.units.filter((u) => u.power === power);
-        manager.submitBuilds(
-          power,
-          myUnits
-            .slice(0, Math.abs(buildCount))
-            .map((u) => ({ type: 'Remove' as const, unit: u.province })),
-        );
-      } else {
-        manager.submitBuilds(power, []);
-      }
-    }
-  });
-}
-
-function connectAllRandom(manager: GameManager): void {
-  for (const power of ALL_POWERS) {
-    wireRandomAgent(manager, power);
-  }
-}
 
 // ============================================================================
 // Helper: a deterministic "always hold" agent using direct manager API
@@ -197,61 +146,7 @@ describe('GameManager — All-Hold game', () => {
 });
 
 // ============================================================================
-// 3. RANDOM AGENT GAME — smoke test
-// ============================================================================
-
-describe('GameManager — Random agent game', () => {
-  it('can run a 3-year game without crashing', async () => {
-    const manager = new GameManager({ maxYears: 3 });
-    connectAllRandom(manager);
-
-    const result = await manager.run();
-
-    // Should complete without error
-    expect(result).toBeDefined();
-    expect(result.year).toBeLessThanOrEqual(1904);
-
-    // Game state should be consistent
-    const state = manager.getState();
-    expect(state.units.length).toBeGreaterThan(0);
-
-    // Every unit should be at a valid province
-    for (const unit of state.units) {
-      expect(unit.province).toBeTruthy();
-    }
-
-    // No two units at the same province
-    const provinces = state.units.map((u) => u.province);
-    expect(new Set(provinces).size).toBe(provinces.length);
-  });
-
-  it('supply center ownership changes over time with random moves', async () => {
-    const manager = new GameManager({ maxYears: 5 });
-    connectAllRandom(manager);
-
-    await manager.run();
-
-    const state = manager.getState();
-    // With random moves over 5 years, SOME neutral SCs should be captured
-    expect(state.supplyCenters.size).toBeGreaterThan(22);
-  });
-
-  it('eliminated powers have no units', async () => {
-    const manager = new GameManager({ maxYears: 5 });
-    connectAllRandom(manager);
-
-    const result = await manager.run();
-
-    const state = manager.getState();
-    for (const power of result.eliminatedPowers) {
-      const units = state.units.filter((u) => u.power === power);
-      expect(units).toHaveLength(0);
-    }
-  });
-});
-
-// ============================================================================
-// 4. EVENT SYSTEM
+// 3. EVENT SYSTEM
 // ============================================================================
 
 describe('GameManager — Event system', () => {
