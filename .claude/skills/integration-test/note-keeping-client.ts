@@ -1,7 +1,12 @@
 import { appendFile, mkdir, readFile } from 'fs/promises';
 import { dirname, join } from 'path';
 
-import type { ChatMessage, LLMClient } from '../../../src/agent/llm/llm-client';
+import type {
+  ChatMessage,
+  LLMClient,
+  ToolDefinition,
+  ToolExecutor,
+} from '../../../src/agent/llm/llm-client';
 
 const NOTES_BLOCK_RE = /```notes\s*\n([\s\S]*?)```/;
 const PHASE_RE = /=== (\w+ \d+) \((\w+)\) ===/;
@@ -77,6 +82,61 @@ export class NoteKeepingClient implements LLMClient {
 
     // 5. Return cleaned response
     return cleaned;
+  }
+
+  async runToolLoop(
+    messages: ChatMessage[],
+    tools: ToolDefinition[],
+    executor: ToolExecutor,
+    maxIterations?: number,
+  ): Promise<string> {
+    if (!this.inner.runToolLoop) {
+      throw new Error('Inner LLM client does not support tool calling');
+    }
+
+    // 1. Read previous notes and inject into the user message
+    const previousNotes = await this.readNotes();
+    const augmented = messages.map((m, i) => {
+      if (i === messages.length - 1 && m.role === 'user') {
+        return { ...m, content: this.augmentToolPrompt(m.content, previousNotes) };
+      }
+      return m;
+    });
+
+    // 2. Run the inner tool loop
+    const response = await this.inner.runToolLoop(augmented, tools, executor, maxIterations);
+
+    // 3. Extract notes from the final text response (if any)
+    const { notes, cleaned } = extractNotesBlock(response);
+    if (notes) {
+      const phase = parsePhaseFromPrompt(messages[messages.length - 1]?.content ?? '');
+      try {
+        await this.saveNotes(phase, notes);
+      } catch (error) {
+        console.warn(`Failed to persist notes for ${this.power} at ${phase}:`, error);
+      }
+    }
+
+    return cleaned;
+  }
+
+  private augmentToolPrompt(prompt: string, previousNotes: string): string {
+    const notesContent = previousNotes || '(none yet — this is your first phase)';
+    return `${prompt}
+
+--- Your Notes From Previous Phases ---
+${notesContent}
+
+--- Note-Taking Instructions ---
+You have external memory via notes. In your FINAL text response (after all tool calls),
+include a \`\`\`notes fenced block with your observations.
+
+\`\`\`notes
+strategy: Your strategic observations, plans, alliance assessments, what worked/didn't
+ux_feedback: Observations about prompt clarity, format confusion, what made it hard to play
+\`\`\`
+
+Notes are optional — if you have nothing to record, just submit your tools and finish.`;
   }
 
   private augmentPrompt(prompt: string, previousNotes: string): string {
