@@ -166,7 +166,7 @@ export function generateRandomBuilds(
   if (buildCount > 0) {
     const occupiedProvinces = new Set(state.units.map((u) => u.province));
     const homeCenters = Object.values(PROVINCES).filter(
-      (p) => p.homeCenter === power && p.supplyCenter,
+      (p) => p.homeCenter === power && p.supplyCenter && state.supplyCenters.get(p.id) === power,
     );
     const availableCenters = homeCenters.filter((p) => !occupiedProvinces.has(p.id));
 
@@ -298,9 +298,7 @@ export async function connectRandomAgent(
     if (staleCount > 0) {
       logger.info(`[${power}] Clearing ${staleCount} stale message batches from queue`);
     }
-    const kept = workQueue.filter((w) => w.kind === 'phase');
     workQueue.length = 0;
-    workQueue.push(...kept);
     workQueue.push({ kind: 'phase', gameState, deadlineMs });
     drainWorkQueue();
   }
@@ -393,7 +391,7 @@ export async function connectRandomAgent(
     }
 
     // Send random diplomacy messages (30% chance)
-    if (Math.random() > 0.3) {
+    if (Math.random() < 0.3) {
       try {
         const otherPowers = ALL_POWERS.filter((p) => p !== power);
         const numMessages = Math.random() < 0.5 ? 1 : 2;
