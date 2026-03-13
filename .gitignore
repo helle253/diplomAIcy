@@ -15,3 +15,6 @@ docs/specs/
 .worktrees/
 .claude/settings.local.json
 game-notes/
+
+# Yarn 4
+.yarn/install-state.gz
