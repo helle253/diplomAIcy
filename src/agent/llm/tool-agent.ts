@@ -279,15 +279,24 @@ export async function connectToolAgent(
   );
   subs.push(msgSub);
 
+  let unsubscribed = false;
   const unsubscribe = () => {
+    if (unsubscribed) return;
+    unsubscribed = true;
     for (const sub of subs) sub.unsubscribe();
+    if (batchTimer) {
+      clearTimeout(batchTimer);
+      batchTimer = null;
+    }
+    process.removeListener('SIGINT', onSigint);
     logger.info(`[${power}] Disconnected from server`);
   };
 
-  process.on('SIGINT', () => {
+  const onSigint = () => {
     unsubscribe();
     process.exit(0);
-  });
+  };
+  process.on('SIGINT', onSigint);
 
   logger.info(`[${power}] Connected to remote server, listening for phase changes`);
 

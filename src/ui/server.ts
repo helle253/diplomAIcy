@@ -149,17 +149,19 @@ function startServer(): void {
         continue;
       }
 
+      // Validate config before joining the lobby seat
+      if (agentCfg.type === 'llm' && agentCfg.provider === 'anthropic') {
+        throw new Error(
+          'Anthropic provider does not support tool calling yet. Use openai provider.',
+        );
+      }
+
       // Create tRPC client to self (localhost)
       const joinClient = createGameClient(`http://localhost:${PORT}/trpc`);
       const { seatToken } = await joinClient.lobby.join.mutate({ lobbyId: id, power });
       const agentClient = createGameClient(`http://localhost:${PORT}/trpc`, seatToken);
 
       if (agentCfg.type === 'llm') {
-        if (agentCfg.provider === 'anthropic') {
-          throw new Error(
-            'Anthropic provider does not support tool calling yet. Use openai provider.',
-          );
-        }
         const llmClient = new OpenAICompatibleClient(toLLMClientConfig(agentCfg));
         const handle = await connectToolAgent(agentClient, llmClient, power, id);
         runtime.agentConnections.push(handle);

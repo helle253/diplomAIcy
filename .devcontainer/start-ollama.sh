@@ -2,7 +2,7 @@
 # Start the Ollama service and pull the default model for integration tests.
 # Run this from within the devcontainer when you want to run integration tests.
 
-set -e
+set -eo pipefail
 
 COMPOSE_FILE="$(dirname "$0")/docker-compose.yml"
 MODEL="${1:-qwen2.5:7b}"

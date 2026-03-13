@@ -58,10 +58,16 @@ function parseArgs(): {
   return { power, server, type, lobbyId };
 }
 
+const VALID_AGENT_TYPES = new Set(['llm', 'random', 'remote']);
+
 function resolveAgentConfig(power: Power, typeOverride?: string): AgentConfig {
   const gameConfig = loadConfig();
   const cfg = getAgentConfig(gameConfig, power);
   if (typeOverride) {
+    if (!VALID_AGENT_TYPES.has(typeOverride)) {
+      console.error(`Unknown agent type: ${typeOverride}. Valid types: llm, random`);
+      process.exit(1);
+    }
     cfg.type = typeOverride as AgentConfig['type'];
   }
   if ((cfg as { type: string }).type === 'remote') {
