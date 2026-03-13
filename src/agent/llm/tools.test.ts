@@ -1,7 +1,16 @@
+import type { Mock } from 'vitest';
 import { describe, expect, it, vi } from 'vitest';
 
 import { PhaseType, Power, Season, UnitType } from '../../engine/types';
-import { GameToolExecutor } from './tools';
+import { GameToolExecutor, type ToolGameClient } from './tools';
+
+type MockToolGameClient = {
+  game: {
+    [K in keyof ToolGameClient['game']]: {
+      mutate: Mock;
+    };
+  };
+};
 
 function makeState(overrides = {}) {
   return {
@@ -27,16 +36,14 @@ function makeState(overrides = {}) {
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const mockClient = {} as any;
+const mockClient = {} as ToolGameClient;
 
 describe('GameToolExecutor - map query tools', () => {
   it("getMyUnits returns only this power's units", async () => {
     const exec = new GameToolExecutor(mockClient, makeState(), Power.England);
     const result = JSON.parse(await exec.execute('getMyUnits', {}));
     expect(result).toHaveLength(3);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(result.map((u: any) => u.province).sort()).toEqual(['edi', 'lon', 'lvp']);
+    expect(result.map((u: { province: string }) => u.province).sort()).toEqual(['edi', 'lon', 'lvp']);
   });
 
   it('getAdjacentProvinces returns army adjacencies', async () => {
@@ -123,7 +130,7 @@ describe('GameToolExecutor - map query tools', () => {
 });
 
 describe('GameToolExecutor - action tools', () => {
-  function makeMockClient() {
+  function makeMockClient(): MockToolGameClient {
     return {
       game: {
         submitOrders: { mutate: vi.fn().mockResolvedValue({ ok: true }) },
@@ -132,8 +139,7 @@ describe('GameToolExecutor - action tools', () => {
         sendMessage: { mutate: vi.fn().mockResolvedValue({ ok: true }) },
         submitReady: { mutate: vi.fn().mockResolvedValue({ ok: true }) },
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any;
+    } as MockToolGameClient;
   }
 
   it('submitOrders calls tRPC mutation with converted orders', async () => {
