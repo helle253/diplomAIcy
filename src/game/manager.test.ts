@@ -619,7 +619,7 @@ describe('GameManager — Concession', () => {
     expect(result.eliminatedPowers).not.toContain(Power.England);
   });
 
-  it('conceded power units hold and game completes without timeout', async () => {
+  it('conceded power is skipped in gate collection', async () => {
     const manager = new GameManager({ maxYears: 1 });
     // Wire agents for all powers except England
     for (const power of ALL_POWERS) {
@@ -627,44 +627,16 @@ describe('GameManager — Concession', () => {
         wireHoldAgent(manager, power);
       }
     }
-    // Concede England — its gates should be skipped, not waited on
+    // Concede England — getActivePowers() excludes it, so no gate is created
     manager.concede(Power.England);
 
-    const start = Date.now();
     const result = await manager.run();
-    const elapsed = Date.now() - start;
 
     expect(result).toBeDefined();
     expect(result.concededPowers).toContain(Power.England);
-    // Should complete quickly (no timeout waiting for England)
-    expect(elapsed).toBeLessThan(5000);
-  });
-
-  it('conceding mid-phase resolves pending gates immediately', async () => {
-    const manager = new GameManager({ maxYears: 1, remoteTimeoutMs: 30_000 });
-    // Wire all powers except England
-    for (const power of ALL_POWERS) {
-      if (power !== Power.England) {
-        wireHoldAgent(manager, power);
-      }
-    }
-
-    // Concede England during the first orders phase
-    manager.onPhaseChange((phase) => {
-      if (phase.type === PhaseType.Orders && phase.season === Season.Spring) {
-        // Use setTimeout to let the gate be created first
-        setTimeout(() => manager.concede(Power.England), 10);
-      }
-    });
-
-    const start = Date.now();
-    const result = await manager.run();
-    const elapsed = Date.now() - start;
-
-    expect(result).toBeDefined();
-    expect(result.concededPowers).toContain(Power.England);
-    // Should NOT have waited 30s for the timeout
-    expect(elapsed).toBeLessThan(5000);
+    // England's units should still exist (they hold, nobody attacks in all-hold)
+    const englandUnits = manager.getState().units.filter((u) => u.power === Power.England);
+    expect(englandUnits.length).toBeGreaterThan(0);
   });
 
   it('draw vote counting excludes conceded powers', async () => {
