@@ -75,13 +75,14 @@ export function createPromptRouter(storage: GameStorage) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Prompt not found' });
       }
       checkVisibility(prompt.visibility, prompt.ownerToken, ctx.token);
-      return prompt;
+      const { ownerToken: _ownerToken, ...safePrompt } = prompt;
+      return safePrompt;
     }),
 
     update: publicProcedure.input(updateInput).mutation(({ input, ctx }) => {
       const prompt = storage.getPrompt(input.promptId);
       if (!prompt) {
-        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Unauthorized' });
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Prompt not found' });
       }
       if (!ctx.token || ctx.token !== prompt.ownerToken) {
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Unauthorized' });
@@ -106,7 +107,7 @@ export function createPromptRouter(storage: GameStorage) {
     delete: publicProcedure.input(deleteInput).mutation(({ input, ctx }) => {
       const prompt = storage.getPrompt(input.promptId);
       if (!prompt) {
-        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Unauthorized' });
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Prompt not found' });
       }
       if (!ctx.token || ctx.token !== prompt.ownerToken) {
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Unauthorized' });
@@ -117,7 +118,7 @@ export function createPromptRouter(storage: GameStorage) {
 
     list: publicProcedure.input(listInput).query(({ input, ctx }) => {
       const token = input.promptToken ?? ctx.token ?? undefined;
-      return storage.listPrompts(token);
+      return storage.listPrompts(token).map(({ ownerToken: _ownerToken, ...p }) => p);
     }),
 
     getRevision: publicProcedure.input(getRevisionInput).query(({ input, ctx }) => {

@@ -86,6 +86,7 @@ describe('prompt.get', () => {
     const prompt = await anon.prompt.get({ promptId });
     expect(prompt.name).toBe('Public');
     expect(prompt.content).toBe('public content');
+    expect('ownerToken' in prompt).toBe(false);
   });
 
   it('rejects private prompt without token with NOT_FOUND', async () => {
@@ -111,6 +112,7 @@ describe('prompt.get', () => {
     const authed = createCaller(promptToken);
     const prompt = await authed.prompt.get({ promptId });
     expect(prompt.content).toBe('secret');
+    expect('ownerToken' in prompt).toBe(false);
   });
 });
 
@@ -215,6 +217,7 @@ describe('prompt.list', () => {
     const results = await anon.prompt.list({});
     expect(results.some((p) => p.name === 'Public')).toBe(true);
     expect(results.some((p) => p.name === 'Private')).toBe(false);
+    expect(results.every((p) => !('ownerToken' in p))).toBe(true);
   });
 
   it('includes private prompts with matching token', async () => {
@@ -228,6 +231,7 @@ describe('prompt.list', () => {
     const authed = createCaller(promptToken);
     const results = await authed.prompt.list({});
     expect(results.some((p) => p.name === 'Private')).toBe(true);
+    expect(results.every((p) => !('ownerToken' in p))).toBe(true);
   });
 
   it('uses promptToken input over ctx token', async () => {
