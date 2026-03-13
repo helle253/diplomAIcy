@@ -5,6 +5,9 @@ sudo chown -R node:node /home/node/.claude 2>/dev/null || true
 # (the devcontainer feature installs it as root, but the node user needs write access to update it)
 sudo chown -R node:npm /usr/local/share/npm-global/lib/node_modules/@anthropic-ai/ 2>/dev/null || true
 
+# Enable corepack so the packageManager field in package.json activates Yarn 4
+sudo corepack enable
+
 curl -fsSL https://raw.githubusercontent.com/PeonPing/peon-ping/main/install.sh | bash -s -- --packs=ra_soviet
 
 $HOME/.claude/hooks/peon-ping/peon.sh packs use ra_soviet

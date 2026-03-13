@@ -13,12 +13,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - run: corepack enable
+
       - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: yarn
 
-      - run: yarn install --frozen-lockfile
+      - run: yarn install --immutable
 
       - run: yarn build
 
@@ -30,12 +32,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - run: corepack enable
+
       - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: yarn
 
-      - run: yarn install --frozen-lockfile
+      - run: yarn install --immutable
 
       - run: yarn build
 
