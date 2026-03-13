@@ -51,6 +51,7 @@ export interface GameResult {
   year: number;
   supplyCenters: Map<string, Power>;
   eliminatedPowers: Power[];
+  concededPowers: Power[];
 }
 
 export type GameEventType =
@@ -87,6 +88,7 @@ export class GameManager {
   private allowDraws: boolean;
   private drawVotes = new Set<Power>();
   private drawResolve: (() => void) | null = null;
+  private concededPowers = new Set<Power>();
   readonly bus: MessageBus;
 
   // Promise gates for collecting agent submissions
@@ -211,6 +213,40 @@ export class GameManager {
     return [...this.drawVotes];
   }
 
+  concede(power: Power): boolean {
+    if (this.concededPowers.has(power)) {
+      logger.warn(`[${power}] already conceded`);
+      return false;
+    }
+    if (!this.getActivePowers().includes(power)) {
+      logger.warn(`[${power}] cannot concede — not an active power`);
+      return false;
+    }
+
+    this.concededPowers.add(power);
+    logger.info(`[${power}] has conceded`);
+
+    // Broadcast concession as a global message (bus.phase may not be set if
+    // concede is called before the game loop starts, so set it first)
+    if (!this.bus.currentPhase) this.bus.phase = this.state.phase;
+    this.bus.send({
+      from: power,
+      to: 'Global',
+      content: `${power} has conceded.`,
+      phase: this.state.phase,
+      timestamp: Date.now(),
+    });
+
+    // Resolve any pending gates immediately with civil-disorder defaults
+    this.resolveGatesForConcession(power);
+
+    return true;
+  }
+
+  getConcededPowers(): Power[] {
+    return [...this.concededPowers];
+  }
+
   /** Player-facing game configuration for rules templating. */
   getGameConfig() {
     return {
@@ -320,6 +356,7 @@ export class GameManager {
       year: this.state.phase.year,
       supplyCenters: new Map(this.state.supplyCenters),
       eliminatedPowers: this.getEliminatedPowers(),
+      concededPowers: this.getConcededPowers(),
     };
   }
 
@@ -527,6 +564,45 @@ export class GameManager {
   }
 
   // ── Promise-gate collectors ──────────────────────────────────────────
+
+  private resolveGatesForConcession(power: Power): void {
+    const orderGate = this.orderGates.get(power);
+    if (orderGate) {
+      orderGate(
+        this.state.units
+          .filter((u) => u.power === power)
+          .map((u) => ({ type: OrderType.Hold, unit: u.province })),
+      );
+    }
+
+    const retreatGate = this.retreatGates.get(power);
+    if (retreatGate) {
+      retreatGate(
+        this.state.retreatSituations
+          .filter((s) => s.unit.power === power)
+          .map((s) => ({ type: 'Disband' as const, unit: s.unit.province })),
+      );
+    }
+
+    const buildGate = this.buildGates.get(power);
+    if (buildGate) {
+      const buildCount = this.getBuildCount(power);
+      if (buildCount > 0) {
+        buildGate(Array.from({ length: buildCount }, () => ({ type: 'Waive' as const })));
+      } else if (buildCount < 0) {
+        const myUnits = this.state.units.filter((u) => u.power === power);
+        const removals = Math.min(Math.abs(buildCount), myUnits.length);
+        buildGate(
+          myUnits.slice(-removals).map((u) => ({ type: 'Remove' as const, unit: u.province })),
+        );
+      } else {
+        buildGate([]);
+      }
+    }
+
+    const readyGate = this.readyGates.get(power);
+    if (readyGate) readyGate();
+  }
 
   /** Wraps a promise with an optional timeout. Returns true if timed out. */
   private withTimeout(promise: Promise<void>, power: Power, label: string): Promise<boolean> {
@@ -744,12 +820,12 @@ export class GameManager {
 
   getActivePowers(): Power[] {
     const powersWithUnits = new Set(this.state.units.map((u) => u.power));
-    return ALL_POWERS.filter((p) => powersWithUnits.has(p));
+    return ALL_POWERS.filter((p) => powersWithUnits.has(p) && !this.concededPowers.has(p));
   }
 
   private getEliminatedPowers(): Power[] {
     const active = new Set(this.getActivePowers());
-    return ALL_POWERS.filter((p) => !active.has(p));
+    return ALL_POWERS.filter((p) => !active.has(p) && !this.concededPowers.has(p));
   }
 
   private eliminateDeadPowers(): void {
@@ -765,6 +841,7 @@ export class GameManager {
         year: this.state.phase.year,
         supplyCenters: new Map(this.state.supplyCenters),
         eliminatedPowers: this.getEliminatedPowers(),
+        concededPowers: this.getConcededPowers(),
       };
     }
     return null;
@@ -779,6 +856,7 @@ export class GameManager {
           year: this.state.phase.year,
           supplyCenters: new Map(this.state.supplyCenters),
           eliminatedPowers: this.getEliminatedPowers(),
+          concededPowers: this.getConcededPowers(),
         };
 
         await this.emit({
