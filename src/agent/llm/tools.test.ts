@@ -6,9 +6,9 @@ import { GameToolExecutor, type ToolGameClient } from './tools';
 
 type MockToolGameClient = {
   game: {
-    [K in keyof ToolGameClient['game']]: {
-      mutate: Mock;
-    };
+    [K in keyof ToolGameClient['game']]: K extends 'getRules'
+      ? { query: Mock }
+      : { mutate: Mock };
   };
 };
 
@@ -40,7 +40,7 @@ const mockClient = {} as ToolGameClient;
 
 describe('GameToolExecutor - map query tools', () => {
   it("getMyUnits returns only this power's units", async () => {
-    const exec = new GameToolExecutor(mockClient, makeState(), Power.England);
+    const exec = new GameToolExecutor(mockClient, makeState(), Power.England, 'test-lobby');
     const result = JSON.parse(await exec.execute('getMyUnits', {}));
     expect(result).toHaveLength(3);
     expect(result.map((u: { province: string }) => u.province).sort()).toEqual([
@@ -51,7 +51,7 @@ describe('GameToolExecutor - map query tools', () => {
   });
 
   it('getAdjacentProvinces returns army adjacencies', async () => {
-    const exec = new GameToolExecutor(mockClient, makeState(), Power.England);
+    const exec = new GameToolExecutor(mockClient, makeState(), Power.England, 'test-lobby');
     const result = JSON.parse(
       await exec.execute('getAdjacentProvinces', {
         province: 'lon',
@@ -64,7 +64,7 @@ describe('GameToolExecutor - map query tools', () => {
   });
 
   it('getAdjacentProvinces returns fleet adjacencies', async () => {
-    const exec = new GameToolExecutor(mockClient, makeState(), Power.England);
+    const exec = new GameToolExecutor(mockClient, makeState(), Power.England, 'test-lobby');
     const result = JSON.parse(
       await exec.execute('getAdjacentProvinces', {
         province: 'lon',
@@ -78,13 +78,13 @@ describe('GameToolExecutor - map query tools', () => {
   });
 
   it('getAdjacentProvinces returns error for invalid province', async () => {
-    const exec = new GameToolExecutor(mockClient, makeState(), Power.England);
+    const exec = new GameToolExecutor(mockClient, makeState(), Power.England, 'test-lobby');
     const result = JSON.parse(await exec.execute('getAdjacentProvinces', { province: 'xyz' }));
     expect(result.error).toContain('xyz');
   });
 
   it('getProvinceInfo returns full province data', async () => {
-    const exec = new GameToolExecutor(mockClient, makeState(), Power.England);
+    const exec = new GameToolExecutor(mockClient, makeState(), Power.England, 'test-lobby');
     const result = JSON.parse(await exec.execute('getProvinceInfo', { province: 'lon' }));
     expect(result.name).toBe('London');
     expect(result.type).toBe('Coastal');
@@ -94,7 +94,7 @@ describe('GameToolExecutor - map query tools', () => {
   });
 
   it('getSupplyCenterCounts returns per-power counts', async () => {
-    const exec = new GameToolExecutor(mockClient, makeState(), Power.England);
+    const exec = new GameToolExecutor(mockClient, makeState(), Power.England, 'test-lobby');
     const result = JSON.parse(await exec.execute('getSupplyCenterCounts', {}));
     expect(result.England).toBe(3);
     expect(result.France).toBe(3);
@@ -102,7 +102,7 @@ describe('GameToolExecutor - map query tools', () => {
   });
 
   it('getPhaseInfo returns phase details', async () => {
-    const exec = new GameToolExecutor(mockClient, makeState(), Power.England);
+    const exec = new GameToolExecutor(mockClient, makeState(), Power.England, 'test-lobby');
     const result = JSON.parse(await exec.execute('getPhaseInfo', {}));
     expect(result.season).toBe('Spring');
     expect(result.year).toBe(1901);
@@ -125,7 +125,7 @@ describe('GameToolExecutor - map query tools', () => {
         },
       ],
     });
-    const exec = new GameToolExecutor(mockClient, state, Power.England);
+    const exec = new GameToolExecutor(mockClient, state, Power.England, 'test-lobby');
     const result = JSON.parse(await exec.execute('getRetreatOptions', {}));
     expect(result).toHaveLength(1);
     expect(result[0].unit.province).toBe('lon');
@@ -142,13 +142,14 @@ describe('GameToolExecutor - action tools', () => {
         submitBuilds: { mutate: vi.fn().mockResolvedValue({ ok: true }) },
         sendMessage: { mutate: vi.fn().mockResolvedValue({ ok: true }) },
         submitReady: { mutate: vi.fn().mockResolvedValue({ ok: true }) },
+        getRules: { query: vi.fn().mockResolvedValue({ rules: 'test rules' }) },
       },
     } as MockToolGameClient;
   }
 
   it('submitOrders calls tRPC mutation with converted orders', async () => {
     const client = makeMockClient();
-    const exec = new GameToolExecutor(client, makeState(), Power.England);
+    const exec = new GameToolExecutor(client, makeState(), Power.England, 'test-lobby');
     const result = JSON.parse(
       await exec.execute('submitOrders', {
         orders: [
@@ -164,7 +165,7 @@ describe('GameToolExecutor - action tools', () => {
 
   it('submitOrders returns error for invalid order type', async () => {
     const client = makeMockClient();
-    const exec = new GameToolExecutor(client, makeState(), Power.England);
+    const exec = new GameToolExecutor(client, makeState(), Power.England, 'test-lobby');
     const result = JSON.parse(
       await exec.execute('submitOrders', {
         orders: [{ unit: 'lon', type: 'InvalidType' }],
@@ -175,7 +176,7 @@ describe('GameToolExecutor - action tools', () => {
 
   it('sendMessage calls tRPC mutation', async () => {
     const client = makeMockClient();
-    const exec = new GameToolExecutor(client, makeState(), Power.England);
+    const exec = new GameToolExecutor(client, makeState(), Power.England, 'test-lobby');
     const result = JSON.parse(
       await exec.execute('sendMessage', {
         to: 'France',
@@ -191,7 +192,7 @@ describe('GameToolExecutor - action tools', () => {
 
   it('ready calls submitReady and sets isReady', async () => {
     const client = makeMockClient();
-    const exec = new GameToolExecutor(client, makeState(), Power.England);
+    const exec = new GameToolExecutor(client, makeState(), Power.England, 'test-lobby');
     expect(exec.isReady).toBe(false);
     await exec.execute('ready', {});
     expect(exec.isReady).toBe(true);
@@ -209,7 +210,7 @@ describe('GameToolExecutor - action tools', () => {
         },
       ],
     });
-    const exec = new GameToolExecutor(client, state, Power.England);
+    const exec = new GameToolExecutor(client, state, Power.England, 'test-lobby');
     const result = JSON.parse(
       await exec.execute('submitRetreats', {
         retreats: [{ unit: 'lon', destination: 'yor' }],
@@ -221,7 +222,7 @@ describe('GameToolExecutor - action tools', () => {
 
   it('submitRetreats converts missing destination to Disband', async () => {
     const client = makeMockClient();
-    const exec = new GameToolExecutor(client, makeState(), Power.England);
+    const exec = new GameToolExecutor(client, makeState(), Power.England, 'test-lobby');
     const result = JSON.parse(
       await exec.execute('submitRetreats', {
         retreats: [{ unit: 'lon' }],
