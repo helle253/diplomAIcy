@@ -204,6 +204,19 @@ function startServer(): void {
           continue;
         }
 
+        // Look up custom prompt if assigned
+        let customSystemPrompt: string | undefined;
+        const assignment = lobby.config.promptAssignments?.[power];
+        if (assignment && agentCfg.type === 'llm') {
+          const snapshot = storage.snapshotGamePrompt(
+            gameId,
+            power,
+            assignment.promptId,
+            assignment.revision,
+          );
+          customSystemPrompt = snapshot.contentSnapshot;
+        }
+
         // Create tRPC client to self (localhost)
         const joinClient = createGameClient(`http://localhost:${PORT}/trpc`);
         const { seatToken } = await joinClient.lobby.join.mutate({ lobbyId: id, power });
@@ -215,7 +228,13 @@ function startServer(): void {
             agentCfg.provider === 'anthropic'
               ? new AnthropicClient(llmConfig)
               : new OpenAICompatibleClient(llmConfig);
-          const handle = await connectToolAgent(agentClient, llmClient, power, id);
+          const handle = await connectToolAgent(
+            agentClient,
+            llmClient,
+            power,
+            id,
+            customSystemPrompt,
+          );
           runtime.agentConnections.push(handle);
           logger.info(
             `  ${power}: LLM tool-calling (${agentCfg.provider ?? 'openai'} / ${toLLMClientConfig(agentCfg).model})`,
@@ -263,7 +282,7 @@ function startServer(): void {
   });
 
   // Create merged AppRouter
-  const lobbyRouter = createLobbyRouter(lobbyManager, defaults);
+  const lobbyRouter = createLobbyRouter(lobbyManager, defaults, storage);
   const gameRouter = createGameRouter(lobbyManager);
   const promptRouter = createPromptRouter(storage);
   const appRouter = router({

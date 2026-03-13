@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { GameConfig } from '../agent/llm/config';
 import { Power } from '../engine/types';
 import type { Lobby, LobbyManager } from './lobby-manager';
+import type { GameStorage } from './storage';
 import { createProtectedProcedures, publicProcedure, router } from './trpc';
 
 const powerEnum = z.enum([
@@ -39,6 +40,15 @@ const lobbyConfigSchema = z.object({
   autostart: z.boolean().default(false),
   fastAdjudication: z.boolean().default(true),
   allowDraws: z.boolean().default(true),
+  promptAssignments: z
+    .record(
+      powerEnum,
+      z.object({
+        promptId: z.string(),
+        revision: z.number().int().min(1).optional(),
+      }),
+    )
+    .optional(),
   agentConfig: z
     .object({
       defaultAgent: agentConfigSchema,
@@ -71,7 +81,11 @@ export interface LobbyDefaults {
   agentConfig: GameConfig;
 }
 
-export function createLobbyRouter(lobbyManager: LobbyManager, defaults: LobbyDefaults) {
+export function createLobbyRouter(
+  lobbyManager: LobbyManager,
+  defaults: LobbyDefaults,
+  storage?: GameStorage,
+) {
   const { creatorProcedure } = createProtectedProcedures(lobbyManager);
 
   return router({
@@ -101,6 +115,17 @@ export function createLobbyRouter(lobbyManager: LobbyManager, defaults: LobbyDef
     }),
 
     create: publicProcedure.input(lobbyConfigSchema).mutation(({ input }) => {
+      if (input.promptAssignments) {
+        for (const [power, assignment] of Object.entries(input.promptAssignments)) {
+          const prompt = storage?.getPrompt(assignment.promptId);
+          if (!prompt) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: `Prompt ${assignment.promptId} not found for ${power}`,
+            });
+          }
+        }
+      }
       return lobbyManager.createLobby(input);
     }),
 

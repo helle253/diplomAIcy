@@ -45,13 +45,14 @@ export async function connectToolAgent(
   llm: LLMClient,
   power: Power,
   lobbyId: string,
+  customSystemPrompt?: string,
 ): Promise<{ unsubscribe: () => void }> {
   // 1. Fetch initial state
   const serializedState = await client.game.getState.query({ lobbyId });
   const initialState = deserializeGameState(serializedState as SerializedGameState);
 
   // 2. Build system prompt (once at init)
-  const systemPrompt = buildToolSystemPrompt(power, initialState.endYear);
+  const systemPrompt = customSystemPrompt ?? buildToolSystemPrompt(power, initialState.endYear);
 
   // ── Serialized work queue ──────────────────────────────────────────
   const MESSAGE_BATCH_DELAY = parseInt(process.env.MESSAGE_BATCH_DELAY ?? '5000', 10);

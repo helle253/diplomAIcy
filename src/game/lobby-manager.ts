@@ -18,6 +18,7 @@ export interface LobbyConfig {
   postGamePress?: boolean;
   fastAdjudication?: boolean;
   allowDraws?: boolean;
+  promptAssignments?: Partial<Record<Power, { promptId: string; revision?: number }>>;
 }
 
 export interface Lobby {
