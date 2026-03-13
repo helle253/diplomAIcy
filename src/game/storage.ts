@@ -13,6 +13,30 @@ export interface StoredGame {
   status: 'in_progress' | 'completed' | 'error';
 }
 
+export interface StoredPrompt {
+  id: string;
+  name: string;
+  ownerToken: string;
+  visibility: 'public' | 'private';
+  activeRevision: number;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StoredPromptRevision {
+  revision: number;
+  content: string;
+  createdAt: string;
+}
+
+export interface StoredGamePrompt {
+  power: string;
+  promptId: string;
+  revision: number;
+  contentSnapshot: string;
+}
+
 export class GameStorage {
   private db: Database.Database;
 
@@ -62,6 +86,37 @@ export class GameStorage {
       );
 
       CREATE INDEX IF NOT EXISTS idx_turns_game ON turn_records(game_id);
+
+      CREATE TABLE IF NOT EXISTS prompts (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        owner_token TEXT NOT NULL,
+        visibility TEXT NOT NULL DEFAULT 'private',
+        active_revision INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS prompt_revisions (
+        id TEXT PRIMARY KEY,
+        prompt_id TEXT NOT NULL REFERENCES prompts(id) ON DELETE CASCADE,
+        revision INTEGER NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(prompt_id, revision)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_prompt_revisions_prompt ON prompt_revisions(prompt_id);
+
+      CREATE TABLE IF NOT EXISTS game_prompts (
+        id TEXT PRIMARY KEY,
+        game_id TEXT NOT NULL REFERENCES games(id),
+        power TEXT NOT NULL,
+        prompt_id TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        content_snapshot TEXT NOT NULL,
+        UNIQUE(game_id, power)
+      );
     `);
   }
 
@@ -213,6 +268,206 @@ export class GameStorage {
   }
 
   // ===========================================================================
+  // Prompts
+  // ===========================================================================
+
+  createPrompt(
+    name: string,
+    content: string,
+    visibility: 'public' | 'private' = 'private',
+  ): { promptId: string; ownerToken: string; revision: 1 } {
+    const promptId = randomUUID();
+    const ownerToken = randomUUID();
+    const revisionId = randomUUID();
+
+    const tx = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO prompts (id, name, owner_token, visibility, active_revision) VALUES (?, ?, ?, ?, 1)`,
+        )
+        .run(promptId, name, ownerToken, visibility);
+
+      this.db
+        .prepare(
+          `INSERT INTO prompt_revisions (id, prompt_id, revision, content) VALUES (?, ?, 1, ?)`,
+        )
+        .run(revisionId, promptId, content);
+    });
+    tx();
+
+    return { promptId, ownerToken, revision: 1 };
+  }
+
+  getPrompt(promptId: string): StoredPrompt | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT p.id, p.name, p.owner_token, p.visibility, p.active_revision, p.created_at, p.updated_at, pr.content
+         FROM prompts p
+         JOIN prompt_revisions pr ON pr.prompt_id = p.id AND pr.revision = p.active_revision
+         WHERE p.id = ?`,
+      )
+      .get(promptId) as StoredPromptRow | undefined;
+
+    if (!row) return undefined;
+    return rowToStoredPrompt(row);
+  }
+
+  updatePromptContent(promptId: string, content: string): number {
+    let newRevision = 0;
+
+    const tx = this.db.transaction(() => {
+      const prompt = this.db
+        .prepare(`SELECT active_revision FROM prompts WHERE id = ?`)
+        .get(promptId) as { active_revision: number } | undefined;
+
+      if (!prompt) throw new Error(`Prompt not found: ${promptId}`);
+
+      newRevision = prompt.active_revision + 1;
+      const revisionId = randomUUID();
+
+      this.db
+        .prepare(
+          `INSERT INTO prompt_revisions (id, prompt_id, revision, content) VALUES (?, ?, ?, ?)`,
+        )
+        .run(revisionId, promptId, newRevision, content);
+
+      this.db
+        .prepare(
+          `UPDATE prompts SET active_revision = ?, updated_at = datetime('now') WHERE id = ?`,
+        )
+        .run(newRevision, promptId);
+    });
+    tx();
+
+    return newRevision;
+  }
+
+  updatePromptMetadata(
+    promptId: string,
+    updates: { name?: string; visibility?: 'public' | 'private' },
+  ): void {
+    const fields: string[] = [];
+    const params: unknown[] = [];
+
+    if (updates.name !== undefined) {
+      fields.push('name = ?');
+      params.push(updates.name);
+    }
+    if (updates.visibility !== undefined) {
+      fields.push('visibility = ?');
+      params.push(updates.visibility);
+    }
+
+    if (fields.length === 0) return;
+
+    fields.push(`updated_at = datetime('now')`);
+    params.push(promptId);
+
+    this.db.prepare(`UPDATE prompts SET ${fields.join(', ')} WHERE id = ?`).run(...params);
+  }
+
+  getPromptRevision(promptId: string, revision: number): StoredPromptRevision | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT revision, content, created_at FROM prompt_revisions WHERE prompt_id = ? AND revision = ?`,
+      )
+      .get(promptId, revision) as StoredPromptRevisionRow | undefined;
+
+    if (!row) return undefined;
+    return rowToStoredPromptRevision(row);
+  }
+
+  listPromptRevisions(promptId: string): StoredPromptRevision[] {
+    const rows = this.db
+      .prepare(
+        `SELECT revision, content, created_at FROM prompt_revisions WHERE prompt_id = ? ORDER BY revision ASC`,
+      )
+      .all(promptId) as StoredPromptRevisionRow[];
+
+    return rows.map(rowToStoredPromptRevision);
+  }
+
+  listPrompts(ownerToken?: string): Omit<StoredPrompt, 'content'>[] {
+    let sql = `SELECT p.id, p.name, p.owner_token, p.visibility, p.active_revision, p.created_at, p.updated_at
+               FROM prompts p
+               WHERE p.visibility = 'public'`;
+    const params: unknown[] = [];
+
+    if (ownerToken) {
+      sql += ` OR p.owner_token = ?`;
+      params.push(ownerToken);
+    }
+
+    sql += ` ORDER BY p.created_at DESC`;
+
+    const rows = this.db.prepare(sql).all(...params) as Omit<StoredPromptRow, 'content'>[];
+    return rows.map(rowToStoredPromptMeta);
+  }
+
+  deletePrompt(promptId: string): void {
+    this.db.prepare(`DELETE FROM prompts WHERE id = ?`).run(promptId);
+  }
+
+  snapshotGamePrompt(
+    gameId: string,
+    power: string,
+    promptId: string,
+    revision?: number,
+  ): { revision: number; contentSnapshot: string } {
+    let snapshotRevision = 0;
+    let contentSnapshot = '';
+
+    const tx = this.db.transaction(() => {
+      if (revision !== undefined) {
+        const rev = this.db
+          .prepare(
+            `SELECT revision, content FROM prompt_revisions WHERE prompt_id = ? AND revision = ?`,
+          )
+          .get(promptId, revision) as { revision: number; content: string } | undefined;
+
+        if (!rev) throw new Error(`Revision ${revision} not found for prompt: ${promptId}`);
+
+        snapshotRevision = rev.revision;
+        contentSnapshot = rev.content;
+      } else {
+        const row = this.db
+          .prepare(
+            `SELECT pr.revision, pr.content
+             FROM prompts p
+             JOIN prompt_revisions pr ON pr.prompt_id = p.id AND pr.revision = p.active_revision
+             WHERE p.id = ?`,
+          )
+          .get(promptId) as { revision: number; content: string } | undefined;
+
+        if (!row) throw new Error(`Prompt not found: ${promptId}`);
+
+        snapshotRevision = row.revision;
+        contentSnapshot = row.content;
+      }
+
+      const id = randomUUID();
+      this.db
+        .prepare(
+          `INSERT INTO game_prompts (id, game_id, power, prompt_id, revision, content_snapshot) VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .run(id, gameId, power, promptId, snapshotRevision, contentSnapshot);
+    });
+    tx();
+
+    return { revision: snapshotRevision, contentSnapshot };
+  }
+
+  getGamePrompts(gameId: string): StoredGamePrompt[] {
+    const rows = this.db
+      .prepare(
+        `SELECT power, prompt_id, revision, content_snapshot FROM game_prompts WHERE game_id = ?`,
+      )
+      .all(gameId) as StoredGamePromptRow[];
+
+    return rows.map(rowToStoredGamePrompt);
+  }
+
+  // ===========================================================================
   // Cleanup
   // ===========================================================================
 
@@ -250,6 +505,74 @@ function deserializeTo(to: string): Power | Power[] | 'Global' {
     return to.split(',') as Power[];
   }
   return to as Power;
+}
+
+interface StoredPromptRow {
+  id: string;
+  name: string;
+  owner_token: string;
+  visibility: string;
+  active_revision: number;
+  created_at: string;
+  updated_at: string;
+  content: string;
+}
+
+interface StoredPromptRevisionRow {
+  revision: number;
+  content: string;
+  created_at: string;
+}
+
+interface StoredGamePromptRow {
+  power: string;
+  prompt_id: string;
+  revision: number;
+  content_snapshot: string;
+}
+
+function rowToStoredPrompt(row: StoredPromptRow): StoredPrompt {
+  return {
+    id: row.id,
+    name: row.name,
+    ownerToken: row.owner_token,
+    visibility: row.visibility as 'public' | 'private',
+    activeRevision: row.active_revision,
+    content: row.content,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToStoredPromptMeta(
+  row: Omit<StoredPromptRow, 'content'>,
+): Omit<StoredPrompt, 'content'> {
+  return {
+    id: row.id,
+    name: row.name,
+    ownerToken: row.owner_token,
+    visibility: row.visibility as 'public' | 'private',
+    activeRevision: row.active_revision,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToStoredPromptRevision(row: StoredPromptRevisionRow): StoredPromptRevision {
+  return {
+    revision: row.revision,
+    content: row.content,
+    createdAt: row.created_at,
+  };
+}
+
+function rowToStoredGamePrompt(row: StoredGamePromptRow): StoredGamePrompt {
+  return {
+    power: row.power,
+    promptId: row.prompt_id,
+    revision: row.revision,
+    contentSnapshot: row.content_snapshot,
+  };
 }
 
 function rowToMessage(row: StoredMessageRow): Message {
