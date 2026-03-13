@@ -74,7 +74,10 @@ function resolveAgentConfig(power: Power, typeOverride?: string): AgentConfig {
   const cfg = getAgentConfig(gameConfig, power);
 
   if (typeOverride) {
-    cfg.type = typeOverride as AgentConfig['type'];
+    if (typeOverride !== 'llm' && typeOverride !== 'random') {
+      throw new Error(`Unsupported --type "${typeOverride}". Expected llm or random.`);
+    }
+    cfg.type = typeOverride;
   }
 
   if ((cfg as { type: string }).type === 'remote') {
