@@ -21,6 +21,7 @@ import { deserializeGameState, type SerializedGameState } from './remote/deseria
 // ── Utility ───────────────────────────────────────────────────────────────
 
 function pickRandom<T>(arr: T[]): T {
+  if (arr.length === 0) throw new Error('pickRandom called with empty array');
   return arr[Math.floor(Math.random() * arr.length)];
 }
 

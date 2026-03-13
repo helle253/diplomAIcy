@@ -141,41 +141,7 @@ function startServer(): void {
     };
     lobbyRuntimes.set(id, runtime);
 
-    // Wire agents
-    for (const power of ALL_POWERS) {
-      const agentCfg = getAgentConfig(lobby.config.agentConfig, power);
-      if (agentCfg.type === 'remote') {
-        logger.info(`  ${power}: Remote (waiting for connection)`);
-        continue;
-      }
-
-      // Validate config before joining the lobby seat
-      if (agentCfg.type === 'llm' && agentCfg.provider === 'anthropic') {
-        throw new Error(
-          'Anthropic provider does not support tool calling yet. Use openai provider.',
-        );
-      }
-
-      // Create tRPC client to self (localhost)
-      const joinClient = createGameClient(`http://localhost:${PORT}/trpc`);
-      const { seatToken } = await joinClient.lobby.join.mutate({ lobbyId: id, power });
-      const agentClient = createGameClient(`http://localhost:${PORT}/trpc`, seatToken);
-
-      if (agentCfg.type === 'llm') {
-        const llmClient = new OpenAICompatibleClient(toLLMClientConfig(agentCfg));
-        const handle = await connectToolAgent(agentClient, llmClient, power, id);
-        runtime.agentConnections.push(handle);
-        logger.info(
-          `  ${power}: LLM tool-calling (${agentCfg.provider ?? 'openai'} / ${toLLMClientConfig(agentCfg).model})`,
-        );
-      } else {
-        const handle = await connectRandomAgent(agentClient, power, id);
-        runtime.agentConnections.push(handle);
-        logger.info(`  ${power}: Random`);
-      }
-    }
-
-    // Persist and broadcast messages in real-time
+    // Register manager listeners BEFORE wiring agents so no early events are missed
     manager.onMessage((message: Message) => {
       message.gameId = gameId;
       storage.saveMessage(gameId, message);
@@ -190,7 +156,6 @@ function startServer(): void {
       });
     });
 
-    // Wire phase events for snapshots + broadcast
     manager.onEvent((event: GameEvent) => {
       if (event.turnRecord) {
         storage.saveTurnRecord(gameId, event.turnRecord);
@@ -228,6 +193,46 @@ function startServer(): void {
         );
       }
     });
+
+    // Wire agents (after listeners are registered)
+    try {
+      for (const power of ALL_POWERS) {
+        const agentCfg = getAgentConfig(lobby.config.agentConfig, power);
+        if (agentCfg.type === 'remote') {
+          logger.info(`  ${power}: Remote (waiting for connection)`);
+          continue;
+        }
+
+        // Validate config before joining the lobby seat
+        if (agentCfg.type === 'llm' && agentCfg.provider === 'anthropic') {
+          throw new Error(
+            'Anthropic provider does not support tool calling yet. Use openai provider.',
+          );
+        }
+
+        // Create tRPC client to self (localhost)
+        const joinClient = createGameClient(`http://localhost:${PORT}/trpc`);
+        const { seatToken } = await joinClient.lobby.join.mutate({ lobbyId: id, power });
+        const agentClient = createGameClient(`http://localhost:${PORT}/trpc`, seatToken);
+
+        if (agentCfg.type === 'llm') {
+          const llmClient = new OpenAICompatibleClient(toLLMClientConfig(agentCfg));
+          const handle = await connectToolAgent(agentClient, llmClient, power, id);
+          runtime.agentConnections.push(handle);
+          logger.info(
+            `  ${power}: LLM tool-calling (${agentCfg.provider ?? 'openai'} / ${toLLMClientConfig(agentCfg).model})`,
+          );
+        } else {
+          const handle = await connectRandomAgent(agentClient, power, id);
+          runtime.agentConnections.push(handle);
+          logger.info(`  ${power}: Random`);
+        }
+      }
+    } catch (err) {
+      storage.failGame(gameId);
+      cleanupLobbyRuntime(id);
+      throw err;
+    }
 
     logger.info(`Starting new Diplomacy game (${gameId}) for lobby ${id}...`);
 
