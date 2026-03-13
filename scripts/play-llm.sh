@@ -12,6 +12,9 @@ POWERS=(England France Germany Italy Austria Russia Turkey)
 AGENT_TYPE="${AGENT_TYPE:-llm}"
 AGENT_CONFIG="${AGENT_CONFIG:-diplomaicy.config.json}"
 SERVER_URL="http://localhost:${PORT:-3000}/trpc"
+MAX_YEARS="${MAX_YEARS:-5}"
+PHASE_DELAY="${PHASE_DELAY:-5000}"
+REMOTE_TIMEOUT="${REMOTE_TIMEOUT:-120000}"
 PIDS=()
 
 cleanup() {
@@ -25,9 +28,9 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # Start server with remote config (server always uses remote since agents are separate processes)
-MAX_YEARS="${MAX_YEARS:-5}" \
-PHASE_DELAY="${PHASE_DELAY:-5000}" \
-REMOTE_TIMEOUT="${REMOTE_TIMEOUT:-120000}" \
+MAX_YEARS="$MAX_YEARS" \
+PHASE_DELAY="$PHASE_DELAY" \
+REMOTE_TIMEOUT="$REMOTE_TIMEOUT" \
 DIPLOMAICY_CONFIG=diplomaicy.config.remote.json \
   npx tsx src/ui/server.ts &
 PIDS+=($!)
@@ -47,12 +50,9 @@ for i in $(seq 1 30); do
 done
 
 # Create a lobby via tRPC
-MAX_YEARS_VAL="${MAX_YEARS:-5}"
-PHASE_DELAY_VAL="${PHASE_DELAY:-5000}"
-REMOTE_TIMEOUT_VAL="${REMOTE_TIMEOUT:-120000}"
 LOBBY_RESPONSE=$(curl -sf "${SERVER_URL}/lobby.create" \
   -H 'content-type: application/json' \
-  -d "{\"name\":\"CLI Game\",\"maxYears\":${MAX_YEARS_VAL},\"phaseDelayMs\":${PHASE_DELAY_VAL},\"remoteTimeoutMs\":${REMOTE_TIMEOUT_VAL},\"autostart\":true,\"agentConfig\":{\"defaultAgent\":{\"type\":\"remote\"}}}")
+  -d "{\"name\":\"CLI Game\",\"maxYears\":${MAX_YEARS},\"phaseDelayMs\":${PHASE_DELAY},\"remoteTimeoutMs\":${REMOTE_TIMEOUT},\"autostart\":true,\"agentConfig\":{\"defaultAgent\":{\"type\":\"remote\"}}}")
 
 if [ -z "$LOBBY_RESPONSE" ]; then
   echo "Failed to create lobby" >&2
