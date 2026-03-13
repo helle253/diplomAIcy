@@ -1,4 +1,45 @@
-import { ChatMessage, LLMClient, LLMClientConfig } from './llm-client';
+import {
+  ChatMessage,
+  LLMClient,
+  LLMClientConfig,
+  ToolDefinition,
+  ToolExecutor,
+} from './llm-client';
+
+/** Anthropic tool_use content block shape. */
+interface AnthropicToolUseBlock {
+  type: 'tool_use';
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
+/** Anthropic text content block shape. */
+interface AnthropicTextBlock {
+  type: 'text';
+  text: string;
+}
+
+/** Anthropic tool_result content block shape. */
+interface AnthropicToolResultBlock {
+  type: 'tool_result';
+  tool_use_id: string;
+  content: string;
+}
+
+type AnthropicContentBlock = AnthropicTextBlock | AnthropicToolUseBlock;
+
+/** A message in the Anthropic conversation format. */
+type AnthropicMessage = {
+  role: 'user' | 'assistant';
+  content: string | (AnthropicContentBlock | AnthropicToolResultBlock)[];
+};
+
+/** Shape of the Anthropic Messages API response. */
+interface AnthropicResponse {
+  content?: AnthropicContentBlock[];
+  stop_reason?: 'end_turn' | 'tool_use' | 'max_tokens' | 'stop_sequence';
+}
 
 /**
  * LLM client for the Anthropic Messages API.
@@ -17,10 +58,66 @@ export class AnthropicClient implements LLMClient {
     };
   }
 
-  async complete(messages: ChatMessage[]): Promise<string> {
+  private async fetchWithRetry(body: Record<string, unknown>): Promise<AnthropicResponse> {
     const url = `${this.config.baseUrl}/v1/messages`;
+    const MAX_RETRIES = 6;
+    const REQUEST_TIMEOUT_MS = parseInt(process.env.LLM_REQUEST_TIMEOUT_MS ?? '120000', 10);
+    let lastError: Error | null = null;
 
-    // Separate system message from the rest
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      if (attempt > 0) {
+        const baseDelay = Math.min(1000 * Math.pow(2, attempt), 60000);
+        const jitter = Math.random() * baseDelay * 0.5;
+        await new Promise((r) => setTimeout(r, baseDelay + jitter));
+      }
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': this.config.apiKey,
+            'anthropic-version': '2023-06-01',
+          },
+          signal: controller.signal,
+          body: JSON.stringify(body),
+        });
+
+        if (!response.ok) {
+          const text = await response.text().catch(() => '');
+          const err = new Error(`Anthropic API error ${response.status}: ${text.slice(0, 200)}`);
+          if (response.status === 429 || response.status >= 500) {
+            const retryAfter = response.headers.get('retry-after');
+            if (retryAfter && attempt < MAX_RETRIES - 1) {
+              const waitMs = parseInt(retryAfter, 10) * 1000;
+              if (waitMs > 0 && waitMs <= 120000) {
+                await new Promise((r) => setTimeout(r, waitMs));
+              }
+            }
+            lastError = err;
+            continue;
+          }
+          throw err;
+        }
+
+        return (await response.json()) as AnthropicResponse;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        if (err instanceof TypeError) continue;
+        if (lastError.name === 'AbortError') continue;
+        if (lastError.message.startsWith('Anthropic API error')) throw lastError;
+        continue;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    throw lastError ?? new Error('Anthropic request failed after retries');
+  }
+
+  async complete(messages: ChatMessage[]): Promise<string> {
     const systemMsg = messages.find((m) => m.role === 'system');
     const nonSystemMsgs = messages.filter((m) => m.role !== 'system');
 
@@ -35,63 +132,95 @@ export class AnthropicClient implements LLMClient {
       body.system = systemMsg.content;
     }
 
-    const MAX_RETRIES = 6;
-    let lastError: Error | null = null;
+    const data = await this.fetchWithRetry(body);
 
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      if (attempt > 0) {
-        const baseDelay = Math.min(1000 * Math.pow(2, attempt), 60000);
-        const jitter = Math.random() * baseDelay * 0.5;
-        await new Promise((r) => setTimeout(r, baseDelay + jitter));
+    const textBlock = data.content?.find((b): b is AnthropicTextBlock => b.type === 'text');
+    if (!textBlock?.text) {
+      throw new Error('Unexpected Anthropic response: no text content block');
+    }
+
+    return textBlock.text;
+  }
+
+  async runToolLoop(
+    messages: ChatMessage[],
+    tools: ToolDefinition[],
+    executor: ToolExecutor,
+    maxIterations = 30,
+  ): Promise<string> {
+    // Convert ChatMessage[] to Anthropic conversation format
+    const systemMsg = messages.find((m) => m.role === 'system');
+    const nonSystemMsgs = messages.filter((m) => m.role !== 'system');
+    const conversation: AnthropicMessage[] = nonSystemMsgs.map((m) => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content as string,
+    }));
+
+    // Convert OpenAI-format tool definitions to Anthropic format
+    const anthropicTools = tools.map((t) => ({
+      name: t.function.name,
+      description: t.function.description,
+      input_schema: t.function.parameters,
+    }));
+
+    for (let i = 0; i < maxIterations; i++) {
+      const body: Record<string, unknown> = {
+        model: this.config.model,
+        max_tokens: this.config.maxTokens,
+        temperature: this.config.temperature,
+        messages: conversation,
+      };
+
+      if (systemMsg) {
+        body.system = systemMsg.content;
       }
 
-      try {
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': this.config.apiKey,
-            'anthropic-version': '2023-06-01',
-          },
-          body: JSON.stringify(body),
+      if (anthropicTools.length > 0) {
+        body.tools = anthropicTools;
+      }
+
+      const data = await this.fetchWithRetry(body);
+
+      if (!data.content || data.content.length === 0) {
+        return '';
+      }
+
+      // Extract text and tool_use blocks from response
+      const textBlocks = data.content.filter((b): b is AnthropicTextBlock => b.type === 'text');
+      const toolUseBlocks = data.content.filter(
+        (b): b is AnthropicToolUseBlock => b.type === 'tool_use',
+      );
+      const textContent = textBlocks.map((b) => b.text).join('');
+
+      // No tool calls — model is done
+      if (toolUseBlocks.length === 0) {
+        return textContent;
+      }
+
+      // Append assistant message with full content blocks
+      conversation.push({ role: 'assistant', content: data.content });
+
+      // Execute each tool call and build tool_result blocks
+      const toolResults: AnthropicToolResultBlock[] = [];
+      for (const toolUse of toolUseBlocks) {
+        const result = await executor.execute(toolUse.name, toolUse.input);
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: toolUse.id,
+          content: result,
         });
+      }
 
-        if (!response.ok) {
-          const text = await response.text().catch(() => '');
-          const err = new Error(`Anthropic API error ${response.status}: ${text.slice(0, 200)}`);
-          if (response.status === 429 || response.status >= 500) {
-            // Respect retry-after header if present
-            const retryAfter = response.headers.get('retry-after');
-            if (retryAfter && attempt < MAX_RETRIES - 1) {
-              const waitMs = parseInt(retryAfter, 10) * 1000;
-              if (waitMs > 0 && waitMs <= 120000) {
-                await new Promise((r) => setTimeout(r, waitMs));
-              }
-            }
-            lastError = err;
-            continue;
-          }
-          throw err;
-        }
+      // Append tool results as a user message
+      conversation.push({ role: 'user', content: toolResults });
 
-        const data = (await response.json()) as {
-          content?: { type: string; text?: string }[];
-        };
-
-        const textBlock = data.content?.find((b) => b.type === 'text');
-        if (!textBlock?.text) {
-          throw new Error('Unexpected Anthropic response: no text content block');
-        }
-
-        return textBlock.text;
-      } catch (err) {
-        lastError = err instanceof Error ? err : new Error(String(err));
-        if (err instanceof TypeError) continue;
-        if (lastError.message.startsWith('Anthropic API error')) throw lastError;
-        continue;
+      // Check if executor is ready (model called ready() tool)
+      if (executor.isReady) {
+        return textContent;
       }
     }
 
-    throw lastError ?? new Error('Anthropic request failed after retries');
+    // Max iterations reached
+    return '';
   }
 }
