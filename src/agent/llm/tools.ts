@@ -11,6 +11,7 @@ export interface ToolGameClient {
       mutate: (input: { to: string | string[]; content: string }) => Promise<{ ok: boolean }>;
     };
     submitReady: { mutate: () => Promise<{ ok: boolean }> };
+    getRules: { query: (input: { lobbyId: string }) => Promise<{ rules: string }> };
   };
 }
 
@@ -44,6 +45,7 @@ export class GameToolExecutor implements ToolExecutor {
     private client: ToolGameClient,
     private gameState: GameState,
     private power: Power,
+    private lobbyId: string,
   ) {}
 
   async execute(name: string, args: Record<string, unknown>): Promise<string> {
@@ -70,6 +72,8 @@ export class GameToolExecutor implements ToolExecutor {
         return this.sendMessage(args);
       case 'ready':
         return this.ready();
+      case 'getRules':
+        return this.getRules();
       default:
         return JSON.stringify({ error: `Unknown tool: ${name}` });
     }
@@ -315,6 +319,15 @@ export class GameToolExecutor implements ToolExecutor {
       return JSON.stringify({ error: String(e) });
     }
   }
+
+  private async getRules(): Promise<string> {
+    try {
+      const result = await this.client.game.getRules.query({ lobbyId: this.lobbyId });
+      return result.rules;
+    } catch (e) {
+      return JSON.stringify({ error: String(e) });
+    }
+  }
 }
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
@@ -553,6 +566,19 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       name: 'ready',
       description:
         'Signal that you are ready to end the diplomacy phase. Call this when done sending messages.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'getRules',
+      description:
+        'Get the standard Diplomacy game rules and instructions. Use this to refresh your understanding of game mechanics.',
       parameters: {
         type: 'object',
         properties: {},
