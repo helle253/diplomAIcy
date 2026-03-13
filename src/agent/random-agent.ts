@@ -340,10 +340,6 @@ export async function connectRandomAgent(
 
   // ── Phase handler ──────────────────────────────────────────────────
 
-  const PHASE_STAGGER_MAX = parseInt(process.env.PHASE_STAGGER ?? '15000', 10);
-  const agentStagger = Math.floor(Math.random() * PHASE_STAGGER_MAX);
-  logger.info(`[${power}] Phase stagger: ${(agentStagger / 1000).toFixed(1)}s`);
-
   async function handlePhase(gameState: GameState, deadlineMs: number) {
     const targetPhaseKey = phaseKey(gameState);
     const isStale = () => targetPhaseKey !== lastHandledPhase;
@@ -351,16 +347,6 @@ export async function connectRandomAgent(
     if (deadlineMs > 0) {
       const remaining = Math.max(0, Math.round((deadlineMs - Date.now()) / 1000));
       logger.info(`[${power}] Phase ${gameState.phase.type} -- deadline in ${remaining}s`);
-    }
-
-    if (agentStagger > 0) {
-      logger.info(`[${power}] Staggering by ${(agentStagger / 1000).toFixed(1)}s`);
-      await new Promise((r) => setTimeout(r, agentStagger));
-    }
-
-    if (isStale()) {
-      logger.info(`[${power}] Phase advanced during stagger; aborting stale work`);
-      return;
     }
 
     try {

@@ -1,6 +1,7 @@
 import 'dotenv/config';
 
 import { Power } from '../../engine/types';
+import { AnthropicClient } from '../llm/anthropic-client';
 import { AgentConfig, getAgentConfig, loadConfig, toLLMClientConfig } from '../llm/config';
 import { OpenAICompatibleClient } from '../llm/llm-client';
 import { connectToolAgent } from '../llm/tool-agent';
@@ -121,11 +122,11 @@ async function main() {
       );
       process.exit(1);
     }
-    if (cfg.provider === 'anthropic') {
-      console.error('Anthropic provider does not support tool calling yet. Use openai provider.');
-      process.exit(1);
-    }
-    const llmClient = new OpenAICompatibleClient(toLLMClientConfig(cfg));
+    const llmConfig = toLLMClientConfig(cfg);
+    const llmClient =
+      cfg.provider === 'anthropic'
+        ? new AnthropicClient(llmConfig)
+        : new OpenAICompatibleClient(llmConfig);
     console.log(
       `Starting tool-calling agent for ${power} (${cfg.provider ?? 'openai'}/${cfg.model}), connecting to ${server}...`,
     );
