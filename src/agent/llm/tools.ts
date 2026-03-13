@@ -191,6 +191,9 @@ export class GameToolExecutor implements ToolExecutor {
   }
 
   private async submitOrders(args: Record<string, unknown>): Promise<string> {
+    if (!Array.isArray(args.orders)) {
+      return JSON.stringify({ error: 'orders must be an array' });
+    }
     const rawOrders = args.orders as FlatOrder[];
     const validTypes = new Set<string>([
       OrderType.Hold,
@@ -245,6 +248,9 @@ export class GameToolExecutor implements ToolExecutor {
   }
 
   private async submitRetreats(args: Record<string, unknown>): Promise<string> {
+    if (!Array.isArray(args.retreats)) {
+      return JSON.stringify({ error: 'retreats must be an array' });
+    }
     const rawRetreats = args.retreats as FlatRetreat[];
 
     const retreats = rawRetreats.map((r) => {
@@ -269,6 +275,9 @@ export class GameToolExecutor implements ToolExecutor {
   }
 
   private async submitBuilds(args: Record<string, unknown>): Promise<string> {
+    if (!Array.isArray(args.builds)) {
+      return JSON.stringify({ error: 'builds must be an array' });
+    }
     const rawBuilds = args.builds as FlatBuild[];
 
     try {
@@ -280,8 +289,14 @@ export class GameToolExecutor implements ToolExecutor {
   }
 
   private async sendMessage(args: Record<string, unknown>): Promise<string> {
+    if (typeof args.content !== 'string') {
+      return JSON.stringify({ error: 'content must be a string' });
+    }
+    if (typeof args.to !== 'string' && !Array.isArray(args.to)) {
+      return JSON.stringify({ error: 'to must be a string or array of strings' });
+    }
     const to = args.to as string | string[];
-    const content = args.content as string;
+    const content = args.content;
 
     try {
       const result = await this.client.game.sendMessage.mutate({ to, content });

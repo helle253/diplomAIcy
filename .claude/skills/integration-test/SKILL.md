@@ -119,7 +119,7 @@ LLM_BASE_URL=http://localhost:11434/v1  # or wherever Ollama is
 ### Timeouts
 
 - `remoteTimeoutMs` in lobby creation controls how long the server waits for agent submissions
-- Increase for larger/slower models: `"remoteTimeoutMs": 180000`
+- The default of 600000 (10 min) is generous; for faster models you can decrease it (e.g. `"remoteTimeoutMs": 180000` for 3 min)
 - `PHASE_DELAY` env var on the server controls delay between phases
 
 ## What to watch for
