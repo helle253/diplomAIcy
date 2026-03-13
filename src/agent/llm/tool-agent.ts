@@ -133,28 +133,10 @@ export async function connectToolAgent(
 
   // ── Phase handler ──────────────────────────────────────────────────
 
-  // Random per-agent stagger so agents don't all fire opening messages simultaneously.
-  const PHASE_STAGGER_MAX = parseInt(process.env.PHASE_STAGGER ?? '15000', 10);
-  const agentStagger = Math.floor(Math.random() * PHASE_STAGGER_MAX);
-  logger.info(`[${power}] Phase stagger: ${(agentStagger / 1000).toFixed(1)}s`);
-
   async function handlePhase(gameState: GameState, deadlineMs: number) {
     if (deadlineMs > 0) {
       const remaining = Math.max(0, Math.round((deadlineMs - Date.now()) / 1000));
       logger.info(`[${power}] Phase ${gameState.phase.type} -- deadline in ${remaining}s`);
-    }
-
-    // Stagger so agents don't all fire simultaneously, but never past the deadline
-    if (agentStagger > 0) {
-      const SAFETY_BUFFER = 500;
-      const cappedStagger =
-        deadlineMs > 0
-          ? Math.max(0, Math.min(agentStagger, deadlineMs - Date.now() - SAFETY_BUFFER))
-          : agentStagger;
-      if (cappedStagger > 0) {
-        logger.info(`[${power}] Staggering by ${(cappedStagger / 1000).toFixed(1)}s`);
-        await new Promise((r) => setTimeout(r, cappedStagger));
-      }
     }
 
     if (!llm.runToolLoop) {
