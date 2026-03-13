@@ -62,6 +62,7 @@ interface LobbyRuntime {
   allMessages: Message[];
   gameId: string;
   clients: Map<WebSocket, Power | undefined>; // ws → power (undefined = spectator)
+  agentConnections: Array<{ unsubscribe: () => void }>;
 }
 
 const lobbyRuntimes = new Map<string, LobbyRuntime>();
@@ -69,6 +70,13 @@ const lobbyRuntimes = new Map<string, LobbyRuntime>();
 function cleanupLobbyRuntime(lobbyId: string): void {
   const runtime = lobbyRuntimes.get(lobbyId);
   if (!runtime) return;
+  for (const conn of runtime.agentConnections) {
+    try {
+      conn.unsubscribe();
+    } catch {
+      // Agent may already be disconnected
+    }
+  }
   for (const client of runtime.clients.keys()) {
     client.close();
   }
@@ -129,6 +137,7 @@ function startServer(): void {
       allMessages: [],
       gameId,
       clients: new Map(),
+      agentConnections: [],
     };
     lobbyRuntimes.set(id, runtime);
 
@@ -152,12 +161,14 @@ function startServer(): void {
           );
         }
         const llmClient = new OpenAICompatibleClient(toLLMClientConfig(agentCfg));
-        connectToolAgent(agentClient, llmClient, power, id);
+        const handle = await connectToolAgent(agentClient, llmClient, power, id);
+        runtime.agentConnections.push(handle);
         logger.info(
           `  ${power}: LLM tool-calling (${agentCfg.provider ?? 'openai'} / ${toLLMClientConfig(agentCfg).model})`,
         );
       } else {
-        connectRandomAgent(agentClient, power, id);
+        const handle = await connectRandomAgent(agentClient, power, id);
+        runtime.agentConnections.push(handle);
         logger.info(`  ${power}: Random`);
       }
     }
