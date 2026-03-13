@@ -11,6 +11,7 @@ import { connectToolAgent } from '../../../src/agent/llm/tool-agent';
 import { connectRandomAgent } from '../../../src/agent/random-agent';
 import { createGameClient } from '../../../src/agent/remote/client';
 import { Power } from '../../../src/engine/types';
+import { NoteKeepingClient } from './note-keeping-client';
 
 const VALID_POWERS = new Set<string>(Object.values(Power));
 
@@ -23,12 +24,14 @@ function parseArgs(): {
   server: string;
   type?: string;
   lobbyId: string;
+  notesDir: string;
 } {
   const args = process.argv.slice(2);
   let power: string | undefined;
   let server = process.env.GAME_SERVER ?? 'http://localhost:3000/trpc';
   let type: string | undefined;
   let lobbyId: string | undefined;
+  let notesDir: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--power' && args[i + 1]) {
@@ -39,12 +42,14 @@ function parseArgs(): {
       type = args[++i];
     } else if (args[i] === '--lobby' && args[i + 1]) {
       lobbyId = args[++i];
+    } else if (args[i] === '--notes-dir' && args[i + 1]) {
+      notesDir = args[++i];
     }
   }
 
   if (!power || !isPower(power)) {
     console.error(
-      `Usage: run-with-notes.ts --power <Power> --lobby <lobbyId> [--server <url>] [--type random|llm]\n` +
+      `Usage: npx tsx run-with-notes.ts --power <Power> --lobby <lobbyId> --notes-dir <dir> [--server <url>] [--type random|llm]\n` +
         `  Valid powers: ${[...VALID_POWERS].join(', ')}`,
     );
     process.exit(1);
@@ -55,35 +60,41 @@ function parseArgs(): {
     process.exit(1);
   }
 
-  return { power, server, type, lobbyId };
-}
+  if (!notesDir) {
+    console.error('--notes-dir is required');
+    process.exit(1);
+  }
 
-const VALID_AGENT_TYPES = new Set(['llm', 'random', 'remote']);
+  return { power, server, type, lobbyId, notesDir };
+}
 
 function resolveAgentConfig(power: Power, typeOverride?: string): AgentConfig {
   const gameConfig = loadConfig();
   const cfg = getAgentConfig(gameConfig, power);
+
   if (typeOverride) {
-    if (!VALID_AGENT_TYPES.has(typeOverride)) {
-      console.error(`Unknown agent type: ${typeOverride}. Valid types: llm, random`);
-      process.exit(1);
+    if (typeOverride !== 'llm' && typeOverride !== 'random') {
+      throw new Error(`Unsupported --type "${typeOverride}". Expected llm or random.`);
     }
-    cfg.type = typeOverride as AgentConfig['type'];
+    cfg.type = typeOverride;
   }
+
   if ((cfg as { type: string }).type === 'remote') {
     cfg.type = 'llm';
   }
+
   if (cfg.type === 'llm') {
     cfg.provider ??= (process.env.LLM_PROVIDER as AgentConfig['provider']) ?? 'openai';
     cfg.baseUrl ??= process.env.LLM_BASE_URL;
     cfg.apiKey ??= process.env.LLM_API_KEY;
     cfg.model ??= process.env.LLM_MODEL;
   }
+
   return cfg;
 }
 
 async function main() {
-  const { power, server, type, lobbyId } = parseArgs();
+  const { power, server, type, lobbyId, notesDir } = parseArgs();
   const cfg = resolveAgentConfig(power, type);
 
   // Join lobby
@@ -116,12 +127,12 @@ async function main() {
     throw new Error(`Lobby ${lobbyId} never became playable before timeout (${readyTimeoutMs}ms)`);
   }
 
-  // Connect agent
+  // Connect agent with NoteKeepingClient wrapper
   if (cfg.type === 'llm') {
     if (!cfg.baseUrl || !cfg.apiKey || !cfg.model) {
       console.error(
         `LLM agent for ${power} requires baseUrl, apiKey, model.\n` +
-          `Set via config file or env vars: LLM_BASE_URL, LLM_API_KEY, LLM_MODEL`,
+          `Set via config file (powers.${power}) or env vars: LLM_BASE_URL, LLM_API_KEY, LLM_MODEL`,
       );
       process.exit(1);
     }
@@ -129,9 +140,10 @@ async function main() {
       console.error('Anthropic provider does not support tool calling yet. Use openai provider.');
       process.exit(1);
     }
-    const llmClient = new OpenAICompatibleClient(toLLMClientConfig(cfg));
+    const rawClient = new OpenAICompatibleClient(toLLMClientConfig(cfg));
+    const llmClient = new NoteKeepingClient(rawClient, notesDir, power, lobbyId);
     console.log(
-      `Starting tool-calling agent for ${power} (${cfg.provider ?? 'openai'}/${cfg.model}), connecting to ${server}...`,
+      `Starting tool-calling agent with notes for ${power} (${cfg.provider ?? 'openai'}/${cfg.model}), notes → ${notesDir}/${lobbyId}/${power}.md`,
     );
     await connectToolAgent(trpcClient, llmClient, power, lobbyId);
   } else {
@@ -139,7 +151,7 @@ async function main() {
     await connectRandomAgent(trpcClient, power, lobbyId);
   }
 
-  // Keep alive
+  // Keep the process alive
   await new Promise(() => {});
 }
 

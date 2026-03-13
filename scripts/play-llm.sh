@@ -17,6 +17,14 @@ PHASE_DELAY="${PHASE_DELAY:-5000}"
 REMOTE_TIMEOUT="${REMOTE_TIMEOUT:-120000}"
 PIDS=()
 
+# Validate numeric env vars early
+for v in MAX_YEARS PHASE_DELAY REMOTE_TIMEOUT; do
+  if ! [[ "${!v}" =~ ^[0-9]+$ ]]; then
+    echo "$v must be a non-negative integer (got '${!v}')" >&2
+    exit 1
+  fi
+done
+
 cleanup() {
   echo ""
   echo "Shutting down..."
@@ -59,12 +67,10 @@ if [ -z "$LOBBY_RESPONSE" ]; then
   exit 1
 fi
 
-LOBBY_ID=$(echo "$LOBBY_RESPONSE" | jq -r '.result.data.lobbyId // .lobbyId // empty')
-
-if [ -z "$LOBBY_ID" ]; then
-  echo "Failed to extract lobby ID from response: $LOBBY_RESPONSE" >&2
+LOBBY_ID=$(jq -er '.result.data.lobbyId // .lobbyId // empty' <<<"$LOBBY_RESPONSE") || {
+  echo "Failed to parse lobby.create response: $LOBBY_RESPONSE" >&2
   exit 1
-fi
+}
 
 echo "Created lobby: $LOBBY_ID"
 
