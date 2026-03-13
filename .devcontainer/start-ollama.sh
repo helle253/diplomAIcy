@@ -23,6 +23,9 @@ for i in $(seq 1 30); do
 done
 
 echo "Pulling model: $MODEL"
-curl -s http://ollama:11434/api/pull -d "{\"name\":\"$MODEL\"}" | tail -1
+if ! curl -sf http://ollama:11434/api/pull -d "{\"name\":\"$MODEL\"}" | tail -1; then
+  echo "ERROR: Failed to pull model $MODEL"
+  exit 1
+fi
 
 echo "Ollama ready with model $MODEL"
