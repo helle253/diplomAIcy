@@ -59,7 +59,7 @@ if [ -z "$LOBBY_RESPONSE" ]; then
   exit 1
 fi
 
-LOBBY_ID=$(echo "$LOBBY_RESPONSE" | node -e "process.stdin.resume();let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const r=JSON.parse(d);console.log(r.result?.data?.lobbyId??r.lobbyId??'')})")
+LOBBY_ID=$(echo "$LOBBY_RESPONSE" | jq -r '.result.data.lobbyId // .lobbyId // empty')
 
 if [ -z "$LOBBY_ID" ]; then
   echo "Failed to extract lobby ID from response: $LOBBY_RESPONSE" >&2
