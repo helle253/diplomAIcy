@@ -20,6 +20,7 @@ import { describeProcedure } from '../game/describe';
 import { LobbyManager } from '../game/lobby-manager';
 import { createLobbyRouter } from '../game/lobby-router';
 import type { GameEvent, TurnRecord } from '../game/manager';
+import { createPromptRouter } from '../game/prompt-router';
 import { createGameRouter } from '../game/router';
 import { GameStorage } from '../game/storage';
 import { createContext, router } from '../game/trpc';
@@ -203,6 +204,19 @@ function startServer(): void {
           continue;
         }
 
+        // Look up custom prompt if assigned
+        let customSystemPrompt: string | undefined;
+        const assignment = lobby.config.promptAssignments?.[power];
+        if (assignment && agentCfg.type === 'llm') {
+          const snapshot = storage.snapshotGamePrompt(
+            gameId,
+            power,
+            assignment.promptId,
+            assignment.revision,
+          );
+          customSystemPrompt = snapshot.contentSnapshot;
+        }
+
         // Create tRPC client to self (localhost)
         const joinClient = createGameClient(`http://localhost:${PORT}/trpc`);
         const { seatToken } = await joinClient.lobby.join.mutate({ lobbyId: id, power });
@@ -214,7 +228,13 @@ function startServer(): void {
             agentCfg.provider === 'anthropic'
               ? new AnthropicClient(llmConfig)
               : new OpenAICompatibleClient(llmConfig);
-          const handle = await connectToolAgent(agentClient, llmClient, power, id);
+          const handle = await connectToolAgent(
+            agentClient,
+            llmClient,
+            power,
+            id,
+            customSystemPrompt,
+          );
           runtime.agentConnections.push(handle);
           logger.info(
             `  ${power}: LLM tool-calling (${agentCfg.provider ?? 'openai'} / ${toLLMClientConfig(agentCfg).model})`,
@@ -262,9 +282,15 @@ function startServer(): void {
   });
 
   // Create merged AppRouter
-  const lobbyRouter = createLobbyRouter(lobbyManager, defaults);
+  const lobbyRouter = createLobbyRouter(lobbyManager, defaults, storage);
   const gameRouter = createGameRouter(lobbyManager);
-  const appRouter = router({ describe: describeProcedure, lobby: lobbyRouter, game: gameRouter });
+  const promptRouter = createPromptRouter(storage);
+  const appRouter = router({
+    describe: describeProcedure,
+    lobby: lobbyRouter,
+    game: gameRouter,
+    prompt: promptRouter,
+  });
 
   // Serve static files from Vite build output
   // Works with both `tsx src/ui/server.ts` (__dirname=src/ui) and `node dist/ui/server.js` (__dirname=dist/ui)
@@ -384,5 +410,6 @@ export type AppRouter = ReturnType<
     describe: typeof describeProcedure;
     lobby: ReturnType<typeof createLobbyRouter>;
     game: ReturnType<typeof createGameRouter>;
+    prompt: ReturnType<typeof createPromptRouter>;
   }>
 >;

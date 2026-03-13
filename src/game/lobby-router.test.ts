@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { unlinkSync } from 'fs';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { LobbyConfig } from './lobby-manager';
 import { LobbyManager } from './lobby-manager';
 import { createLobbyRouter, type LobbyDefaults } from './lobby-router';
+import { GameStorage } from './storage';
 import { createContext, router } from './trpc';
 
 const DEFAULT_CONFIG: LobbyConfig = {
@@ -65,6 +67,63 @@ describe('lobby-router', () => {
       await expect(caller.lobby.get({ id: 'nonexistent' })).rejects.toMatchObject({
         code: 'NOT_FOUND',
       });
+    });
+  });
+
+  describe('create with promptAssignments', () => {
+    const TEST_DB = 'test-lobby-router-' + process.pid + '.db';
+    let storage: GameStorage;
+
+    beforeEach(() => {
+      storage = new GameStorage(TEST_DB);
+    });
+
+    afterEach(() => {
+      storage.close();
+      try {
+        unlinkSync(TEST_DB);
+      } catch {}
+      try {
+        unlinkSync(TEST_DB + '-wal');
+      } catch {}
+      try {
+        unlinkSync(TEST_DB + '-shm');
+      } catch {}
+    });
+
+    function createCallerWithStorage(lobbyManager: LobbyManager) {
+      const lobbyRouter = createLobbyRouter(lobbyManager, DEFAULTS, storage);
+      const appRouter = router({ lobby: lobbyRouter });
+      return appRouter.createCaller(createContext({ req: { headers: {} } }));
+    }
+
+    it('rejects lobby creation with non-existent promptId', async () => {
+      const lm = new LobbyManager();
+      const caller = createCallerWithStorage(lm);
+
+      await expect(
+        caller.lobby.create({
+          name: 'Test',
+          promptAssignments: {
+            England: { promptId: 'nonexistent-id' },
+          },
+        }),
+      ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+    });
+
+    it('accepts lobby creation with valid promptId', async () => {
+      const lm = new LobbyManager();
+      const caller = createCallerWithStorage(lm);
+      const { promptId } = storage.createPrompt('Test Prompt', 'Be aggressive', 'public');
+
+      const result = await caller.lobby.create({
+        name: 'Test',
+        promptAssignments: {
+          England: { promptId },
+        },
+      });
+
+      expect(result.lobbyId).toBeDefined();
     });
   });
 });

@@ -18,6 +18,7 @@ export interface LobbyConfig {
   postGamePress?: boolean;
   fastAdjudication?: boolean;
   allowDraws?: boolean;
+  promptAssignments?: Partial<Record<Power, { promptId: string; revision?: number }>>;
 }
 
 export interface Lobby {
@@ -61,7 +62,8 @@ export class LobbyManager {
   joinLobby(lobbyId: string, power: Power): { seatToken: string } {
     const lobby = this.lobbies.get(lobbyId);
     if (!lobby) throw new Error(`Lobby ${lobbyId} not found`);
-    if (lobby.status !== 'waiting') throw new Error(`Lobby ${lobbyId} is not accepting players`);
+    if (lobby.status !== 'waiting' && lobby.status !== 'starting')
+      throw new Error(`Lobby ${lobbyId} is not accepting players`);
     if (lobby.seats.has(power)) throw new Error(`${power} is already claimed in lobby ${lobbyId}`);
 
     const seatToken = randomUUID();

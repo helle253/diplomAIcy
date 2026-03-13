@@ -16,7 +16,7 @@ const MAP_QUERY_TOOLS = [
   'getSupplyCenterCounts',
   'getPhaseInfo',
 ];
-const COMMON_TOOLS = ['sendMessage', 'ready'];
+const COMMON_TOOLS = ['sendMessage', 'ready', 'getRules'];
 
 function filterToolsByPhase(phaseType: PhaseType): ToolDefinition[] {
   const allowed = new Set([...MAP_QUERY_TOOLS, ...COMMON_TOOLS]);
@@ -45,13 +45,14 @@ export async function connectToolAgent(
   llm: LLMClient,
   power: Power,
   lobbyId: string,
+  customSystemPrompt?: string,
 ): Promise<{ unsubscribe: () => void }> {
   // 1. Fetch initial state
   const serializedState = await client.game.getState.query({ lobbyId });
   const initialState = deserializeGameState(serializedState as SerializedGameState);
 
   // 2. Build system prompt (once at init)
-  const systemPrompt = buildToolSystemPrompt(power, initialState.endYear);
+  const systemPrompt = customSystemPrompt ?? buildToolSystemPrompt(power, initialState.endYear);
 
   // ── Serialized work queue ──────────────────────────────────────────
   const MESSAGE_BATCH_DELAY = parseInt(process.env.MESSAGE_BATCH_DELAY ?? '5000', 10);
@@ -144,7 +145,12 @@ export async function connectToolAgent(
       return;
     }
 
-    const executor = new GameToolExecutor(client as unknown as ToolGameClient, gameState, power);
+    const executor = new GameToolExecutor(
+      client as unknown as ToolGameClient,
+      gameState,
+      power,
+      lobbyId,
+    );
     const tools = filterToolsByPhase(gameState.phase.type as PhaseType);
     const userMessage = buildTurnPrompt(gameState, power, []);
 
@@ -188,7 +194,12 @@ export async function connectToolAgent(
         return;
       }
 
-      const executor = new GameToolExecutor(client as unknown as ToolGameClient, gameState, power);
+      const executor = new GameToolExecutor(
+        client as unknown as ToolGameClient,
+        gameState,
+        power,
+        lobbyId,
+      );
       const tools = filterToolsByPhase(gameState.phase.type as PhaseType);
       const userMessage = buildTurnPrompt(gameState, power, messages);
 
