@@ -131,9 +131,12 @@ async function main() {
     );
     // connectToolAgent handles everything — joins directly into tool loop
     await connectToolAgent(trpcClient, llmClient, power, lobbyId);
-  } else {
+  } else if (!cfg.type || cfg.type === 'random') {
     console.log(`Starting random agent for ${power}, connecting to ${server}...`);
     await connectRandomAgent(trpcClient, power, lobbyId);
+  } else {
+    console.error(`Unknown agent type: ${cfg.type}. Valid types: llm, random`);
+    process.exit(1);
   }
 
   // Keep the process alive
