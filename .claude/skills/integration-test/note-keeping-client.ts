@@ -67,7 +67,12 @@ export class NoteKeepingClient implements LLMClient {
     const { notes, cleaned } = extractNotesBlock(response);
     if (notes) {
       const phase = parsePhaseFromPrompt(messages[messages.length - 1]?.content ?? '');
-      await this.saveNotes(phase, notes);
+      try {
+        await this.saveNotes(phase, notes);
+      } catch (error) {
+        // Note persistence is best-effort; do not fail the agent turn.
+        console.warn(`Failed to persist notes for ${this.power} at ${phase}:`, error);
+      }
     }
 
     // 5. Return cleaned response
