@@ -38,10 +38,13 @@ if '$MODEL' not in models:
     sys.exit(1)
 " 2>/dev/null; then
   echo "Model '$MODEL' not found on host. Pulling..."
-  curl -sf "$HOST_URL/api/pull" -d "{\"name\":\"$MODEL\"}" | while read -r line; do
+  if ! curl -sf "$HOST_URL/api/pull" -d "{\"name\":\"$MODEL\"}" | while read -r line; do
     status=$(echo "$line" | python3 -c "import json,sys; print(json.load(sys.stdin).get('status',''))" 2>/dev/null)
     [ -n "$status" ] && echo "  $status"
-  done
+  done; then
+    echo "ERROR: Failed to pull model $MODEL"
+    exit 1
+  fi
 fi
 
 # Write the host-ollama config
