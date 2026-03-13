@@ -60,8 +60,7 @@ export type GameEventType =
   | 'orders_resolved'
   | 'retreats_resolved'
   | 'builds_resolved'
-  | 'game_end'
-  | 'concede';
+  | 'game_end';
 
 export interface GameEvent {
   type: GameEventType;
