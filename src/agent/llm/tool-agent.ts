@@ -144,10 +144,17 @@ export async function connectToolAgent(
       logger.info(`[${power}] Phase ${gameState.phase.type} -- deadline in ${remaining}s`);
     }
 
-    // Stagger so agents don't all fire simultaneously
+    // Stagger so agents don't all fire simultaneously, but never past the deadline
     if (agentStagger > 0) {
-      logger.info(`[${power}] Staggering by ${(agentStagger / 1000).toFixed(1)}s`);
-      await new Promise((r) => setTimeout(r, agentStagger));
+      const SAFETY_BUFFER = 500;
+      const cappedStagger =
+        deadlineMs > 0
+          ? Math.max(0, Math.min(agentStagger, deadlineMs - Date.now() - SAFETY_BUFFER))
+          : agentStagger;
+      if (cappedStagger > 0) {
+        logger.info(`[${power}] Staggering by ${(cappedStagger / 1000).toFixed(1)}s`);
+        await new Promise((r) => setTimeout(r, cappedStagger));
+      }
     }
 
     if (!llm.runToolLoop) {
@@ -269,7 +276,7 @@ export async function connectToolAgent(
         }
         const message = tracked.data;
         if (message.from === power) return;
-        logger.info(`[${power}] <- ${message.from}: ${message.content}`);
+        logger.info(`[${power}] <- ${message.from} (${message.content.length} chars)`);
         enqueueMessage(message);
       },
       onError(err) {

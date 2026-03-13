@@ -8,3 +8,11 @@ sudo chown -R node:npm /usr/local/share/npm-global/lib/node_modules/@anthropic-a
 curl -fsSL https://raw.githubusercontent.com/PeonPing/peon-ping/main/install.sh | bash -s -- --packs=ra_soviet
 
 $HOME/.claude/hooks/peon-ping/peon.sh packs use ra_soviet
+
+# Only pull Ollama model if the service is running (opt-in via docker compose --profile integration)
+if curl -sf http://ollama:11434/api/tags >/dev/null 2>&1; then
+  echo "Ollama detected, pulling model for integration tests..."
+  curl -sf http://ollama:11434/api/pull -d '{"name":"qwen2.5:7b"}' | tail -1 || echo "Warning: Model pull may have failed"
+else
+  echo "Ollama not running — skipping model pull (start with: .devcontainer/start-ollama.sh)"
+fi

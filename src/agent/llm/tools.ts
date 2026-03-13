@@ -1,5 +1,5 @@
 import { PROVINCES } from '../../engine/map';
-import { GameState, OrderType, Power, UnitType } from '../../engine/types';
+import { Coast, GameState, OrderType, Power, UnitType } from '../../engine/types';
 import type { ToolDefinition, ToolExecutor } from './llm-client';
 
 export interface ToolGameClient {
@@ -89,6 +89,7 @@ export class GameToolExecutor implements ToolExecutor {
   private getAdjacentProvinces(args: Record<string, unknown>): string {
     const province = args.province as string;
     const unitType = args.unitType as string | undefined;
+    const coast = args.coast as Coast | undefined;
 
     const prov = PROVINCES[province];
     if (!prov) {
@@ -100,23 +101,22 @@ export class GameToolExecutor implements ToolExecutor {
     if (unitType === 'Army') {
       adjacent = [...prov.adjacency.army];
     } else if (unitType === 'Fleet') {
-      const base = [...prov.adjacency.fleet];
-      // For multi-coast provinces, include coast-specific adjacencies
-      if (prov.adjacency.fleetByCoast) {
-        const coastAdj = Object.values(prov.adjacency.fleetByCoast).flat();
-        const combined = new Set([...base, ...coastAdj]);
-        adjacent = Array.from(combined);
+      if (coast && prov.adjacency.fleetByCoast?.[coast]) {
+        adjacent = [...prov.adjacency.fleetByCoast[coast]];
+      } else if (prov.adjacency.fleetByCoast && !coast) {
+        // Multi-coast province without coast specified — list coasts available
+        return JSON.stringify({
+          error: `Province ${province} has multiple coasts. Specify coast parameter.`,
+          availableCoasts: Object.keys(prov.adjacency.fleetByCoast),
+        });
       } else {
-        adjacent = base;
+        adjacent = [...(prov.adjacency.fleet ?? [])];
       }
     } else {
       // No unitType — return union of army and fleet
       const armySet = new Set(prov.adjacency.army);
-      const fleetBase = [...prov.adjacency.fleet];
-      const fleetExtra = prov.adjacency.fleetByCoast
-        ? Object.values(prov.adjacency.fleetByCoast).flat()
-        : [];
-      const combined = new Set([...armySet, ...fleetBase, ...fleetExtra]);
+      const fleetAdj = [...(prov.adjacency.fleet ?? [])];
+      const combined = new Set([...armySet, ...fleetAdj]);
       adjacent = Array.from(combined);
     }
 
@@ -348,6 +348,12 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
             enum: ['Army', 'Fleet'],
             description:
               'Filter adjacencies by unit type. If omitted, returns union of army and fleet adjacencies.',
+          },
+          coast: {
+            type: 'string',
+            enum: ['nc', 'sc'],
+            description:
+              'Coast for multi-coast provinces (spa, stp, bul). Required for Fleet on these provinces.',
           },
         },
         required: ['province'],

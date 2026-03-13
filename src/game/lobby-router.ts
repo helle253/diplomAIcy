@@ -38,6 +38,7 @@ const lobbyConfigSchema = z.object({
   pressDelayMax: z.number().int().min(0).default(0),
   autostart: z.boolean().default(false),
   fastAdjudication: z.boolean().default(true),
+  allowDraws: z.boolean().default(true),
   agentConfig: z
     .object({
       defaultAgent: agentConfigSchema,
@@ -56,6 +57,7 @@ function serializeLobby(lobby: Lobby) {
     victoryThreshold: lobby.config.victoryThreshold,
     startYear: lobby.config.startYear,
     seatCount: lobby.seats.size,
+    allowDraws: lobby.config.allowDraws,
   };
 }
 
@@ -158,6 +160,7 @@ export function createLobbyRouter(lobbyManager: LobbyManager, defaults: LobbyDef
       pressDelayMax: defaults.pressDelayMax,
       fastAdjudication: defaults.fastAdjudication,
       agentConfig: defaults.agentConfig,
+      allowDraws: true,
     })),
   });
 }

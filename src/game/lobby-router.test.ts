@@ -20,6 +20,7 @@ const DEFAULT_CONFIG: LobbyConfig = {
       England: { type: 'llm', apiKey: 'sk-england-secret' },
     },
   },
+  allowDraws: true,
 };
 
 const DEFAULTS: LobbyDefaults = {

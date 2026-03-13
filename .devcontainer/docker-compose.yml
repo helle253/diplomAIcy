@@ -2,13 +2,21 @@ version: '3.8'
 
 services:
   diplomAIcy:
-    image: mcr.microsoft.com/devcontainers/typescript-node:1-24
+    image: mcr.microsoft.com/devcontainers/typescript-node:4-24
     command: sleep infinity
     environment:
       - CLAUDE_CONFIG_DIR=/home/node/.claude
+      - OLLAMA_HOST=http://ollama:11434
     volumes:
       - ../..:/workspaces:cached
       - claude-config:/home/node/.claude
 
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["integration"]
+    volumes:
+      - ollama-models:/root/.ollama
+
 volumes:
   claude-config:
+  ollama-models:
