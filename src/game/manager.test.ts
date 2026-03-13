@@ -570,3 +570,134 @@ describe('GameManager — Draw voting', () => {
     expect(rejected).toBe(false);
   });
 });
+
+// ============================================================================
+// 10. CONCESSION
+// ============================================================================
+
+describe('GameManager — Concession', () => {
+  it('concede returns true for an active power', () => {
+    const manager = new GameManager();
+    expect(manager.concede(Power.England)).toBe(true);
+  });
+
+  it('concede returns false for an already-conceded power', () => {
+    const manager = new GameManager();
+    manager.concede(Power.England);
+    expect(manager.concede(Power.England)).toBe(false);
+  });
+
+  it('concede returns false for an eliminated power', async () => {
+    const manager = new GameManager({ maxYears: 1 });
+    // Remove all England units to simulate elimination
+    const state = manager.getState();
+    state.units = state.units.filter((u) => u.power !== Power.England);
+    expect(manager.concede(Power.England)).toBe(false);
+  });
+
+  it('getActivePowers excludes conceded powers', () => {
+    const manager = new GameManager();
+    expect(manager.getActivePowers()).toContain(Power.England);
+    manager.concede(Power.England);
+    expect(manager.getActivePowers()).not.toContain(Power.England);
+  });
+
+  it('getConcededPowers tracks conceded powers', () => {
+    const manager = new GameManager();
+    expect(manager.getConcededPowers()).toEqual([]);
+    manager.concede(Power.England);
+    expect(manager.getConcededPowers()).toEqual([Power.England]);
+  });
+
+  it('conceded power is excluded from GameResult.eliminatedPowers', async () => {
+    const manager = new GameManager({ maxYears: 1 });
+    connectAllHold(manager);
+    manager.concede(Power.England);
+
+    const result = await manager.run();
+    expect(result.concededPowers).toContain(Power.England);
+    expect(result.eliminatedPowers).not.toContain(Power.England);
+  });
+
+  it('conceded power units hold and game completes without timeout', async () => {
+    const manager = new GameManager({ maxYears: 1 });
+    // Wire agents for all powers except England
+    for (const power of ALL_POWERS) {
+      if (power !== Power.England) {
+        wireHoldAgent(manager, power);
+      }
+    }
+    // Concede England — its gates should be skipped, not waited on
+    manager.concede(Power.England);
+
+    const start = Date.now();
+    const result = await manager.run();
+    const elapsed = Date.now() - start;
+
+    expect(result).toBeDefined();
+    expect(result.concededPowers).toContain(Power.England);
+    // Should complete quickly (no timeout waiting for England)
+    expect(elapsed).toBeLessThan(5000);
+  });
+
+  it('conceding mid-phase resolves pending gates immediately', async () => {
+    const manager = new GameManager({ maxYears: 1, remoteTimeoutMs: 30_000 });
+    // Wire all powers except England
+    for (const power of ALL_POWERS) {
+      if (power !== Power.England) {
+        wireHoldAgent(manager, power);
+      }
+    }
+
+    // Concede England during the first orders phase
+    manager.onPhaseChange((phase) => {
+      if (phase.type === PhaseType.Orders && phase.season === Season.Spring) {
+        // Use setTimeout to let the gate be created first
+        setTimeout(() => manager.concede(Power.England), 10);
+      }
+    });
+
+    const start = Date.now();
+    const result = await manager.run();
+    const elapsed = Date.now() - start;
+
+    expect(result).toBeDefined();
+    expect(result.concededPowers).toContain(Power.England);
+    // Should NOT have waited 30s for the timeout
+    expect(elapsed).toBeLessThan(5000);
+  });
+
+  it('draw vote counting excludes conceded powers', async () => {
+    const manager = new GameManager({ maxYears: 50 });
+    connectAllHold(manager);
+
+    // Concede England first
+    manager.concede(Power.England);
+
+    // All remaining active powers propose a draw
+    manager.onPhaseChange((phase) => {
+      if (phase.type === PhaseType.Diplomacy) {
+        for (const power of manager.getActivePowers()) {
+          manager.proposeDraw(power);
+        }
+      }
+    });
+
+    const result = await manager.run();
+    // Draw should succeed without England's vote
+    expect(result.winner).toBeNull();
+    expect(result.year).toBe(1901);
+    expect(result.concededPowers).toContain(Power.England);
+  });
+
+  it('broadcasts a global message when a power concedes', () => {
+    const manager = new GameManager();
+    const messages: { content: string }[] = [];
+    manager.onMessage((msg) => messages.push(msg));
+
+    manager.concede(Power.France);
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0].content).toBe('France has conceded.');
+  });
+});

@@ -147,6 +147,7 @@ function serializeState(manager: GameManager) {
     endYear: state.endYear,
     deadlineMs: manager.getDeadline(),
     drawVotes: manager.getDrawVotes(),
+    concededPowers: manager.getConcededPowers(),
   };
 }
 
@@ -245,6 +246,7 @@ export function createGameRouter(lobbyManager: LobbyManager) {
         year: lobby.result.year,
         supplyCenters: Object.fromEntries(lobby.result.supplyCenters),
         eliminatedPowers: lobby.result.eliminatedPowers,
+        concededPowers: lobby.result.concededPowers,
       };
     }),
 
@@ -276,6 +278,12 @@ export function createGameRouter(lobbyManager: LobbyManager) {
     proposeDraw: playerProcedure.mutation(({ ctx }) => {
       const manager = resolveManager(lobbyManager, ctx.lobbyId);
       const accepted = manager.proposeDraw(ctx.power);
+      return { accepted };
+    }),
+
+    concede: playerProcedure.mutation(({ ctx }) => {
+      const manager = resolveManager(lobbyManager, ctx.lobbyId);
+      const accepted = manager.concede(ctx.power);
       return { accepted };
     }),
 
