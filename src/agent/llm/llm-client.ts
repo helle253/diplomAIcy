@@ -61,7 +61,7 @@ export class OpenAICompatibleClient implements LLMClient {
 
   private async fetchWithRetry(url: string, body: Record<string, unknown>): Promise<unknown> {
     const MAX_RETRIES = 6;
-    const REQUEST_TIMEOUT_MS = 120_000;
+    const REQUEST_TIMEOUT_MS = parseInt(process.env.LLM_REQUEST_TIMEOUT_MS ?? '120000', 10);
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {

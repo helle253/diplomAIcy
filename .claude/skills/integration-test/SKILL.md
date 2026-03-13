@@ -122,6 +122,25 @@ LLM_BASE_URL=http://localhost:11434/v1  # or wherever Ollama is
 - The default of 600000 (10 min) is generous; for faster models you can decrease it (e.g. `"remoteTimeoutMs": 180000` for 3 min)
 - `PHASE_DELAY` env var on the server controls delay between phases
 
+## Monitoring
+
+### Ollama Docker Container
+
+Periodically check the Ollama Docker container logs for issues during the game:
+
+```bash
+# Check Ollama health
+curl -s http://ollama:11434/api/ps | python3 -m json.tool
+
+# Watch for aborted requests, OOM, or errors in the Docker logs
+# (run from the host or use `docker logs ollama-1 --tail 20`)
+```
+
+Common issues to watch for:
+- `"aborting completion request due to client closing the connection"` — LLM client timeout too short for CPU inference. Set `LLM_REQUEST_TIMEOUT_MS` env var higher (e.g. `600000` for 10 min)
+- `size_vram: 0` in `api/ps` output — model is running on CPU only, expect slow inference. Use a smaller model (3B or 0.5B)
+- OOM kills — model too large for available memory
+
 ## What to watch for
 
 1. **Invalid orders** — check server logs for orders that silently became Hold (indicates the model isn't following the province ID format)
