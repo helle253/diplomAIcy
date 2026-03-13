@@ -390,13 +390,15 @@ export class GameStorage {
   listPrompts(ownerToken?: string): Omit<StoredPrompt, 'content'>[] {
     let sql = `SELECT p.id, p.name, p.owner_token, p.visibility, p.active_revision, p.created_at, p.updated_at
                FROM prompts p
-               WHERE p.visibility = 'public'`;
+               WHERE (p.visibility = 'public'`;
     const params: unknown[] = [];
 
     if (ownerToken) {
       sql += ` OR p.owner_token = ?`;
       params.push(ownerToken);
     }
+
+    sql += `)`;
 
     sql += ` ORDER BY p.created_at DESC`;
 

@@ -42,7 +42,7 @@ const lobbyConfigSchema = z.object({
   allowDraws: z.boolean().default(true),
   promptAssignments: z
     .record(
-      powerEnum,
+      z.string(),
       z.object({
         promptId: z.string(),
         revision: z.number().int().min(1).optional(),

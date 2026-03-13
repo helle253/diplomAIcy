@@ -6,9 +6,7 @@ import { GameToolExecutor, type ToolGameClient } from './tools';
 
 type MockToolGameClient = {
   game: {
-    [K in keyof ToolGameClient['game']]: K extends 'getRules'
-      ? { query: Mock }
-      : { mutate: Mock };
+    [K in keyof ToolGameClient['game']]: K extends 'getRules' ? { query: Mock } : { mutate: Mock };
   };
 };
 
@@ -231,5 +229,13 @@ describe('GameToolExecutor - action tools', () => {
     expect(result.ok).toBe(true);
     const args = client.game.submitRetreats.mutate.mock.calls[0][0];
     expect(args.retreats[0].type).toBe('Disband');
+  });
+
+  it('getRules calls tRPC query with lobbyId', async () => {
+    const client = makeMockClient();
+    const exec = new GameToolExecutor(client, makeState(), Power.England, 'test-lobby');
+    const result = await exec.execute('getRules', {});
+    expect(result).toBe('test rules');
+    expect(client.game.getRules.query).toHaveBeenCalledWith({ lobbyId: 'test-lobby' });
   });
 });
