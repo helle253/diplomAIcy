@@ -97,7 +97,10 @@ Notes are optional — if you have nothing to record, just submit your main resp
     try {
       const content = await readFile(this.notesFilePath, 'utf-8');
       if (content.length > MAX_NOTES_CHARS) {
-        return '...(earlier notes truncated)...\n' + content.slice(-MAX_NOTES_CHARS);
+        const truncated = content.slice(-MAX_NOTES_CHARS);
+        const firstNewline = truncated.indexOf('\n');
+        const clean = firstNewline > 0 ? truncated.slice(firstNewline + 1) : truncated;
+        return '...(earlier notes truncated)...\n' + clean;
       }
       return content;
     } catch {
