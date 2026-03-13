@@ -283,7 +283,13 @@ function startServer(): void {
   const wss = new WebSocketServer({ noServer: true });
 
   server.on('upgrade', (request, socket, head) => {
-    const url = new URL(request.url || '', 'http://localhost');
+    let url: URL;
+    try {
+      url = new URL(request.url || '', 'http://localhost');
+    } catch {
+      socket.destroy();
+      return;
+    }
     const match = url.pathname.match(/^\/ws\/(.+)$/);
     if (!match) {
       socket.destroy();
@@ -296,7 +302,12 @@ function startServer(): void {
       return;
     }
 
-    const token = url.searchParams.get('token') ?? undefined;
+    const tokens = url.searchParams.getAll('token');
+    if (tokens.length > 1) {
+      socket.destroy();
+      return;
+    }
+    const token = tokens[0] ?? undefined;
 
     wss.handleUpgrade(request, socket, head, (ws) => {
       wss.emit('connection', ws, request, lobbyId, token);

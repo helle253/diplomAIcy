@@ -21,7 +21,8 @@ export function createContext({
   // Fall back to ?token= query param (for SSE/WebSocket)
   if (req.url) {
     const url = new URL(req.url, 'http://localhost');
-    const queryToken = url.searchParams.get('token');
+    const queryTokens = url.searchParams.getAll('token');
+    const queryToken = queryTokens.length === 1 ? queryTokens[0] : null;
     if (typeof queryToken === 'string') {
       return { token: queryToken };
     }
