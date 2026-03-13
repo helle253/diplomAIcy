@@ -24,6 +24,7 @@ const agentConfigSchema = z.object({
   model: z.string().optional(),
   temperature: z.number().optional(),
   maxTokens: z.number().optional(),
+  numCtx: z.number().optional(),
 });
 
 const lobbyConfigSchema = z.object({
