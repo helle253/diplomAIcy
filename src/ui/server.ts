@@ -5,7 +5,6 @@ import express from 'express';
 import { existsSync } from 'fs';
 import { createServer } from 'http';
 import { dirname, join } from 'path';
-import { parse as parseUrl } from 'url';
 import { fileURLToPath } from 'url';
 import { WebSocket, WebSocketServer } from 'ws';
 
@@ -284,8 +283,14 @@ function startServer(): void {
   const wss = new WebSocketServer({ noServer: true });
 
   server.on('upgrade', (request, socket, head) => {
-    const { pathname, query } = parseUrl(request.url || '', true);
-    const match = pathname?.match(/^\/ws\/(.+)$/);
+    let url: URL;
+    try {
+      url = new URL(request.url || '', 'http://localhost');
+    } catch {
+      socket.destroy();
+      return;
+    }
+    const match = url.pathname.match(/^\/ws\/(.+)$/);
     if (!match) {
       socket.destroy();
       return;
@@ -297,7 +302,12 @@ function startServer(): void {
       return;
     }
 
-    const token = typeof query.token === 'string' ? query.token : undefined;
+    const tokens = url.searchParams.getAll('token');
+    if (tokens.length > 1) {
+      socket.destroy();
+      return;
+    }
+    const token = tokens[0] ?? undefined;
 
     wss.handleUpgrade(request, socket, head, (ws) => {
       wss.emit('connection', ws, request, lobbyId, token);

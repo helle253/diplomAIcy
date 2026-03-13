@@ -1,5 +1,4 @@
 import { initTRPC, TRPCError } from '@trpc/server';
-import { parse as parseUrl } from 'url';
 
 import type { Power } from '../engine/types';
 import type { LobbyManager } from './lobby-manager';
@@ -21,8 +20,9 @@ export function createContext({
 
   // Fall back to ?token= query param (for SSE/WebSocket)
   if (req.url) {
-    const parsed = parseUrl(req.url, true);
-    const queryToken = parsed.query.token;
+    const url = new URL(req.url, 'http://localhost');
+    const queryTokens = url.searchParams.getAll('token');
+    const queryToken = queryTokens.length === 1 ? queryTokens[0] : null;
     if (typeof queryToken === 'string') {
       return { token: queryToken };
     }
