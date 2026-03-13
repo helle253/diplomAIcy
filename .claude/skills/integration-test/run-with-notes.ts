@@ -23,14 +23,12 @@ function parseArgs(): {
   server: string;
   type?: string;
   lobbyId: string;
-  notesDir: string;
 } {
   const args = process.argv.slice(2);
   let power: string | undefined;
   let server = process.env.GAME_SERVER ?? 'http://localhost:3000/trpc';
   let type: string | undefined;
   let lobbyId: string | undefined;
-  let notesDir = 'game-notes';
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--power' && args[i + 1]) {
@@ -41,14 +39,12 @@ function parseArgs(): {
       type = args[++i];
     } else if (args[i] === '--lobby' && args[i + 1]) {
       lobbyId = args[++i];
-    } else if (args[i] === '--notes-dir' && args[i + 1]) {
-      notesDir = args[++i];
     }
   }
 
   if (!power || !isPower(power)) {
     console.error(
-      `Usage: run-with-notes.ts --power <Power> --lobby <lobbyId> [--server <url>] [--type random|llm] [--notes-dir <dir>]\n` +
+      `Usage: run-with-notes.ts --power <Power> --lobby <lobbyId> [--server <url>] [--type random|llm]\n` +
         `  Valid powers: ${[...VALID_POWERS].join(', ')}`,
     );
     process.exit(1);
@@ -81,7 +77,7 @@ function resolveAgentConfig(power: Power, typeOverride?: string): AgentConfig {
 }
 
 async function main() {
-  const { power, server, type, lobbyId, notesDir: _notesDir } = parseArgs();
+  const { power, server, type, lobbyId } = parseArgs();
   const cfg = resolveAgentConfig(power, type);
 
   // Join lobby
