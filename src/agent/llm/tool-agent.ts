@@ -89,10 +89,8 @@ export async function connectToolAgent(
     if (staleCount > 0) {
       logger.info(`[${power}] Clearing ${staleCount} stale message batches from queue`);
     }
-    // Remove all pending message batches, keep only phase items
-    const kept = workQueue.filter((w) => w.kind === 'phase');
+    // Remove all pending items — only the newest phase matters
     workQueue.length = 0;
-    workQueue.push(...kept);
     workQueue.push({ kind: 'phase', gameState, deadlineMs });
     drainWorkQueue();
   }
@@ -174,6 +172,12 @@ export async function connectToolAgent(
       logger.info(`[${power}] Tool loop complete for phase ${gameState.phase.type}`);
     } catch (err) {
       logger.error(`[${power}] Tool loop error:`, err);
+    }
+
+    // Ensure phase progresses even if the model never called ready()
+    if (!executor.isReady) {
+      logger.warn(`[${power}] Model did not call ready() — signaling automatically`);
+      await executor.execute('ready', {});
     }
   }
 
