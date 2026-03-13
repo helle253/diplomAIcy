@@ -43,7 +43,11 @@ describe('GameToolExecutor - map query tools', () => {
     const exec = new GameToolExecutor(mockClient, makeState(), Power.England);
     const result = JSON.parse(await exec.execute('getMyUnits', {}));
     expect(result).toHaveLength(3);
-    expect(result.map((u: { province: string }) => u.province).sort()).toEqual(['edi', 'lon', 'lvp']);
+    expect(result.map((u: { province: string }) => u.province).sort()).toEqual([
+      'edi',
+      'lon',
+      'lvp',
+    ]);
   });
 
   it('getAdjacentProvinces returns army adjacencies', async () => {
