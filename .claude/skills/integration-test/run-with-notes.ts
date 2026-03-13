@@ -1,11 +1,16 @@
 import 'dotenv/config';
 
-import { Power } from '../../engine/types';
-import { AgentConfig, getAgentConfig, loadConfig, toLLMClientConfig } from '../llm/config';
-import { OpenAICompatibleClient } from '../llm/llm-client';
-import { connectToolAgent } from '../llm/tool-agent';
-import { connectRandomAgent } from '../random-agent';
-import { createGameClient } from './client';
+import {
+  AgentConfig,
+  getAgentConfig,
+  loadConfig,
+  toLLMClientConfig,
+} from '../../../src/agent/llm/config';
+import { OpenAICompatibleClient } from '../../../src/agent/llm/llm-client';
+import { connectToolAgent } from '../../../src/agent/llm/tool-agent';
+import { connectRandomAgent } from '../../../src/agent/random-agent';
+import { createGameClient } from '../../../src/agent/remote/client';
+import { Power } from '../../../src/engine/types';
 
 const VALID_POWERS = new Set<string>(Object.values(Power));
 
@@ -13,7 +18,12 @@ function isPower(value: string): value is Power {
   return VALID_POWERS.has(value);
 }
 
-function parseArgs(): { power: Power; server: string; type?: string; lobbyId: string } {
+function parseArgs(): {
+  power: Power;
+  server: string;
+  type?: string;
+  lobbyId: string;
+} {
   const args = process.argv.slice(2);
   let power: string | undefined;
   let server = process.env.GAME_SERVER ?? 'http://localhost:3000/trpc';
@@ -34,46 +44,41 @@ function parseArgs(): { power: Power; server: string; type?: string; lobbyId: st
 
   if (!power || !isPower(power)) {
     console.error(
-      `Usage: node run.js --power <Power> --lobby <lobbyId> [--server <url>] [--type random|llm]\n` +
+      `Usage: run-with-notes.ts --power <Power> --lobby <lobbyId> [--server <url>] [--type random|llm]\n` +
         `  Valid powers: ${[...VALID_POWERS].join(', ')}`,
     );
     process.exit(1);
   }
 
   if (!lobbyId) {
-    console.error(
-      `Usage: node run.js --power <Power> --lobby <lobbyId> [--server <url>] [--type random|llm]\n` +
-        `  --lobby is required`,
-    );
+    console.error('--lobby is required');
     process.exit(1);
   }
 
   return { power, server, type, lobbyId };
 }
 
+const VALID_AGENT_TYPES = new Set(['llm', 'random', 'remote']);
+
 function resolveAgentConfig(power: Power, typeOverride?: string): AgentConfig {
-  // Try loading per-power config from the game config file
   const gameConfig = loadConfig();
   const cfg = getAgentConfig(gameConfig, power);
-
-  // CLI --type flag overrides config file
   if (typeOverride) {
+    if (!VALID_AGENT_TYPES.has(typeOverride)) {
+      console.error(`Unknown agent type: ${typeOverride}. Valid types: llm, random`);
+      process.exit(1);
+    }
     cfg.type = typeOverride as AgentConfig['type'];
   }
-
-  // 'remote' doesn't make sense for the agent runner — treat as 'llm'
   if ((cfg as { type: string }).type === 'remote') {
     cfg.type = 'llm';
   }
-
-  // For LLM agents, env vars fill in fields not set by the config file
   if (cfg.type === 'llm') {
     cfg.provider ??= (process.env.LLM_PROVIDER as AgentConfig['provider']) ?? 'openai';
     cfg.baseUrl ??= process.env.LLM_BASE_URL;
     cfg.apiKey ??= process.env.LLM_API_KEY;
     cfg.model ??= process.env.LLM_MODEL;
   }
-
   return cfg;
 }
 
@@ -81,7 +86,7 @@ async function main() {
   const { power, server, type, lobbyId } = parseArgs();
   const cfg = resolveAgentConfig(power, type);
 
-  // Step 1: Join lobby to get seat token (unauthenticated client)
+  // Join lobby
   const joinClient = createGameClient(server);
   let seatToken: string;
   try {
@@ -93,8 +98,7 @@ async function main() {
     process.exit(1);
   }
 
-  // Step 2: Wait for lobby to be playing (autostart may be in progress)
-  // LOBBY_READY_TIMEOUT_MS=0 (default) means wait indefinitely
+  // Wait for lobby to be playing
   const trpcClient = createGameClient(server, seatToken);
   const readyTimeoutMs = Number(process.env.LOBBY_READY_TIMEOUT_MS ?? 0);
   const deadline = readyTimeoutMs > 0 ? Date.now() + readyTimeoutMs : Number.POSITIVE_INFINITY;
@@ -102,7 +106,7 @@ async function main() {
   while (Date.now() < deadline || deadline === Number.POSITIVE_INFINITY) {
     try {
       await trpcClient.game.getState.query({ lobbyId });
-      break; // game is ready
+      break;
     } catch {
       await new Promise((r) => setTimeout(r, 1000));
     }
@@ -112,12 +116,12 @@ async function main() {
     throw new Error(`Lobby ${lobbyId} never became playable before timeout (${readyTimeoutMs}ms)`);
   }
 
-  // Step 3: Connect agent
+  // Connect agent
   if (cfg.type === 'llm') {
     if (!cfg.baseUrl || !cfg.apiKey || !cfg.model) {
       console.error(
         `LLM agent for ${power} requires baseUrl, apiKey, model.\n` +
-          `Set via config file (powers.${power}) or env vars: LLM_BASE_URL, LLM_API_KEY, LLM_MODEL`,
+          `Set via config file or env vars: LLM_BASE_URL, LLM_API_KEY, LLM_MODEL`,
       );
       process.exit(1);
     }
@@ -129,17 +133,13 @@ async function main() {
     console.log(
       `Starting tool-calling agent for ${power} (${cfg.provider ?? 'openai'}/${cfg.model}), connecting to ${server}...`,
     );
-    // connectToolAgent handles everything — joins directly into tool loop
     await connectToolAgent(trpcClient, llmClient, power, lobbyId);
-  } else if (!cfg.type || cfg.type === 'random') {
+  } else {
     console.log(`Starting random agent for ${power}, connecting to ${server}...`);
     await connectRandomAgent(trpcClient, power, lobbyId);
-  } else {
-    console.error(`Unknown agent type: ${cfg.type}. Valid types: llm, random`);
-    process.exit(1);
   }
 
-  // Keep the process alive
+  // Keep alive
   await new Promise(() => {});
 }
 

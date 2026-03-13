@@ -1,21 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { connectAgent } from '../agent/adapter';
-import { DiplomacyAgent } from '../agent/interface';
-import { RandomAgent } from '../agent/random';
-import { STARTING_UNITS } from '../engine/map';
-import {
-  BuildOrder,
-  GameState,
-  Message,
-  Order,
-  OrderType,
-  PhaseType,
-  Power,
-  RetreatOrder,
-  RetreatSituation,
-  Season,
-} from '../engine/types';
+import { PROVINCES, STARTING_UNITS } from '../engine/map';
+import { BuildOrder, Order, OrderType, PhaseType, Power, Season } from '../engine/types';
 import { GameEvent, GameManager } from './manager';
 
 const ALL_POWERS = [
@@ -29,47 +15,96 @@ const ALL_POWERS = [
 ];
 
 // ============================================================================
-// Helper: connect all 7 random agents
+// Helper: wire a random-style agent using direct manager API
 // ============================================================================
+function wireRandomAgent(manager: GameManager, power: Power): void {
+  manager.onPhaseChange(async (_phase, state) => {
+    // Yield to macrotask so collectOrders/collectRetreats/collectBuilds can set up gates first
+    await new Promise<void>((r) => setTimeout(r, 0));
+    if (state.phase.type === PhaseType.Orders) {
+      const myUnits = state.units.filter((u) => u.power === power);
+      const orders = myUnits.map((u) => {
+        const prov = PROVINCES[u.province];
+        const adj = u.type === 'Army' ? prov?.adjacency.army : prov?.adjacency.fleet;
+        if (adj && adj.length > 0 && Math.random() > 0.5) {
+          return { type: OrderType.Move as const, unit: u.province, destination: adj[0] };
+        }
+        return { type: OrderType.Hold as const, unit: u.province };
+      });
+      manager.submitOrders(power, orders);
+    } else if (state.phase.type === PhaseType.Retreats) {
+      const retreats = state.retreatSituations
+        .filter((s) => s.unit.power === power)
+        .map((s) => ({ type: 'Disband' as const, unit: s.unit.province }));
+      manager.submitRetreats(power, retreats);
+    } else if (state.phase.type === PhaseType.Builds) {
+      const buildCount = manager.getBuildCount(power);
+      if (buildCount > 0) {
+        manager.submitBuilds(
+          power,
+          Array.from({ length: buildCount }, () => ({ type: 'Waive' as const })),
+        );
+      } else if (buildCount < 0) {
+        const myUnits = state.units.filter((u) => u.power === power);
+        manager.submitBuilds(
+          power,
+          myUnits
+            .slice(0, Math.abs(buildCount))
+            .map((u) => ({ type: 'Remove' as const, unit: u.province })),
+        );
+      } else {
+        manager.submitBuilds(power, []);
+      }
+    }
+  });
+}
+
 function connectAllRandom(manager: GameManager): void {
   for (const power of ALL_POWERS) {
-    connectAgent(new RandomAgent(power), manager);
+    wireRandomAgent(manager, power);
   }
 }
 
 // ============================================================================
-// Helper: a deterministic "always hold" agent for predictable tests
+// Helper: a deterministic "always hold" agent using direct manager API
 // ============================================================================
-class HoldAgent implements DiplomacyAgent {
-  power: Power;
-  constructor(power: Power) {
-    this.power = power;
-  }
-  async initialize(_gs: GameState) {}
-  async onPhaseStart(_gs: GameState) {
-    return [];
-  }
-  async onMessage(_msg: Message, _gs: GameState) {
-    return [];
-  }
-  async submitOrders(gs: GameState): Promise<Order[]> {
-    return gs.units
-      .filter((u) => u.power === this.power)
-      .map((u) => ({ type: OrderType.Hold as const, unit: u.province }));
-  }
-  async submitRetreats(_gs: GameState, retreats: RetreatSituation[]): Promise<RetreatOrder[]> {
-    return retreats
-      .filter((r) => r.unit.power === this.power)
-      .map((r) => ({ type: 'Disband' as const, unit: r.unit.province }));
-  }
-  async submitBuilds(_gs: GameState, buildCount: number): Promise<BuildOrder[]> {
-    return buildCount > 0 ? Array(buildCount).fill({ type: 'Waive' as const }) : [];
-  }
+function wireHoldAgent(manager: GameManager, power: Power): void {
+  manager.onPhaseChange(async (_phase, state) => {
+    // Yield to macrotask so collectOrders/collectRetreats/collectBuilds can set up gates first
+    await new Promise<void>((r) => setTimeout(r, 0));
+    if (state.phase.type === PhaseType.Orders) {
+      const orders: Order[] = state.units
+        .filter((u) => u.power === power)
+        .map((u) => ({ type: OrderType.Hold as const, unit: u.province }));
+      manager.submitOrders(power, orders);
+    } else if (state.phase.type === PhaseType.Retreats) {
+      const retreats = state.retreatSituations
+        .filter((s) => s.unit.power === power)
+        .map((s) => ({ type: 'Disband' as const, unit: s.unit.province }));
+      manager.submitRetreats(power, retreats);
+    } else if (state.phase.type === PhaseType.Builds) {
+      const buildCount = manager.getBuildCount(power);
+      if (buildCount > 0) {
+        const builds: BuildOrder[] = Array.from({ length: buildCount }, () => ({
+          type: 'Waive' as const,
+        }));
+        manager.submitBuilds(power, builds);
+      } else if (buildCount < 0) {
+        const myUnits = state.units.filter((u) => u.power === power);
+        const builds: BuildOrder[] = myUnits
+          .slice(0, Math.abs(buildCount))
+          .map((u) => ({ type: 'Remove' as const, unit: u.province }));
+        manager.submitBuilds(power, builds);
+      } else {
+        manager.submitBuilds(power, []);
+      }
+    }
+  });
 }
 
 function connectAllHold(manager: GameManager): void {
   for (const power of ALL_POWERS) {
-    connectAgent(new HoldAgent(power), manager);
+    wireHoldAgent(manager, power);
   }
 }
 
@@ -392,10 +427,7 @@ describe('GameManager — Config object', () => {
 describe('GameManager — Fast adjudication', () => {
   it('diplomacy phase ends early when all powers call submitReady', async () => {
     const manager = new GameManager({ maxYears: 1, phaseDelayMs: 60_000 });
-
-    for (const power of ALL_POWERS) {
-      connectAgent(new HoldAgent(power), manager);
-    }
+    connectAllHold(manager);
 
     manager.onPhaseChange((phase) => {
       if (phase.type === PhaseType.Diplomacy) {

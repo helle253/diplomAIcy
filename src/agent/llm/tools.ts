@@ -39,7 +39,6 @@ interface FlatBuild {
 
 export class GameToolExecutor implements ToolExecutor {
   isReady = false;
-  hasSubmitted = false;
 
   constructor(
     private client: ToolGameClient,
@@ -242,7 +241,6 @@ export class GameToolExecutor implements ToolExecutor {
 
     try {
       const result = await this.client.game.submitOrders.mutate({ orders });
-      this.hasSubmitted = true;
       return JSON.stringify(result);
     } catch (e) {
       return JSON.stringify({ error: String(e) });
@@ -270,7 +268,6 @@ export class GameToolExecutor implements ToolExecutor {
 
     try {
       const result = await this.client.game.submitRetreats.mutate({ retreats });
-      this.hasSubmitted = true;
       return JSON.stringify(result);
     } catch (e) {
       return JSON.stringify({ error: String(e) });
@@ -285,7 +282,6 @@ export class GameToolExecutor implements ToolExecutor {
 
     try {
       const result = await this.client.game.submitBuilds.mutate({ builds: rawBuilds });
-      this.hasSubmitted = true;
       return JSON.stringify(result);
     } catch (e) {
       return JSON.stringify({ error: String(e) });
