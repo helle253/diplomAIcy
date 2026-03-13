@@ -9,7 +9,12 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import type { ChatMessage, LLMClient } from '../../../src/agent/llm/llm-client';
+import type {
+  ChatMessage,
+  LLMClient,
+  ToolDefinition,
+  ToolExecutor,
+} from '../../../src/agent/llm/llm-client';
 import { extractNotesBlock, NoteKeepingClient, parsePhaseFromPrompt } from './note-keeping-client';
 
 describe('extractNotesBlock', () => {
@@ -90,11 +95,22 @@ describe('parsePhaseFromPrompt', () => {
 
 class MockLLMClient implements LLMClient {
   response = '```json\n[]\n```';
+  toolLoopResponse = '';
   lastMessages: ChatMessage[] = [];
+  lastToolLoopMessages: ChatMessage[] = [];
 
   async complete(messages: ChatMessage[]): Promise<string> {
     this.lastMessages = messages;
     return this.response;
+  }
+
+  async runToolLoop(
+    messages: ChatMessage[],
+    _tools: ToolDefinition[],
+    _executor: ToolExecutor,
+  ): Promise<string> {
+    this.lastToolLoopMessages = messages;
+    return this.toolLoopResponse;
   }
 }
 
@@ -219,5 +235,58 @@ describe('NoteKeepingClient', () => {
     const notesSection = lastUserMsg.content.split('--- Your Notes From Previous Phases ---')[1];
     const noteContent = notesSection.split('--- Note-Taking Instructions ---')[0];
     expect(noteContent.length).toBeLessThanOrEqual(2200); // 2000 + some truncation message overhead
+  });
+
+  describe('runToolLoop', () => {
+    const dummyTools: ToolDefinition[] = [];
+    const dummyExecutor: ToolExecutor = {
+      isReady: false,
+      execute: async () => '',
+    };
+
+    it('injects previous notes into tool loop messages', async () => {
+      mockClient.toolLoopResponse = 'Done.';
+      const client = new NoteKeepingClient(mockClient, tmpDir, 'France', 'lobby123');
+      const messages: ChatMessage[] = [
+        { role: 'system', content: 'System' },
+        { role: 'user', content: '=== Spring 1901 (Orders) ===\nSubmit orders.' },
+      ];
+
+      await client.runToolLoop!(messages, dummyTools, dummyExecutor);
+
+      const lastUserMsg = mockClient.lastToolLoopMessages.find((m) => m.role === 'user')!;
+      expect(lastUserMsg.content).toContain('--- Your Notes From Previous Phases ---');
+      expect(lastUserMsg.content).toContain('(none yet');
+    });
+
+    it('extracts notes from tool loop final response', async () => {
+      mockClient.toolLoopResponse =
+        'Orders submitted.\n\n```notes\nstrategy: Attacked Burgundy.\n```';
+      const client = new NoteKeepingClient(mockClient, tmpDir, 'England', 'lobbyTool');
+      const messages: ChatMessage[] = [
+        { role: 'system', content: 'System' },
+        { role: 'user', content: '=== Fall 1901 (Orders) ===\nSubmit.' },
+      ];
+
+      const result = await client.runToolLoop!(messages, dummyTools, dummyExecutor);
+
+      expect(result).not.toContain('```notes');
+      expect(result).toContain('Orders submitted.');
+
+      const notesPath = join(tmpDir, 'lobbyTool', 'England.md');
+      const saved = await fsReadFile(notesPath, 'utf-8');
+      expect(saved).toContain('## Fall 1901 Orders');
+      expect(saved).toContain('Attacked Burgundy.');
+    });
+
+    it('throws if inner client lacks runToolLoop', async () => {
+      const noToolClient: LLMClient = {
+        complete: async () => '',
+      };
+      const client = new NoteKeepingClient(noToolClient, tmpDir, 'France', 'lobby123');
+      await expect(client.runToolLoop!([], dummyTools, dummyExecutor)).rejects.toThrow(
+        'does not support tool calling',
+      );
+    });
   });
 });
