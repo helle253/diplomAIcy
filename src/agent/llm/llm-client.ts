@@ -61,6 +61,7 @@ export class OpenAICompatibleClient implements LLMClient {
 
   private async fetchWithRetry(url: string, body: Record<string, unknown>): Promise<unknown> {
     const MAX_RETRIES = 6;
+    const REQUEST_TIMEOUT_MS = 120_000;
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
@@ -70,6 +71,8 @@ export class OpenAICompatibleClient implements LLMClient {
         await new Promise((r) => setTimeout(r, baseDelay + jitter));
       }
 
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
       try {
         const response = await fetch(url, {
           method: 'POST',
@@ -77,6 +80,7 @@ export class OpenAICompatibleClient implements LLMClient {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${this.config.apiKey}`,
           },
+          signal: controller.signal,
           body: JSON.stringify(body),
         });
 
@@ -101,11 +105,14 @@ export class OpenAICompatibleClient implements LLMClient {
         return await response.json();
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
-        // Network errors are retryable
+        // Network errors and timeouts are retryable
         if (err instanceof TypeError) continue;
+        if (lastError.name === 'AbortError') continue;
         // Non-retryable errors (4xx except 429) were already thrown above
         if (lastError.message.startsWith('LLM API error')) throw lastError;
         continue;
+      } finally {
+        clearTimeout(timeout);
       }
     }
 
@@ -122,7 +129,7 @@ export class OpenAICompatibleClient implements LLMClient {
     };
 
     // Ollama supports num_ctx via options to control context window size
-    if (this.numCtx) {
+    if (this.numCtx !== undefined) {
       body.options = { num_ctx: this.numCtx };
     }
 
@@ -160,7 +167,7 @@ export class OpenAICompatibleClient implements LLMClient {
         body.tool_choice = 'auto';
       }
 
-      if (this.numCtx) {
+      if (this.numCtx !== undefined) {
         body.options = { num_ctx: this.numCtx };
       }
 
