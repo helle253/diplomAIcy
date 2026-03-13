@@ -4,9 +4,8 @@ import { Power } from '../../engine/types';
 import { AgentConfig, getAgentConfig, loadConfig, toLLMClientConfig } from '../llm/config';
 import { OpenAICompatibleClient } from '../llm/llm-client';
 import { connectToolAgent } from '../llm/tool-agent';
-import { RandomAgent } from '../random';
+import { connectRandomAgent } from '../random-agent';
 import { createGameClient } from './client';
-import { connectRemoteAgent } from './remote-adapter';
 
 const VALID_POWERS = new Set<string>(Object.values(Power));
 
@@ -67,7 +66,7 @@ function resolveAgentConfig(power: Power, typeOverride?: string): AgentConfig {
     cfg.type = 'llm';
   }
 
-  // For LLM agents, env vars fill in any missing fields (backward compat)
+  // For LLM agents, env vars fill in fields not set by the config file
   if (cfg.type === 'llm') {
     cfg.provider ??= (process.env.LLM_PROVIDER as AgentConfig['provider']) ?? 'openai';
     cfg.baseUrl ??= process.env.LLM_BASE_URL;
@@ -132,10 +131,12 @@ async function main() {
     );
     // connectToolAgent handles everything — joins directly into tool loop
     await connectToolAgent(trpcClient, llmClient, power, lobbyId);
-  } else {
-    const agent = new RandomAgent(power);
+  } else if (!cfg.type || cfg.type === 'random') {
     console.log(`Starting random agent for ${power}, connecting to ${server}...`);
-    await connectRemoteAgent(agent, trpcClient, lobbyId);
+    await connectRandomAgent(trpcClient, power, lobbyId);
+  } else {
+    console.error(`Unknown agent type: ${cfg.type}. Valid types: llm, random`);
+    process.exit(1);
   }
 
   // Keep the process alive

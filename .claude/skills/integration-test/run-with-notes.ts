@@ -8,9 +8,8 @@ import {
 } from '../../../src/agent/llm/config';
 import { OpenAICompatibleClient } from '../../../src/agent/llm/llm-client';
 import { connectToolAgent } from '../../../src/agent/llm/tool-agent';
-import { RandomAgent } from '../../../src/agent/random';
+import { connectRandomAgent } from '../../../src/agent/random-agent';
 import { createGameClient } from '../../../src/agent/remote/client';
-import { connectRemoteAgent } from '../../../src/agent/remote/remote-adapter';
 import { Power } from '../../../src/engine/types';
 import { NoteKeepingClient } from './note-keeping-client';
 
@@ -98,7 +97,7 @@ async function main() {
   const { power, server, type, lobbyId, notesDir } = parseArgs();
   const cfg = resolveAgentConfig(power, type);
 
-  // Step 1: Join lobby
+  // Join lobby
   const joinClient = createGameClient(server);
   let seatToken: string;
   try {
@@ -110,7 +109,7 @@ async function main() {
     process.exit(1);
   }
 
-  // Step 2: Wait for lobby to be playing
+  // Wait for lobby to be playing
   const trpcClient = createGameClient(server, seatToken);
   const readyTimeoutMs = Number(process.env.LOBBY_READY_TIMEOUT_MS ?? 0);
   const deadline = readyTimeoutMs > 0 ? Date.now() + readyTimeoutMs : Number.POSITIVE_INFINITY;
@@ -128,7 +127,7 @@ async function main() {
     throw new Error(`Lobby ${lobbyId} never became playable before timeout (${readyTimeoutMs}ms)`);
   }
 
-  // Step 3: Connect agent with NoteKeepingClient wrapper
+  // Connect agent with NoteKeepingClient wrapper
   if (cfg.type === 'llm') {
     if (!cfg.baseUrl || !cfg.apiKey || !cfg.model) {
       console.error(
@@ -148,9 +147,8 @@ async function main() {
     );
     await connectToolAgent(trpcClient, llmClient, power, lobbyId);
   } else {
-    const agent = new RandomAgent(power);
     console.log(`Starting random agent for ${power}, connecting to ${server}...`);
-    await connectRemoteAgent(agent, trpcClient, lobbyId);
+    await connectRandomAgent(trpcClient, power, lobbyId);
   }
 
   // Keep the process alive

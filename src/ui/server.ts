@@ -2,19 +2,19 @@ import 'dotenv/config';
 
 import { createExpressMiddleware } from '@trpc/server/adapters/express';
 import express from 'express';
+import { existsSync } from 'fs';
 import { createServer } from 'http';
 import { dirname, join } from 'path';
 import { parse as parseUrl } from 'url';
 import { fileURLToPath } from 'url';
 import { WebSocket, WebSocketServer } from 'ws';
 
-import { connectAgent } from '../agent/adapter';
-import { AnthropicClient } from '../agent/llm/anthropic-client';
 import type { GameConfig } from '../agent/llm/config';
 import { getAgentConfig, loadConfig, toLLMClientConfig } from '../agent/llm/config';
-import { LLMAgent } from '../agent/llm/llm-agent';
-import { LLMClient, OpenAICompatibleClient } from '../agent/llm/llm-client';
-import { RandomAgent } from '../agent/random';
+import { OpenAICompatibleClient } from '../agent/llm/llm-client';
+import { connectToolAgent } from '../agent/llm/tool-agent';
+import { connectRandomAgent } from '../agent/random-agent';
+import { createGameClient } from '../agent/remote/client';
 import { Message, Power } from '../engine/types';
 import { describeProcedure } from '../game/describe';
 import { LobbyManager } from '../game/lobby-manager';
@@ -62,6 +62,7 @@ interface LobbyRuntime {
   allMessages: Message[];
   gameId: string;
   clients: Map<WebSocket, Power | undefined>; // ws → power (undefined = spectator)
+  agentConnections: Array<{ unsubscribe: () => void }>;
 }
 
 const lobbyRuntimes = new Map<string, LobbyRuntime>();
@@ -69,6 +70,13 @@ const lobbyRuntimes = new Map<string, LobbyRuntime>();
 function cleanupLobbyRuntime(lobbyId: string): void {
   const runtime = lobbyRuntimes.get(lobbyId);
   if (!runtime) return;
+  for (const conn of runtime.agentConnections) {
+    try {
+      conn.unsubscribe();
+    } catch {
+      // Agent may already be disconnected
+    }
+  }
   for (const client of runtime.clients.keys()) {
     client.close();
   }
@@ -129,35 +137,11 @@ function startServer(): void {
       allMessages: [],
       gameId,
       clients: new Map(),
+      agentConnections: [],
     };
     lobbyRuntimes.set(id, runtime);
 
-    // Wire agents
-    for (const power of ALL_POWERS) {
-      const agentCfg = getAgentConfig(lobby.config.agentConfig, power);
-      if (agentCfg.type === 'remote') {
-        logger.info(`  ${power}: Remote (waiting for connection)`);
-        continue;
-      }
-      let agent;
-      if (agentCfg.type === 'llm') {
-        const clientConfig = toLLMClientConfig(agentCfg);
-        const client: LLMClient =
-          agentCfg.provider === 'anthropic'
-            ? new AnthropicClient(clientConfig)
-            : new OpenAICompatibleClient(clientConfig);
-        agent = new LLMAgent(power, client);
-        logger.info(`  ${power}: LLM (${agentCfg.provider ?? 'openai'} / ${clientConfig.model})`);
-      } else {
-        agent = new RandomAgent(power);
-        logger.info(`  ${power}: Random`);
-      }
-
-      await agent.initialize(manager.getState());
-      connectAgent(agent, manager);
-    }
-
-    // Persist and broadcast messages in real-time
+    // Register manager listeners BEFORE wiring agents so no early events are missed
     manager.onMessage((message: Message) => {
       message.gameId = gameId;
       storage.saveMessage(gameId, message);
@@ -172,7 +156,6 @@ function startServer(): void {
       });
     });
 
-    // Wire phase events for snapshots + broadcast
     manager.onEvent((event: GameEvent) => {
       if (event.turnRecord) {
         storage.saveTurnRecord(gameId, event.turnRecord);
@@ -211,6 +194,46 @@ function startServer(): void {
       }
     });
 
+    // Wire agents (after listeners are registered)
+    try {
+      for (const power of ALL_POWERS) {
+        const agentCfg = getAgentConfig(lobby.config.agentConfig, power);
+        if (agentCfg.type === 'remote') {
+          logger.info(`  ${power}: Remote (waiting for connection)`);
+          continue;
+        }
+
+        // Validate config before joining the lobby seat
+        if (agentCfg.type === 'llm' && agentCfg.provider === 'anthropic') {
+          throw new Error(
+            'Anthropic provider does not support tool calling yet. Use openai provider.',
+          );
+        }
+
+        // Create tRPC client to self (localhost)
+        const joinClient = createGameClient(`http://localhost:${PORT}/trpc`);
+        const { seatToken } = await joinClient.lobby.join.mutate({ lobbyId: id, power });
+        const agentClient = createGameClient(`http://localhost:${PORT}/trpc`, seatToken);
+
+        if (agentCfg.type === 'llm') {
+          const llmClient = new OpenAICompatibleClient(toLLMClientConfig(agentCfg));
+          const handle = await connectToolAgent(agentClient, llmClient, power, id);
+          runtime.agentConnections.push(handle);
+          logger.info(
+            `  ${power}: LLM tool-calling (${agentCfg.provider ?? 'openai'} / ${toLLMClientConfig(agentCfg).model})`,
+          );
+        } else {
+          const handle = await connectRandomAgent(agentClient, power, id);
+          runtime.agentConnections.push(handle);
+          logger.info(`  ${power}: Random`);
+        }
+      }
+    } catch (err) {
+      storage.failGame(gameId);
+      cleanupLobbyRuntime(id);
+      throw err;
+    }
+
     logger.info(`Starting new Diplomacy game (${gameId}) for lobby ${id}...`);
 
     // Run game loop asynchronously (non-blocking)
@@ -247,8 +270,14 @@ function startServer(): void {
   const appRouter = router({ describe: describeProcedure, lobby: lobbyRouter, game: gameRouter });
 
   // Serve static files from Vite build output
-  const publicDir = join(__dirname, 'public');
+  // Works with both `tsx src/ui/server.ts` (__dirname=src/ui) and `node dist/ui/server.js` (__dirname=dist/ui)
+  const publicDir = existsSync(join(__dirname, 'public'))
+    ? join(__dirname, 'public')
+    : join(__dirname, '..', '..', 'dist', 'ui', 'public');
   app.use(express.static(publicDir));
+
+  // Health check endpoint (used by scripts to detect server readiness)
+  app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
   // Mount tRPC router
   app.use('/trpc', createExpressMiddleware({ router: appRouter, createContext }));

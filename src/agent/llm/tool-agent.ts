@@ -181,35 +181,9 @@ export async function connectToolAgent(
       logger.error(`[${power}] Tool loop error:`, err);
     }
 
-    // Ensure phase progresses even if the model never submitted / called ready()
+    // Ensure phase progresses even if the model never called ready()
     if (!executor.isReady) {
-      const phaseType = gameState.phase.type as PhaseType;
-      logger.warn(
-        `[${power}] Model did not submit for ${phaseType} — submitting defaults automatically`,
-      );
-
-      // Submit default (hold) orders if the model never called submitOrders/etc.
-      if (!executor.hasSubmitted) {
-        switch (phaseType) {
-          case PhaseType.Orders:
-            logger.warn(`[${power}] Auto-submitting hold orders for all units`);
-            await executor.execute('submitOrders', {
-              orders: gameState.units
-                .filter((u) => u.power === power)
-                .map((u) => ({ unit: u.province, type: 'Hold' })),
-            });
-            break;
-          case PhaseType.Retreats:
-            logger.warn(`[${power}] Auto-submitting disband for all retreats`);
-            await executor.execute('submitRetreats', { retreats: [] });
-            break;
-          case PhaseType.Builds:
-            logger.warn(`[${power}] Auto-submitting empty builds`);
-            await executor.execute('submitBuilds', { builds: [] });
-            break;
-        }
-      }
-
+      logger.warn(`[${power}] Model did not call ready() — signaling automatically`);
       await executor.execute('ready', {});
     }
   }
