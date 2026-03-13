@@ -276,6 +276,9 @@ function startServer(): void {
     : join(__dirname, '..', '..', 'dist', 'ui', 'public');
   app.use(express.static(publicDir));
 
+  // Health check endpoint (used by scripts to detect server readiness)
+  app.get('/api/health', (_req, res) => res.json({ ok: true }));
+
   // Mount tRPC router
   app.use('/trpc', createExpressMiddleware({ router: appRouter, createContext }));
 

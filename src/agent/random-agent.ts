@@ -345,6 +345,9 @@ export async function connectRandomAgent(
   logger.info(`[${power}] Phase stagger: ${(agentStagger / 1000).toFixed(1)}s`);
 
   async function handlePhase(gameState: GameState, deadlineMs: number) {
+    const targetPhaseKey = phaseKey(gameState);
+    const isStale = () => targetPhaseKey !== lastHandledPhase;
+
     if (deadlineMs > 0) {
       const remaining = Math.max(0, Math.round((deadlineMs - Date.now()) / 1000));
       logger.info(`[${power}] Phase ${gameState.phase.type} -- deadline in ${remaining}s`);
@@ -353,6 +356,11 @@ export async function connectRandomAgent(
     if (agentStagger > 0) {
       logger.info(`[${power}] Staggering by ${(agentStagger / 1000).toFixed(1)}s`);
       await new Promise((r) => setTimeout(r, agentStagger));
+    }
+
+    if (isStale()) {
+      logger.info(`[${power}] Phase advanced during stagger; aborting stale work`);
+      return;
     }
 
     try {
@@ -406,6 +414,11 @@ export async function connectRandomAgent(
       } catch (err) {
         logger.error(`[${power}] sendMessage error:`, err);
       }
+    }
+
+    if (isStale()) {
+      logger.info(`[${power}] Phase advanced before ready; skipping submitReady`);
+      return;
     }
 
     // Signal ready
@@ -500,15 +513,27 @@ export async function connectRandomAgent(
   );
   subs.push(msgSub);
 
+  let closed = false;
+  const onSigint = () => {
+    unsubscribe();
+    process.exit(0);
+  };
+
   const unsubscribe = () => {
+    if (closed) return;
+    closed = true;
+    if (batchTimer) {
+      clearTimeout(batchTimer);
+      batchTimer = null;
+    }
+    pendingMessages = [];
+    workQueue.length = 0;
     for (const sub of subs) sub.unsubscribe();
+    process.off('SIGINT', onSigint);
     logger.info(`[${power}] Disconnected from server`);
   };
 
-  process.on('SIGINT', () => {
-    unsubscribe();
-    process.exit(0);
-  });
+  process.on('SIGINT', onSigint);
 
   logger.info(`[${power}] Connected to remote server, listening for phase changes`);
 

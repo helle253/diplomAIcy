@@ -35,7 +35,7 @@ PIDS+=($!)
 # Wait for server to be ready
 echo "Waiting for server..."
 for i in $(seq 1 30); do
-  if curl -sf "http://localhost:${PORT:-3000}/api/state" > /dev/null 2>&1; then
+  if curl -sf "http://localhost:${PORT:-3000}/api/health" > /dev/null 2>&1; then
     echo "Server ready"
     break
   fi
@@ -46,6 +46,28 @@ for i in $(seq 1 30); do
   sleep 0.5
 done
 
+# Create a lobby via tRPC
+MAX_YEARS_VAL="${MAX_YEARS:-5}"
+PHASE_DELAY_VAL="${PHASE_DELAY:-5000}"
+REMOTE_TIMEOUT_VAL="${REMOTE_TIMEOUT:-120000}"
+LOBBY_RESPONSE=$(curl -sf "${SERVER_URL}/lobby.create" \
+  -H 'content-type: application/json' \
+  -d "{\"name\":\"CLI Game\",\"maxYears\":${MAX_YEARS_VAL},\"phaseDelayMs\":${PHASE_DELAY_VAL},\"remoteTimeoutMs\":${REMOTE_TIMEOUT_VAL},\"autostart\":true,\"agentConfig\":{\"defaultAgent\":{\"type\":\"remote\"}}}")
+
+if [ -z "$LOBBY_RESPONSE" ]; then
+  echo "Failed to create lobby" >&2
+  exit 1
+fi
+
+LOBBY_ID=$(echo "$LOBBY_RESPONSE" | node -e "process.stdin.resume();let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const r=JSON.parse(d);console.log(r.result?.data?.lobbyId??r.lobbyId??'')})")
+
+if [ -z "$LOBBY_ID" ]; then
+  echo "Failed to extract lobby ID from response: $LOBBY_RESPONSE" >&2
+  exit 1
+fi
+
+echo "Created lobby: $LOBBY_ID"
+
 # Launch agents — each reads per-power config from AGENT_CONFIG
 for power in "${POWERS[@]}"; do
   TYPE_FLAG=""
@@ -53,7 +75,7 @@ for power in "${POWERS[@]}"; do
     TYPE_FLAG="--type $AGENT_TYPE"
   fi
   DIPLOMAICY_CONFIG="$AGENT_CONFIG" \
-    npx tsx src/agent/remote/run.ts --power "$power" --server "$SERVER_URL" $TYPE_FLAG &
+    npx tsx src/agent/remote/run.ts --power "$power" --lobby "$LOBBY_ID" --server "$SERVER_URL" $TYPE_FLAG &
   PIDS+=($!)
   sleep 3
 done
