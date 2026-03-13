@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "Agent-oriented Diplomacy client with spectator UI",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "postinstall": "playwright install --with-deps chromium",
     "build": "tsc && vite build",
