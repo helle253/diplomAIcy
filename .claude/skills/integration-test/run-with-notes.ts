@@ -55,7 +55,7 @@ function parseArgs(): {
     process.exit(1);
   }
 
-  return { power, server, type, lobbyId, notesDir };
+  return { power, server, type, lobbyId };
 }
 
 function resolveAgentConfig(power: Power, typeOverride?: string): AgentConfig {
