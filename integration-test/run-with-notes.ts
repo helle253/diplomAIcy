@@ -112,7 +112,7 @@ async function main() {
 
   // Wait for lobby to be playing
   const trpcClient = createGameClient(server, seatToken);
-  const readyTimeoutMs = Number(process.env.LOBBY_READY_TIMEOUT_MS ?? 120000);
+  const readyTimeoutMs = Number(process.env.LOBBY_READY_TIMEOUT_MS ?? 0);
   const deadline = readyTimeoutMs > 0 ? Date.now() + readyTimeoutMs : Number.POSITIVE_INFINITY;
 
   while (Date.now() < deadline || deadline === Number.POSITIVE_INFINITY) {

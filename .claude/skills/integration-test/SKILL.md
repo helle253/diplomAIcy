@@ -17,9 +17,9 @@ On Apple Silicon (M1/M2/M3/M4) or machines with NVIDIA GPUs, running Ollama nati
 
 1. Install Ollama on the host: https://ollama.com/download
 2. Start it: `ollama serve` (or use the menu bar app on macOS)
-3. Pull your model: `ollama pull qwen2.5:7b`
-4. From inside the devcontainer, run: `.devcontainer/use-host-ollama.sh [model]`
-5. Use `DIPLOMAICY_CONFIG=diplomaicy.config.ollama-host.json` when launching agents
+3. Pull your model: `ollama pull qwen2.5:3b` (or `qwen2.5:7b` for higher quality)
+4. From inside the devcontainer, run: `.devcontainer/use-host-ollama.sh [model]` (defaults to `qwen2.5:3b`)
+5. Use `DIPLOMAICY_CONFIG=diplomaicy.config.ollama-host.json` when launching agents (must match the model you pulled)
 
 Verify reachability: `curl -s http://host.docker.internal:11434/api/tags`
 
@@ -127,20 +127,20 @@ After all agents are connected, invoke the `/loop` skill to set up recurring mon
 
 Use the `/loop` skill with a prompt like:
 
-```
+```text
 /loop <interval> Check game <LOBBY_ID>: curl game state from localhost:3000, report phase/year, SC counts per power, unit positions, check lobby status for game completion. If game is finished, report final results and stop. Append notable events to game-notes/REFEREE_NOTES_<LOBBY_ID>.md.
 ```
 
 You can also poll manually at any time:
 
 ```bash
-curl -s "http://localhost:3000/trpc/game.getState?input=%7B%22lobbyId%22%3A%22LOBBY_ID%22%7D" | python3 -m json.tool
+curl -s "http://localhost:3000/trpc/game.getState?input=%7B%22lobbyId%22%3A%22${LOBBY_ID}%22%7D" | python3 -m json.tool
 ```
 
 Check lobby status for game completion:
 
 ```bash
-curl -s "http://localhost:3000/trpc/lobby.get?input=%7B%22id%22%3A%22LOBBY_ID%22%7D" | python3 -m json.tool
+curl -s "http://localhost:3000/trpc/lobby.get?input=%7B%22id%22%3A%22${LOBBY_ID}%22%7D" | python3 -m json.tool
 ```
 
 Response data is at `result.data`.

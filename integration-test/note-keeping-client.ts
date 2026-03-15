@@ -47,6 +47,20 @@ export function parsePhaseFromPrompt(prompt: string): string {
 }
 
 /**
+ * Scan messages in reverse to find the one containing a phase header.
+ * This avoids misidentifying retry reminders as the phase-bearing prompt.
+ */
+function findPhaseMessage(messages: ChatMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const content = messages[i]?.content ?? '';
+    if (PHASE_RE.test(content)) {
+      return content;
+    }
+  }
+  return messages[messages.length - 1]?.content ?? '';
+}
+
+/**
  * Trim notes to the last MAX_NOTE_PHASES phase sections to stay within context limits.
  */
 export function truncateNotes(notes: string): string {
@@ -92,6 +106,7 @@ export class NoteKeepingClient implements LLMClient {
     tools: ToolDefinition[],
     executor: ToolExecutor,
     maxIterations?: number,
+    isPrimaryPhaseTurn = true,
   ): Promise<string> {
     if (!this.inner.runToolLoop) {
       throw new Error('Inner LLM client does not support tool calling');
@@ -104,10 +119,12 @@ export class NoteKeepingClient implements LLMClient {
     const response = await this.inner.runToolLoop(augmented, tools, executor, maxIterations);
     const cleaned = await this.extractAndSaveNotes(response, messages);
 
-    // If no notes were captured from the tool loop, do a cheap reflection call
-    const { notes } = extractNotesBlock(response);
-    if (!notes) {
-      await this.reflectAfterPhase(messages, response);
+    // Only reflect on primary phase turns (not retries or message batches)
+    if (isPrimaryPhaseTurn) {
+      const { notes } = extractNotesBlock(response);
+      if (!notes) {
+        await this.reflectAfterPhase(messages, response);
+      }
     }
 
     return cleaned;
@@ -122,7 +139,8 @@ export class NoteKeepingClient implements LLMClient {
     originalMessages: ChatMessage[],
     toolLoopTranscript: string,
   ): Promise<void> {
-    const lastUserMsg = originalMessages[originalMessages.length - 1]?.content ?? '';
+    // Scan messages in reverse to find the phase-bearing prompt (not a retry reminder)
+    const lastUserMsg = findPhaseMessage(originalMessages);
     const phase = parsePhaseFromPrompt(lastUserMsg);
     const previousNotes = await this.readNotes();
     const notesContext = previousNotes
@@ -198,9 +216,7 @@ export class NoteKeepingClient implements LLMClient {
   ): Promise<string> {
     const { notes, cleaned } = extractNotesBlock(response);
     if (notes) {
-      const phase = parsePhaseFromPrompt(
-        originalMessages[originalMessages.length - 1]?.content ?? '',
-      );
+      const phase = parsePhaseFromPrompt(findPhaseMessage(originalMessages));
       try {
         await this.saveNotes(phase, notes);
       } catch (error) {

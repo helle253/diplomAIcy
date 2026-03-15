@@ -250,8 +250,8 @@ export class OpenAICompatibleClient implements LLMClient {
       }
     }
 
-    // Max iterations reached
+    // Max iterations reached — return accumulated content instead of discarding
     logger.warn(`[LLM] Tool loop reached max iterations (${maxIterations})`);
-    return '';
+    return allText.join('\n');
   }
 }

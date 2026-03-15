@@ -152,8 +152,9 @@ describe('truncateNotes', () => {
   });
 
   it('returns notes unchanged when exactly MAX_NOTE_PHASES sections', () => {
-    const phases = Array.from({ length: MAX_NOTE_PHASES }, (_, i) =>
-      `\n## Phase ${i + 1}\n\nContent ${i + 1}.\n`,
+    const phases = Array.from(
+      { length: MAX_NOTE_PHASES },
+      (_, i) => `\n## Phase ${i + 1}\n\nContent ${i + 1}.\n`,
     );
     const notes = phases.join('');
     const result = truncateNotes(notes);

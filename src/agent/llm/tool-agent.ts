@@ -184,7 +184,7 @@ export async function connectToolAgent(
       gameState.phase.type === PhaseType.Orders ||
       gameState.phase.type === PhaseType.Retreats ||
       gameState.phase.type === PhaseType.Builds;
-    if (needsSubmit && !executor.hasSubmitted && !executor.isReady) {
+    if (needsSubmit && !executor.hasSubmitted) {
       logger.warn(`[${power}] Model did not submit — retrying with explicit prompt`);
       try {
         await llm.runToolLoop(
