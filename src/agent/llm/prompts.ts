@@ -13,6 +13,7 @@ function unitStr(u: Unit): string {
  */
 function formatMessage(m: Message, self: Power): string {
   const to = typeof m.to === 'string' ? m.to : m.to.join(', ');
+  const phaseLabel = m.phase ? `[${m.phase.season} ${m.phase.year} ${m.phase.type}] ` : '';
   let tag = '';
   if (m.to === 'Global') {
     tag = ' [PUBLIC]';
@@ -29,7 +30,7 @@ function formatMessage(m: Message, self: Power): string {
     const visible = m.from === self ? m.to : [m.from, ...m.to.filter((p) => p !== m.from)];
     tag = ` [SHARED - visible to: ${visible.join(', ')}]`;
   }
-  return `${m.from} -> ${to}: ${m.content}${tag}`;
+  return `${phaseLabel}${m.from} -> ${to}: ${m.content}${tag}`;
 }
 
 export function buildToolSystemPrompt(power: Power, endYear?: number): string {
@@ -140,12 +141,11 @@ export function buildTurnPrompt(
     lines.push('(none)');
   }
 
-  // Pending messages (with phase labels for temporal context)
+  // Pending messages (phase labels included by formatMessage for temporal context)
   if (pendingMessages.length > 0) {
     lines.push('\n--- Incoming Messages ---');
     for (const m of pendingMessages) {
-      const phaseLabel = m.phase ? `[${m.phase.season} ${m.phase.year} ${m.phase.type}] ` : '';
-      lines.push(`${phaseLabel}${formatMessage(m, power)}`);
+      lines.push(formatMessage(m, power));
     }
   }
 
