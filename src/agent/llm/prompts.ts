@@ -13,6 +13,7 @@ function unitStr(u: Unit): string {
  */
 function formatMessage(m: Message, self: Power): string {
   const to = typeof m.to === 'string' ? m.to : m.to.join(', ');
+  const phaseLabel = m.phase ? `[${m.phase.season} ${m.phase.year} ${m.phase.type}] ` : '';
   let tag = '';
   if (m.to === 'Global') {
     tag = ' [PUBLIC]';
@@ -29,7 +30,7 @@ function formatMessage(m: Message, self: Power): string {
     const visible = m.from === self ? m.to : [m.from, ...m.to.filter((p) => p !== m.from)];
     tag = ` [SHARED - visible to: ${visible.join(', ')}]`;
   }
-  return `${m.from} -> ${to}: ${m.content}${tag}`;
+  return `${phaseLabel}${m.from} -> ${to}: ${m.content}${tag}`;
 }
 
 export function buildToolSystemPrompt(power: Power, endYear?: number): string {
@@ -63,11 +64,12 @@ INFORMATION SECURITY:
 - Use private messages for sensitive coordination
 
 HOW TO PLAY:
-- Use getMyUnits to see your units and getAdjacentProvinces to plan moves
-- Use getProvinceInfo to check province details and ownership
+- Your units and reachable provinces are shown in the turn prompt — act on that info directly
+- Use getProvinceInfo to scout enemy positions if needed
 - Use sendMessage to negotiate with other powers
-- Submit your orders/retreats/builds using the appropriate tool
-- Call ready() when you are done with your turn`;
+- During Orders/Retreats/Builds phases: you MUST call submitOrders/submitRetreats/submitBuilds before calling ready()
+- During the Diplomacy phase: only use sendMessage and ready() — no submission tools are available
+- Act quickly — submit orders first, then send messages if time permits`;
 }
 
 export function buildTurnPrompt(
@@ -139,7 +141,7 @@ export function buildTurnPrompt(
     lines.push('(none)');
   }
 
-  // Pending messages
+  // Pending messages (phase labels included by formatMessage for temporal context)
   if (pendingMessages.length > 0) {
     lines.push('\n--- Incoming Messages ---');
     for (const m of pendingMessages) {
@@ -156,17 +158,41 @@ export function buildTurnPrompt(
       break;
     case 'Orders':
       lines.push(
-        '\nSubmit movement orders for your units. Use getMyUnits and getAdjacentProvinces to plan. Call submitOrders then ready().',
+        '\n⚠️ ACTION REQUIRED: You MUST call submitOrders with one order per unit, then call ready().' +
+          '\nYour units and their reachable provinces are listed above — you have everything you need.' +
+          '\nYou may use getProvinceInfo to scout, but do NOT re-query your own units or adjacencies.',
       );
       break;
     case 'Retreats':
       lines.push(
-        '\nYou have dislodged units. Use getRetreatOptions to see options. Call submitRetreats then ready().',
+        '\n⚠️ ACTION REQUIRED: You MUST call the submitRetreats tool.' +
+          '\nSteps: 1) getRetreatOptions 2) submitRetreats 3) ready()' +
+          '\nDo NOT end your turn without calling submitRetreats.',
       );
       break;
-    case 'Builds':
-      lines.push('\nIt is the build/disband phase. Call submitBuilds then ready().');
+    case 'Builds': {
+      const buildCount = mySCs - myUnits.length;
+      if (buildCount > 0) {
+        lines.push(
+          `\n⚠️ ACTION REQUIRED: You have ${mySCs} supply centers and ${myUnits.length} units — you MUST build ${buildCount} unit(s).` +
+            '\nCall submitBuilds with an array of Build orders. Each build needs: type "Build", unitType ("Army" or "Fleet"), and province (one of your unoccupied home centers).' +
+            '\nFor fleet builds on multi-coast provinces (stp, spa, bul), you MUST specify coast: e.g. province "stp" with coast "nc" or "sc".' +
+            '\nIf all your home centers are occupied, use type "Waive" instead (no unitType or province needed).' +
+            '\nThen call ready().',
+        );
+      } else if (buildCount < 0) {
+        lines.push(
+          `\n⚠️ ACTION REQUIRED: You have ${myUnits.length} units but only ${mySCs} supply centers — you MUST disband ${-buildCount} unit(s).` +
+            '\nCall submitBuilds with an array of Remove orders. Each remove needs: type "Remove" and province (where the unit to disband is).' +
+            '\nThen call ready().',
+        );
+      } else {
+        lines.push(
+          '\nYou have equal units and supply centers — no builds or disbands needed. Call submitBuilds with an empty array, then ready().',
+        );
+      }
       break;
+    }
   }
 
   return lines.join('\n');

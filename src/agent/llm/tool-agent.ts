@@ -53,7 +53,7 @@ export async function connectToolAgent(
   // 2. Build system prompt (once at init)
   const systemPrompt = buildToolSystemPrompt(power, initialState.endYear);
 
-  // ── Serialized work queue ──────────────────────────────────────────
+  // ── Serialized work queue + message accumulator ──────────────────
   const MESSAGE_BATCH_DELAY = parseInt(process.env.MESSAGE_BATCH_DELAY ?? '5000', 10);
 
   type WorkItem =
@@ -63,7 +63,12 @@ export async function connectToolAgent(
   const workQueue: WorkItem[] = [];
   let working = false;
 
-  // ── Message batching ────────────────────────────────────────────────
+  // Messages accumulate here permanently. Both message-triggered tool loops
+  // AND phase tool loops see all messages received so far. This ensures
+  // diplomacy context (pacts, threats, betrayals) is never lost.
+  // Capped to prevent context window overflow in long games.
+  const MAX_ACCUMULATED_MESSAGES = 50;
+  let accumulatedMessages: Message[] = [];
   let pendingMessages: Message[] = [];
   let batchTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -75,21 +80,26 @@ export async function connectToolAgent(
     if (pendingMessages.length > 0) {
       const batch = pendingMessages;
       pendingMessages = [];
-      logger.info(`[${power}] Flushing ${batch.length} batched messages`);
+      // Add to accumulated messages (persistent across phases, capped)
+      accumulatedMessages.push(...batch);
+      if (accumulatedMessages.length > MAX_ACCUMULATED_MESSAGES) {
+        accumulatedMessages = accumulatedMessages.slice(-MAX_ACCUMULATED_MESSAGES);
+      }
+      logger.info(
+        `[${power}] Flushing ${batch.length} batched messages (${accumulatedMessages.length} total)`,
+      );
       workQueue.push({ kind: 'messageBatch', messages: batch });
     }
   }
 
   function enqueuePhase(gameState: GameState, deadlineMs: number) {
-    // Flush any pending messages before clearing — they belong to the current phase
     flushPendingMessages();
 
-    // Clear any queued message batches — they're stale once a new phase arrives
+    // Clear queued message batches — phase handler will have full accumulated context
     const staleCount = workQueue.filter((w) => w.kind === 'messageBatch').length;
     if (staleCount > 0) {
       logger.info(`[${power}] Clearing ${staleCount} stale message batches from queue`);
     }
-    // Remove all pending items — only the newest phase matters
     workQueue.length = 0;
     workQueue.push({ kind: 'phase', gameState, deadlineMs });
     drainWorkQueue();
@@ -97,7 +107,6 @@ export async function connectToolAgent(
 
   function enqueueMessage(message: Message) {
     pendingMessages.push(message);
-    // Reset the debounce timer
     if (batchTimer) clearTimeout(batchTimer);
     batchTimer = setTimeout(() => {
       batchTimer = null;
@@ -111,7 +120,6 @@ export async function connectToolAgent(
     working = true;
     try {
       while (workQueue.length > 0) {
-        // Prioritize phase items — pull the first phase item if any, otherwise first item
         const phaseIdx = workQueue.findIndex((w) => w.kind === 'phase');
         const idx = phaseIdx >= 0 ? phaseIdx : 0;
         const item = workQueue.splice(idx, 1)[0];
@@ -146,7 +154,15 @@ export async function connectToolAgent(
 
     const executor = new GameToolExecutor(client as unknown as ToolGameClient, gameState, power);
     const tools = filterToolsByPhase(gameState.phase.type as PhaseType);
-    const userMessage = buildTurnPrompt(gameState, power, []);
+
+    // Include ALL accumulated messages — never cleared, so the agent retains
+    // full diplomatic history. Messages carry phase stamps for temporal context.
+    if (accumulatedMessages.length > 0) {
+      logger.info(
+        `[${power}] Including ${accumulatedMessages.length} accumulated messages in phase prompt`,
+      );
+    }
+    const userMessage = buildTurnPrompt(gameState, power, accumulatedMessages);
 
     logger.info(`[${power}] Starting tool loop for phase ${gameState.phase.type}`);
     try {
@@ -163,6 +179,33 @@ export async function connectToolAgent(
       logger.error(`[${power}] Tool loop error:`, err);
     }
 
+    // If model ended without submitting during an actionable phase, retry once
+    const needsSubmit =
+      gameState.phase.type === PhaseType.Orders ||
+      gameState.phase.type === PhaseType.Retreats ||
+      gameState.phase.type === PhaseType.Builds;
+    if (needsSubmit && !executor.hasSubmitted) {
+      logger.warn(`[${power}] Model did not submit — retrying with explicit prompt`);
+      try {
+        await llm.runToolLoop(
+          [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userMessage },
+            {
+              role: 'user',
+              content:
+                'You MUST call the submit tool NOW. Call submitOrders/submitRetreats/submitBuilds with your decisions, then call ready(). Do not respond with text — use the tool.',
+            },
+          ],
+          tools,
+          executor,
+        );
+        logger.info(`[${power}] Retry tool loop complete`);
+      } catch (err) {
+        logger.error(`[${power}] Retry tool loop error:`, err);
+      }
+    }
+
     // Ensure phase progresses even if the model never called ready()
     if (!executor.isReady) {
       logger.warn(`[${power}] Model did not call ready() — signaling automatically`);
@@ -172,7 +215,7 @@ export async function connectToolAgent(
 
   // ── Message batch handler ─────────────────────────────────────────
 
-  async function handleMessageBatch(messages: Message[]) {
+  async function handleMessageBatch(newMessages: Message[]) {
     try {
       const state = await client.game.getState.query({ lobbyId });
       const serialized = state as SerializedGameState;
@@ -190,9 +233,12 @@ export async function connectToolAgent(
 
       const executor = new GameToolExecutor(client as unknown as ToolGameClient, gameState, power);
       const tools = filterToolsByPhase(gameState.phase.type as PhaseType);
-      const userMessage = buildTurnPrompt(gameState, power, messages);
+      // Pass ALL accumulated messages so the agent has full diplomatic context
+      const userMessage = buildTurnPrompt(gameState, power, accumulatedMessages);
 
-      logger.info(`[${power}] Starting tool loop for ${messages.length} incoming message(s)`);
+      logger.info(
+        `[${power}] Starting tool loop for ${newMessages.length} new message(s) (${accumulatedMessages.length} total context)`,
+      );
       try {
         await llm.runToolLoop(
           [
@@ -258,7 +304,8 @@ export async function connectToolAgent(
         }
         const message = tracked.data;
         if (message.from === power) return;
-        logger.info(`[${power}] <- ${message.from} (${message.content.length} chars)`);
+        const to = typeof message.to === 'string' ? message.to : message.to.join(', ');
+        logger.info(`[${power}] <- ${message.from} -> ${to}: ${message.content}`);
         enqueueMessage(message);
       },
       onError(err) {
