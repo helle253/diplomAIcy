@@ -63,11 +63,11 @@ INFORMATION SECURITY:
 - Use private messages for sensitive coordination
 
 HOW TO PLAY:
-- Use getMyUnits to see your units and getAdjacentProvinces to plan moves
-- Use getProvinceInfo to check province details and ownership
+- Your units and reachable provinces are shown in the turn prompt — act on that info directly
+- Use getProvinceInfo to scout enemy positions if needed
 - Use sendMessage to negotiate with other powers
-- Submit your orders/retreats/builds using the appropriate tool
-- Call ready() when you are done with your turn`;
+- IMPORTANT: You MUST call submitOrders/submitRetreats/submitBuilds, then call ready()
+- Act quickly — submit orders first, then send messages if time permits`;
 }
 
 export function buildTurnPrompt(
@@ -156,17 +156,39 @@ export function buildTurnPrompt(
       break;
     case 'Orders':
       lines.push(
-        '\nSubmit movement orders for your units. Use getMyUnits and getAdjacentProvinces to plan. Call submitOrders then ready().',
+        '\n⚠️ ACTION REQUIRED: You MUST call submitOrders with one order per unit, then call ready().' +
+          '\nYour units and their reachable provinces are listed above — you have everything you need.' +
+          '\nYou may use getProvinceInfo to scout, but do NOT re-query your own units or adjacencies.',
       );
       break;
     case 'Retreats':
       lines.push(
-        '\nYou have dislodged units. Use getRetreatOptions to see options. Call submitRetreats then ready().',
+        '\n⚠️ ACTION REQUIRED: You MUST call the submitRetreats tool.' +
+          '\nSteps: 1) getRetreatOptions 2) submitRetreats 3) ready()' +
+          '\nDo NOT end your turn without calling submitRetreats.',
       );
       break;
-    case 'Builds':
-      lines.push('\nIt is the build/disband phase. Call submitBuilds then ready().');
+    case 'Builds': {
+      const buildCount = mySCs - myUnits.length;
+      if (buildCount > 0) {
+        lines.push(
+          `\n⚠️ ACTION REQUIRED: You have ${mySCs} supply centers and ${myUnits.length} units — you MUST build ${buildCount} unit(s).` +
+            '\nCall submitBuilds with an array of Build orders. Each build needs: type "Build", unitType ("Army" or "Fleet"), and province (one of your unoccupied home centers).' +
+            '\nThen call ready().',
+        );
+      } else if (buildCount < 0) {
+        lines.push(
+          `\n⚠️ ACTION REQUIRED: You have ${myUnits.length} units but only ${mySCs} supply centers — you MUST disband ${-buildCount} unit(s).` +
+            '\nCall submitBuilds with an array of Remove orders. Each remove needs: type "Remove" and province (where the unit to disband is).' +
+            '\nThen call ready().',
+        );
+      } else {
+        lines.push(
+          '\nYou have equal units and supply centers — no builds or disbands needed. Call submitBuilds with an empty array, then ready().',
+        );
+      }
       break;
+    }
   }
 
   return lines.join('\n');

@@ -14,8 +14,14 @@ import type {
   LLMClient,
   ToolDefinition,
   ToolExecutor,
-} from '../../../src/agent/llm/llm-client';
-import { extractNotesBlock, NoteKeepingClient, parsePhaseFromPrompt } from './note-keeping-client';
+} from '../src/agent/llm/llm-client';
+import {
+  extractNotesBlock,
+  MAX_NOTE_PHASES,
+  NoteKeepingClient,
+  parsePhaseFromPrompt,
+  truncateNotes,
+} from './note-keeping-client';
 
 describe('extractNotesBlock', () => {
   it('extracts notes from a response with json + notes fences', () => {
@@ -74,6 +80,31 @@ describe('extractNotesBlock', () => {
     const result = extractNotesBlock(response);
     expect(result.notes).toContain('strategy: test');
   });
+
+  it('extracts and concatenates multiple notes blocks', () => {
+    const response = [
+      '```json',
+      '[{ "unit": "par", "type": "hold" }]',
+      '```',
+      '',
+      '```notes',
+      'strategy: Hold Paris.',
+      '```',
+      '',
+      'Some extra text.',
+      '',
+      '```notes',
+      'ux_feedback: Format was clear.',
+      '```',
+    ].join('\n');
+
+    const result = extractNotesBlock(response);
+    expect(result.notes).toContain('strategy: Hold Paris.');
+    expect(result.notes).toContain('ux_feedback: Format was clear.');
+    expect(result.cleaned).not.toContain('```notes');
+    expect(result.cleaned).toContain('"type": "hold"');
+    expect(result.cleaned).toContain('Some extra text.');
+  });
 });
 
 describe('parsePhaseFromPrompt', () => {
@@ -90,6 +121,44 @@ describe('parsePhaseFromPrompt', () => {
   it('returns Unknown Phase when pattern not found', () => {
     const prompt = 'Some prompt without phase header';
     expect(parsePhaseFromPrompt(prompt)).toBe('Unknown Phase');
+  });
+});
+
+describe('truncateNotes', () => {
+  it('returns all notes when fewer sections than limit', () => {
+    const notes = '\n## Spring 1901 Orders\n\nPlan A.\n\n## Fall 1901 Orders\n\nPlan B.\n';
+    const result = truncateNotes(notes);
+    expect(result).toBe(notes);
+    expect(result).not.toContain('Earlier notes omitted');
+  });
+
+  it('truncates to last MAX_NOTE_PHASES sections', () => {
+    const phases = Array.from({ length: 8 }, (_, i) => {
+      const season = i % 2 === 0 ? 'Spring' : 'Fall';
+      const year = 1901 + Math.floor(i / 2);
+      return `\n## ${season} ${year} Orders\n\nNotes for phase ${i + 1}.\n`;
+    });
+    const notes = phases.join('');
+
+    const result = truncateNotes(notes);
+
+    expect(result).toContain(`Earlier notes omitted — showing last ${MAX_NOTE_PHASES} phases`);
+    // Should NOT contain the first two phases (8 - 6 = 2 dropped)
+    expect(result).not.toContain('Notes for phase 1.');
+    expect(result).not.toContain('Notes for phase 2.');
+    // Should contain the last 6 phases
+    expect(result).toContain('Notes for phase 3.');
+    expect(result).toContain('Notes for phase 8.');
+  });
+
+  it('returns notes unchanged when exactly MAX_NOTE_PHASES sections', () => {
+    const phases = Array.from({ length: MAX_NOTE_PHASES }, (_, i) =>
+      `\n## Phase ${i + 1}\n\nContent ${i + 1}.\n`,
+    );
+    const notes = phases.join('');
+    const result = truncateNotes(notes);
+    expect(result).toBe(notes);
+    expect(result).not.toContain('Earlier notes omitted');
   });
 });
 
@@ -216,7 +285,7 @@ describe('NoteKeepingClient', () => {
     expect(result).toBe(mockClient.response);
   });
 
-  it('truncates notes injection to MAX_NOTES_CHARS', async () => {
+  it('injects full notes without truncation', async () => {
     const dir = join(tmpDir, 'lobby789');
     await fsMkdir(dir, { recursive: true });
     const bigNotes = 'x'.repeat(5000);
@@ -231,10 +300,40 @@ describe('NoteKeepingClient', () => {
     ]);
 
     const lastUserMsg = mockClient.lastMessages.find((m) => m.role === 'user')!;
-    // The injected notes portion should be truncated
     const notesSection = lastUserMsg.content.split('--- Your Notes From Previous Phases ---')[1];
     const noteContent = notesSection.split('--- Note-Taking Instructions ---')[0];
-    expect(noteContent.length).toBeLessThanOrEqual(2200); // 2000 + some truncation message overhead
+    expect(noteContent).toContain('x'.repeat(5000));
+  });
+
+  it('truncates injected notes to last MAX_NOTE_PHASES sections', async () => {
+    const dir = join(tmpDir, 'lobbyBounded');
+    await fsMkdir(dir, { recursive: true });
+
+    // Write notes with 8 phase sections
+    const phases = Array.from({ length: 8 }, (_, i) => {
+      const season = i % 2 === 0 ? 'Spring' : 'Fall';
+      const year = 1901 + Math.floor(i / 2);
+      return `\n## ${season} ${year} Orders\n\n### Strategy\nNotes for phase ${i + 1}.\n`;
+    });
+    await fsWriteFile(join(dir, 'Germany.md'), phases.join(''));
+
+    mockClient.response = '```json\n[]\n```';
+    const client = new NoteKeepingClient(mockClient, tmpDir, 'Germany', 'lobbyBounded');
+
+    await client.complete([
+      { role: 'system', content: 'Sys' },
+      { role: 'user', content: '=== Spring 1905 (Orders) ===\nGo.' },
+    ]);
+
+    const lastUserMsg = mockClient.lastMessages.find((m) => m.role === 'user')!;
+    const notesSection = lastUserMsg.content.split('--- Your Notes From Previous Phases ---')[1];
+    const noteContent = notesSection.split('--- Note-Taking Instructions ---')[0];
+
+    expect(noteContent).toContain(`Earlier notes omitted — showing last ${MAX_NOTE_PHASES} phases`);
+    expect(noteContent).not.toContain('Notes for phase 1.');
+    expect(noteContent).not.toContain('Notes for phase 2.');
+    expect(noteContent).toContain('Notes for phase 3.');
+    expect(noteContent).toContain('Notes for phase 8.');
   });
 
   describe('runToolLoop', () => {

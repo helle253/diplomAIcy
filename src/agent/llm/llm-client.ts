@@ -43,6 +43,8 @@ export interface LLMClientConfig {
   numCtx?: number;
 }
 
+import { logger } from '../../util/logger';
+
 export class OpenAICompatibleClient implements LLMClient {
   private config: Required<Omit<LLMClientConfig, 'numCtx'>>;
 
@@ -61,7 +63,7 @@ export class OpenAICompatibleClient implements LLMClient {
 
   private async fetchWithRetry(url: string, body: Record<string, unknown>): Promise<unknown> {
     const MAX_RETRIES = 6;
-    const REQUEST_TIMEOUT_MS = parseInt(process.env.LLM_REQUEST_TIMEOUT_MS ?? '120000', 10);
+    const REQUEST_TIMEOUT_MS = parseInt(process.env.LLM_REQUEST_TIMEOUT_MS ?? '600000', 10);
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
@@ -152,6 +154,7 @@ export class OpenAICompatibleClient implements LLMClient {
     maxIterations = 30,
   ): Promise<string> {
     const conversation = [...messages];
+    const allText: string[] = [];
 
     for (let i = 0; i < maxIterations; i++) {
       const url = `${this.config.baseUrl}/chat/completions`;
@@ -164,7 +167,7 @@ export class OpenAICompatibleClient implements LLMClient {
 
       if (tools.length > 0) {
         body.tools = tools;
-        body.tool_choice = 'auto';
+        body.tool_choice = 'required';
       }
 
       if (this.numCtx !== undefined) {
@@ -192,10 +195,28 @@ export class OpenAICompatibleClient implements LLMClient {
       const content = assistantMsg.content ?? '';
       const toolCalls = assistantMsg.tool_calls;
 
+      // Log model response text (truncated)
+      if (content) {
+        const truncated = content.length > 300 ? content.slice(0, 300) + '...' : content;
+        logger.debug(`[LLM] iter=${i} text: ${truncated}`);
+      }
+
+      if (content) allText.push(content);
+
       // No tool calls — model is done
       if (!toolCalls || toolCalls.length === 0) {
-        return content;
+        logger.debug(`[LLM] iter=${i} no tool calls, ending loop`);
+        return allText.join('\n');
       }
+
+      // Log which tools the model chose
+      const callSummary = toolCalls
+        .map(
+          (tc) =>
+            `${tc.function.name}(${tc.function.arguments.length > 100 ? tc.function.arguments.slice(0, 100) + '...' : tc.function.arguments})`,
+        )
+        .join(', ');
+      logger.debug(`[LLM] iter=${i} tool_calls: ${callSummary}`);
 
       // Append assistant message with tool calls
       conversation.push({
@@ -210,7 +231,9 @@ export class OpenAICompatibleClient implements LLMClient {
         try {
           args = JSON.parse(tc.function.arguments) as Record<string, unknown>;
         } catch {
-          // If args can't be parsed, pass empty object
+          logger.warn(
+            `[LLM] Failed to parse tool args for ${tc.function.name}: ${tc.function.arguments}`,
+          );
         }
 
         const result = await executor.execute(tc.function.name, args);
@@ -223,11 +246,12 @@ export class OpenAICompatibleClient implements LLMClient {
 
       // Check if executor is ready (model called ready() tool)
       if (executor.isReady) {
-        return content;
+        return allText.join('\n');
       }
     }
 
     // Max iterations reached
+    logger.warn(`[LLM] Tool loop reached max iterations (${maxIterations})`);
     return '';
   }
 }

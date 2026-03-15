@@ -1,3 +1,4 @@
+import { logger } from '../../util/logger';
 import {
   ChatMessage,
   LLMClient,
@@ -61,7 +62,7 @@ export class AnthropicClient implements LLMClient {
   private async fetchWithRetry(body: Record<string, unknown>): Promise<AnthropicResponse> {
     const url = `${this.config.baseUrl}/v1/messages`;
     const MAX_RETRIES = 6;
-    const REQUEST_TIMEOUT_MS = parseInt(process.env.LLM_REQUEST_TIMEOUT_MS ?? '120000', 10);
+    const REQUEST_TIMEOUT_MS = parseInt(process.env.LLM_REQUEST_TIMEOUT_MS ?? '600000', 10);
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
@@ -163,6 +164,8 @@ export class AnthropicClient implements LLMClient {
       input_schema: t.function.parameters,
     }));
 
+    const allText: string[] = [];
+
     for (let i = 0; i < maxIterations; i++) {
       const body: Record<string, unknown> = {
         model: this.config.model,
@@ -177,6 +180,7 @@ export class AnthropicClient implements LLMClient {
 
       if (anthropicTools.length > 0) {
         body.tools = anthropicTools;
+        body.tool_choice = { type: 'any' };
       }
 
       const data = await this.fetchWithRetry(body);
@@ -192,10 +196,26 @@ export class AnthropicClient implements LLMClient {
       );
       const textContent = textBlocks.map((b) => b.text).join('');
 
+      // Log model response text (truncated)
+      if (textContent) {
+        const truncated =
+          textContent.length > 300 ? textContent.slice(0, 300) + '...' : textContent;
+        logger.debug(`[LLM] iter=${i} text: ${truncated}`);
+      }
+
+      if (textContent) allText.push(textContent);
+
       // No tool calls — model is done
       if (toolUseBlocks.length === 0) {
-        return textContent;
+        logger.debug(`[LLM] iter=${i} no tool calls, ending loop`);
+        return allText.join('\n');
       }
+
+      // Log which tools the model chose
+      const callSummary = toolUseBlocks
+        .map((tb) => `${tb.name}(${JSON.stringify(tb.input).slice(0, 100)})`)
+        .join(', ');
+      logger.debug(`[LLM] iter=${i} tool_calls: ${callSummary}`);
 
       // Append assistant message with full content blocks
       conversation.push({ role: 'assistant', content: data.content });
@@ -216,11 +236,12 @@ export class AnthropicClient implements LLMClient {
 
       // Check if executor is ready (model called ready() tool)
       if (executor.isReady) {
-        return textContent;
+        return allText.join('\n');
       }
     }
 
     // Max iterations reached
-    return '';
+    logger.warn(`[LLM] Tool loop reached max iterations (${maxIterations})`);
+    return allText.join('\n');
   }
 }

@@ -1,16 +1,17 @@
 import 'dotenv/config';
 
+import { AnthropicClient } from '../src/agent/llm/anthropic-client';
 import {
   AgentConfig,
   getAgentConfig,
   loadConfig,
   toLLMClientConfig,
-} from '../../../src/agent/llm/config';
-import { OpenAICompatibleClient } from '../../../src/agent/llm/llm-client';
-import { connectToolAgent } from '../../../src/agent/llm/tool-agent';
-import { connectRandomAgent } from '../../../src/agent/random-agent';
-import { createGameClient } from '../../../src/agent/remote/client';
-import { Power } from '../../../src/engine/types';
+} from '../src/agent/llm/config';
+import { OpenAICompatibleClient } from '../src/agent/llm/llm-client';
+import { connectToolAgent } from '../src/agent/llm/tool-agent';
+import { connectRandomAgent } from '../src/agent/random-agent';
+import { createGameClient } from '../src/agent/remote/client';
+import { Power } from '../src/engine/types';
 import { NoteKeepingClient } from './note-keeping-client';
 
 const VALID_POWERS = new Set<string>(Object.values(Power));
@@ -111,7 +112,7 @@ async function main() {
 
   // Wait for lobby to be playing
   const trpcClient = createGameClient(server, seatToken);
-  const readyTimeoutMs = Number(process.env.LOBBY_READY_TIMEOUT_MS ?? 0);
+  const readyTimeoutMs = Number(process.env.LOBBY_READY_TIMEOUT_MS ?? 120000);
   const deadline = readyTimeoutMs > 0 ? Date.now() + readyTimeoutMs : Number.POSITIVE_INFINITY;
 
   while (Date.now() < deadline || deadline === Number.POSITIVE_INFINITY) {
@@ -136,19 +137,32 @@ async function main() {
       );
       process.exit(1);
     }
-    if (cfg.provider === 'anthropic') {
-      console.error('Anthropic provider does not support tool calling yet. Use openai provider.');
-      process.exit(1);
-    }
-    const rawClient = new OpenAICompatibleClient(toLLMClientConfig(cfg));
+    const rawClient =
+      cfg.provider === 'anthropic'
+        ? new AnthropicClient(toLLMClientConfig(cfg))
+        : new OpenAICompatibleClient(toLLMClientConfig(cfg));
     const llmClient = new NoteKeepingClient(rawClient, notesDir, power, lobbyId);
     console.log(
       `Starting tool-calling agent with notes for ${power} (${cfg.provider ?? 'openai'}/${cfg.model}), notes → ${notesDir}/${lobbyId}/${power}.md`,
     );
-    await connectToolAgent(trpcClient, llmClient, power, lobbyId);
+    const { unsubscribe } = await connectToolAgent(trpcClient, llmClient, power, lobbyId);
+
+    const shutdown = () => {
+      unsubscribe();
+      process.exit(0);
+    };
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
   } else {
     console.log(`Starting random agent for ${power}, connecting to ${server}...`);
-    await connectRandomAgent(trpcClient, power, lobbyId);
+    const { unsubscribe } = await connectRandomAgent(trpcClient, power, lobbyId);
+
+    const shutdown = () => {
+      unsubscribe();
+      process.exit(0);
+    };
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
   }
 
   // Keep the process alive

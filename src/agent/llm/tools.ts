@@ -1,5 +1,6 @@
 import { PROVINCES } from '../../engine/map';
 import { Coast, GameState, OrderType, Power, UnitType } from '../../engine/types';
+import { logger } from '../../util/logger';
 import type { ToolDefinition, ToolExecutor } from './llm-client';
 
 export interface ToolGameClient {
@@ -39,6 +40,7 @@ interface FlatBuild {
 
 export class GameToolExecutor implements ToolExecutor {
   isReady = false;
+  hasSubmitted = false;
 
   constructor(
     private client: ToolGameClient,
@@ -47,32 +49,65 @@ export class GameToolExecutor implements ToolExecutor {
   ) {}
 
   async execute(name: string, args: Record<string, unknown>): Promise<string> {
+    const argsStr = Object.keys(args).length > 0 ? ` ${JSON.stringify(args)}` : '';
+    logger.debug(`[${this.power}] tool:${name}${argsStr}`);
+
+    let result: string;
     switch (name) {
       case 'getMyUnits':
-        return this.getMyUnits();
+        result = this.getMyUnits();
+        break;
       case 'getAdjacentProvinces':
-        return this.getAdjacentProvinces(args);
+        result = this.getAdjacentProvinces(args);
+        break;
       case 'getProvinceInfo':
-        return this.getProvinceInfo(args);
+        result = this.getProvinceInfo(args);
+        break;
       case 'getSupplyCenterCounts':
-        return this.getSupplyCenterCounts();
+        result = this.getSupplyCenterCounts();
+        break;
       case 'getPhaseInfo':
-        return this.getPhaseInfo();
+        result = this.getPhaseInfo();
+        break;
       case 'getRetreatOptions':
-        return this.getRetreatOptions();
+        result = this.getRetreatOptions();
+        break;
       case 'submitOrders':
-        return this.submitOrders(args);
+        result = await this.submitOrders(args);
+        break;
       case 'submitRetreats':
-        return this.submitRetreats(args);
+        result = await this.submitRetreats(args);
+        break;
       case 'submitBuilds':
-        return this.submitBuilds(args);
+        result = await this.submitBuilds(args);
+        break;
       case 'sendMessage':
-        return this.sendMessage(args);
+        result = await this.sendMessage(args);
+        break;
       case 'ready':
-        return this.ready();
+        result = await this.ready();
+        break;
       default:
-        return JSON.stringify({ error: `Unknown tool: ${name}` });
+        result = JSON.stringify({ error: `Unknown tool: ${name}` });
     }
+
+    // Log submission results and messages at info level, query results at debug
+    const isAction = [
+      'submitOrders',
+      'submitRetreats',
+      'submitBuilds',
+      'sendMessage',
+      'ready',
+    ].includes(name);
+    if (isAction) {
+      logger.info(`[${this.power}] tool:${name} => ${result}`);
+    } else {
+      logger.debug(
+        `[${this.power}] tool:${name} => ${result.length > 200 ? result.slice(0, 200) + '...' : result}`,
+      );
+    }
+
+    return result;
   }
 
   private getMyUnits(): string {
@@ -217,15 +252,15 @@ export class GameToolExecutor implements ToolExecutor {
             type: OrderType.Move,
             unit: o.unit,
             destination: o.destination as string,
-            ...(o.coast !== undefined ? { coast: o.coast } : {}),
-            ...(o.viaConvoy !== undefined ? { viaConvoy: o.viaConvoy } : {}),
+            ...(o.coast ? { coast: o.coast } : {}),
+            ...(o.viaConvoy ? { viaConvoy: o.viaConvoy } : {}),
           };
         case OrderType.Support:
           return {
             type: OrderType.Support,
             unit: o.unit,
             supportedUnit: o.supportedUnit as string,
-            ...(o.destination !== undefined ? { destination: o.destination } : {}),
+            ...(o.destination ? { destination: o.destination } : {}),
           };
         case OrderType.Convoy:
           return {
@@ -239,8 +274,13 @@ export class GameToolExecutor implements ToolExecutor {
       }
     });
 
+    for (const o of orders) {
+      logger.info(`[${this.power}]   order: ${JSON.stringify(o)}`);
+    }
+
     try {
       const result = await this.client.game.submitOrders.mutate({ orders });
+      this.hasSubmitted = true;
       return JSON.stringify(result);
     } catch (e) {
       return JSON.stringify({ error: String(e) });
@@ -254,12 +294,12 @@ export class GameToolExecutor implements ToolExecutor {
     const rawRetreats = args.retreats as FlatRetreat[];
 
     const retreats = rawRetreats.map((r) => {
-      if (r.destination !== undefined) {
+      if (r.destination) {
         return {
           type: 'RetreatMove' as const,
           unit: r.unit,
           destination: r.destination,
-          ...(r.coast !== undefined ? { coast: r.coast } : {}),
+          ...(r.coast ? { coast: r.coast } : {}),
         };
       } else {
         return { type: 'Disband' as const, unit: r.unit };
@@ -268,6 +308,7 @@ export class GameToolExecutor implements ToolExecutor {
 
     try {
       const result = await this.client.game.submitRetreats.mutate({ retreats });
+      this.hasSubmitted = true;
       return JSON.stringify(result);
     } catch (e) {
       return JSON.stringify({ error: String(e) });
@@ -282,6 +323,7 @@ export class GameToolExecutor implements ToolExecutor {
 
     try {
       const result = await this.client.game.submitBuilds.mutate({ builds: rawBuilds });
+      this.hasSubmitted = true;
       return JSON.stringify(result);
     } catch (e) {
       return JSON.stringify({ error: String(e) });
@@ -297,6 +339,8 @@ export class GameToolExecutor implements ToolExecutor {
     }
     const to = args.to as string | string[];
     const content = args.content;
+    const toStr = Array.isArray(to) ? to.join(', ') : to;
+    logger.info(`[${this.power}] -> ${toStr}: ${content}`);
 
     try {
       const result = await this.client.game.sendMessage.mutate({ to, content });

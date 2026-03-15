@@ -9,12 +9,14 @@
 set -euo pipefail
 
 POWERS=(England France Germany Italy Austria Russia Turkey)
-AGENT_TYPE="${AGENT_TYPE:-llm}"
+AGENT_TYPE="${AGENT_TYPE-llm}"
 AGENT_CONFIG="${AGENT_CONFIG:-diplomaicy.config.json}"
 SERVER_URL="http://localhost:${PORT:-3000}/trpc"
 MAX_YEARS="${MAX_YEARS:-5}"
 PHASE_DELAY="${PHASE_DELAY:-5000}"
 REMOTE_TIMEOUT="${REMOTE_TIMEOUT:-120000}"
+NOTES_DIR="${NOTES_DIR:-game-notes}"
+AGENT_RUNNER="${AGENT_RUNNER:-integration-test/run-with-notes.ts}"
 PIDS=()
 
 # Validate numeric env vars early
@@ -74,19 +76,24 @@ LOBBY_ID=$(jq -er '.result.data.lobbyId // .lobbyId // empty' <<<"$LOBBY_RESPONS
 
 echo "Created lobby: $LOBBY_ID"
 
+# Create notes directory
+mkdir -p "$NOTES_DIR"
+
 # Launch agents — each reads per-power config from AGENT_CONFIG
+# Uses run-with-notes.ts by default to capture tool call traces as markdown
 for power in "${POWERS[@]}"; do
   TYPE_FLAG=""
   if [ -n "$AGENT_TYPE" ]; then
     TYPE_FLAG="--type $AGENT_TYPE"
   fi
   DIPLOMAICY_CONFIG="$AGENT_CONFIG" \
-    npx tsx src/agent/remote/run.ts --power "$power" --lobby "$LOBBY_ID" --server "$SERVER_URL" $TYPE_FLAG &
+    npx tsx "$AGENT_RUNNER" --power "$power" --lobby "$LOBBY_ID" --server "$SERVER_URL" --notes-dir "$NOTES_DIR" $TYPE_FLAG &
   PIDS+=($!)
   sleep 3
 done
 
 echo "All agents launched. Game in progress..."
+echo "Notes: $NOTES_DIR/$LOBBY_ID/"
 echo "UI: http://localhost:${PORT:-3000}"
 
 # Wait for server (exits when game loop ends or on signal)

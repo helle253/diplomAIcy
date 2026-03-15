@@ -4,7 +4,7 @@
 # which is ~5-10x faster than CPU-only inference inside Docker.
 #
 # Prerequisites:
-#   1. Install Ollama on macOS: https://ollama.com/download
+#   1. Install Ollama on macOS: https://ollama.com/download (or `brew install ollama`)
 #   2. Start it: `ollama serve` (or it runs as a menu bar app)
 #   3. Pull your model: `ollama pull qwen2.5:3b`
 #   4. Run this script from inside the devcontainer
