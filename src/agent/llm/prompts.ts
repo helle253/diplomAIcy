@@ -183,8 +183,13 @@ HOW TO PLAY:
 PLANNING:
 - You MUST include a \`\`\`plan block in EVERY response — this is your memory between turns
 - Your old plan is shown in the turn prompt. It may be OUTDATED — always rewrite it based on current state
-- Format: GOAL (what SC are you targeting next?), ALLIES, ENEMIES, NEXT (specific orders for next turn)
-- A stale plan is worse than no plan — update it every phase`;
+- Use this format:
+  GOAL: What supply center am I targeting next and why?
+  ALLIES: Who am I working with? What did we agree to?
+  THREATS: Who is threatening me? What are they likely to do next turn?
+  ORDERS: What EXACTLY will I submit next turn? (e.g. A vie -> bud, F tri -> alb)
+  REFLECTION: What worked last turn? What failed? What should I change?
+- The ORDERS field is critical — pre-commit to specific moves so you follow through next turn`;
 }
 
 export function buildTurnPrompt(
@@ -261,11 +266,12 @@ export function buildTurnPrompt(
   lines.push('\n' + buildStrategicSummary(state, power));
 
   // Agent plan (persisted across phases)
-  const planContent = plan ?? '(No plan yet — write one!)';
+  const planContent =
+    plan ?? '(No plan yet — write one using the format: GOAL, ALLIES, THREATS, ORDERS, REFLECTION)';
   lines.push(
     '\n--- Your Plan (from last phase) ---\n' +
       planContent +
-      '\n\n⚠️ You MUST include an updated ```plan block in your response. Rewrite your plan based on the current situation above.',
+      '\n\n⚠️ You MUST include an updated ```plan block. Check your ORDERS from last phase — did you follow through? Update based on results.',
   );
 
   // Pending messages (phase labels included by formatMessage for temporal context)
