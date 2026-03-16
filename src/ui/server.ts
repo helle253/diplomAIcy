@@ -214,7 +214,13 @@ function startServer(): void {
             agentCfg.provider === 'anthropic'
               ? new AnthropicClient(llmConfig)
               : new OpenAICompatibleClient(llmConfig);
-          const handle = await connectToolAgent(agentClient, llmClient, power, id);
+          const handle = await connectToolAgent(
+            agentClient,
+            llmClient,
+            power,
+            id,
+            process.env.PLAN_DIR,
+          );
           runtime.agentConnections.push(handle);
           logger.info(
             `  ${power}: LLM tool-calling (${agentCfg.provider ?? 'openai'} / ${toLLMClientConfig(agentCfg).model})`,

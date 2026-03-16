@@ -14,12 +14,19 @@ function isPower(value: string): value is Power {
   return VALID_POWERS.has(value);
 }
 
-function parseArgs(): { power: Power; server: string; type?: string; lobbyId: string } {
+function parseArgs(): {
+  power: Power;
+  server: string;
+  type?: string;
+  lobbyId: string;
+  planDir?: string;
+} {
   const args = process.argv.slice(2);
   let power: string | undefined;
   let server = process.env.GAME_SERVER ?? 'http://localhost:3000/trpc';
   let type: string | undefined;
   let lobbyId: string | undefined;
+  let planDir: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--power' && args[i + 1]) {
@@ -30,6 +37,8 @@ function parseArgs(): { power: Power; server: string; type?: string; lobbyId: st
       type = args[++i];
     } else if (args[i] === '--lobby' && args[i + 1]) {
       lobbyId = args[++i];
+    } else if (args[i] === '--plan-dir' && args[i + 1]) {
+      planDir = args[++i];
     }
   }
 
@@ -49,7 +58,7 @@ function parseArgs(): { power: Power; server: string; type?: string; lobbyId: st
     process.exit(1);
   }
 
-  return { power, server, type, lobbyId };
+  return { power, server, type, lobbyId, planDir };
 }
 
 function resolveAgentConfig(power: Power, typeOverride?: string): AgentConfig {
@@ -79,7 +88,7 @@ function resolveAgentConfig(power: Power, typeOverride?: string): AgentConfig {
 }
 
 async function main() {
-  const { power, server, type, lobbyId } = parseArgs();
+  const { power, server, type, lobbyId, planDir } = parseArgs();
   const cfg = resolveAgentConfig(power, type);
 
   // Step 1: Join lobby to get seat token (unauthenticated client)
@@ -131,7 +140,7 @@ async function main() {
       `Starting tool-calling agent for ${power} (${cfg.provider ?? 'openai'}/${cfg.model}), connecting to ${server}...`,
     );
     // connectToolAgent handles everything — joins directly into tool loop
-    await connectToolAgent(trpcClient, llmClient, power, lobbyId);
+    await connectToolAgent(trpcClient, llmClient, power, lobbyId, planDir);
   } else if (!cfg.type || cfg.type === 'random') {
     console.log(`Starting random agent for ${power}, connecting to ${server}...`);
     await connectRandomAgent(trpcClient, power, lobbyId);
