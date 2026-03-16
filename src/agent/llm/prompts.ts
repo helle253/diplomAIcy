@@ -171,6 +171,7 @@ STRATEGY:
 - Use Support orders to help your moves succeed against defended provinces
 - Coordinate with allies via sendMessage — but be ready to betray when it benefits you
 - Every turn, ask yourself: "Which supply center am I trying to capture next?"
+- MOMENTUM: If you moved toward a target last turn, CONTINUE in that direction. Do not retreat home unless directly threatened. Sustained campaigns win games — oscillating back and forth wastes turns.
 
 HOW TO PLAY:
 - Your units and reachable provinces are shown in the turn prompt
@@ -180,10 +181,10 @@ HOW TO PLAY:
 - During the Diplomacy phase: only use sendMessage and ready() — no submission tools are available
 
 PLANNING:
-- You have a persistent plan that carries over between phases
-- Include a \`\`\`plan block in your response alongside your tool calls
-- Format: GOAL (what you're trying to achieve), ALLIES, ENEMIES, NEXT (specific orders for next turn)
-- Your plan from last phase is shown in the turn prompt — review and update it`;
+- You MUST include a \`\`\`plan block in EVERY response — this is your memory between turns
+- Your old plan is shown in the turn prompt. It may be OUTDATED — always rewrite it based on current state
+- Format: GOAL (what SC are you targeting next?), ALLIES, ENEMIES, NEXT (specific orders for next turn)
+- A stale plan is worse than no plan — update it every phase`;
 }
 
 export function buildTurnPrompt(
@@ -264,7 +265,7 @@ export function buildTurnPrompt(
   lines.push(
     '\n--- Your Plan (from last phase) ---\n' +
       planContent +
-      '\n\nReview your plan. Update it if the situation has changed by including a ```plan block in your response.',
+      '\n\n⚠️ You MUST include an updated ```plan block in your response. Rewrite your plan based on the current situation above.',
   );
 
   // Pending messages (phase labels included by formatMessage for temporal context)
@@ -336,10 +337,18 @@ export function buildTurnPrompt(
           homeCenters.length > 0
             ? `\nYour open home centers: ${homeCenters.join(', ')}`
             : '\nWARNING: All home centers are occupied — you must Waive.';
-        const example =
-          homeCenters.length > 0
-            ? `\nExample: submitBuilds({ builds: [{ type: "Build", unitType: "Army", province: "${homeCenters[0]}" }] })`
-            : '\nExample: submitBuilds({ builds: [{ type: "Waive" }] })';
+        // Build exact example showing all builds needed
+        let example: string;
+        if (homeCenters.length > 0) {
+          const buildOrders = homeCenters
+            .slice(0, buildCount)
+            .map((prov) => `{ type: "Build", unitType: "Army", province: "${prov}" }`)
+            .join(', ');
+          example = `\nCopy this EXACTLY: submitBuilds({ builds: [${buildOrders}] })`;
+        } else {
+          const waives = Array.from({ length: buildCount }, () => '{ type: "Waive" }').join(', ');
+          example = `\nCopy this EXACTLY: submitBuilds({ builds: [${waives}] })`;
+        }
         lines.push(
           `\n⚠️ ACTION REQUIRED: You have ${mySCs} supply centers and ${myUnits.length} units — you MUST build ${buildCount} unit(s).` +
             homeList +
