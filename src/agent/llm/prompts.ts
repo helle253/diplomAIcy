@@ -337,24 +337,16 @@ export function buildTurnPrompt(
           homeCenters.length > 0
             ? `\nYour open home centers: ${homeCenters.join(', ')}`
             : '\nWARNING: All home centers are occupied — you must Waive.';
-        // Build exact example showing all builds needed
-        let example: string;
-        if (homeCenters.length > 0) {
-          const buildOrders = homeCenters
-            .slice(0, buildCount)
-            .map((prov) => `{ type: "Build", unitType: "Army", province: "${prov}" }`)
-            .join(', ');
-          example = `\nCopy this EXACTLY: submitBuilds({ builds: [${buildOrders}] })`;
-        } else {
-          const waives = Array.from({ length: buildCount }, () => '{ type: "Waive" }').join(', ');
-          example = `\nCopy this EXACTLY: submitBuilds({ builds: [${waives}] })`;
-        }
+        const buildInstructions =
+          homeCenters.length > 0
+            ? '\nCall submitBuilds with a Build order for each unit. Each needs: type "Build", unitType "Army" or "Fleet", province (one of your open home centers above).' +
+              '\nFor fleet builds on multi-coast provinces (stp, spa, bul), also specify coast: "nc" or "sc".'
+            : '\nAll home centers are occupied. Call submitBuilds with Waive orders: type "Waive" (no unitType or province needed).';
         lines.push(
-          `\n⚠️ ACTION REQUIRED: You have ${mySCs} supply centers and ${myUnits.length} units — you MUST build ${buildCount} unit(s).` +
+          `\n⚠️ ACTION REQUIRED: You MUST build ${buildCount} unit(s).` +
             homeList +
-            example +
-            '\nDo NOT submit an empty array — you must build units to grow stronger!' +
-            '\nFor fleet builds on multi-coast provinces (stp, spa, bul), specify coast: "nc" or "sc".' +
+            buildInstructions +
+            '\nDo NOT submit an empty array — you must build to grow stronger!' +
             '\nThen call ready().',
         );
       } else if (buildCount < 0) {
