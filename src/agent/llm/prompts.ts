@@ -63,13 +63,20 @@ INFORMATION SECURITY:
 - NEVER reveal information from a PRIVATE message to others
 - Use private messages for sensitive coordination
 
+STRATEGY:
+- Your goal is to GROW — capture supply centers to build more units
+- In early years, grab neutral supply centers (unowned SCs adjacent to your units)
+- NEVER hold all your units. A unit that holds when it could move toward a supply center is WASTED
+- Use Support orders to help your moves succeed against defended provinces
+- Coordinate with allies via sendMessage — but be ready to betray when it benefits you
+- Every turn, ask yourself: "Which supply center am I trying to capture next?"
+
 HOW TO PLAY:
-- Your units and reachable provinces are shown in the turn prompt — act on that info directly
+- Your units and reachable provinces are shown in the turn prompt
 - Use getProvinceInfo to scout enemy positions if needed
 - Use sendMessage to negotiate with other powers
 - During Orders/Retreats/Builds phases: you MUST call submitOrders/submitRetreats/submitBuilds before calling ready()
-- During the Diplomacy phase: only use sendMessage and ready() — no submission tools are available
-- Act quickly — submit orders first, then send messages if time permits`;
+- During the Diplomacy phase: only use sendMessage and ready() — no submission tools are available`;
 }
 
 export function buildTurnPrompt(
@@ -153,16 +160,43 @@ export function buildTurnPrompt(
   switch (phase.type) {
     case 'Diplomacy':
       lines.push(
-        '\nThis is the diplomacy phase. Send messages to negotiate. Call ready() when done.',
+        '\nThis is the diplomacy phase. Use sendMessage to:' +
+          '\n- Propose alliances and coordinate attacks on shared enemies' +
+          '\n- Agree on which neutral SCs each power will take' +
+          '\n- Warn neighbors against attacking you' +
+          '\nSend at least one message, then call ready() when done.',
       );
       break;
-    case 'Orders':
+    case 'Orders': {
+      // Identify nearby unowned SCs to suggest targets
+      const targets: string[] = [];
+      for (const u of myUnits) {
+        const prov = PROVINCES[u.province];
+        const adj =
+          u.type === UnitType.Army
+            ? (prov?.adjacency.army ?? [])
+            : u.coast && prov?.adjacency.fleetByCoast?.[u.coast]
+              ? prov.adjacency.fleetByCoast[u.coast]!
+              : (prov?.adjacency.fleet ?? []);
+        for (const a of adj) {
+          const target = PROVINCES[a];
+          if (target?.supplyCenter && !state.supplyCenters.has(a)) {
+            targets.push(`${unitStr(u)} can reach neutral SC: ${a}`);
+          }
+        }
+      }
+      const targetHint =
+        targets.length > 0
+          ? `\n\nNEARBY NEUTRAL SUPPLY CENTERS (capture these!):\n${targets.join('\n')}`
+          : '';
       lines.push(
         '\n⚠️ ACTION REQUIRED: You MUST call submitOrders with one order per unit, then call ready().' +
-          '\nYour units and their reachable provinces are listed above — you have everything you need.' +
-          '\nYou may use getProvinceInfo to scout, but do NOT re-query your own units or adjacencies.',
+          '\nDo NOT hold all units — move toward supply centers! Holding every unit is losing.' +
+          '\nUse Move orders to advance, Support orders to help allies or reinforce your own moves.' +
+          targetHint,
       );
       break;
+    }
     case 'Retreats':
       lines.push(
         '\n⚠️ ACTION REQUIRED: You MUST call the submitRetreats tool.' +
@@ -173,11 +207,26 @@ export function buildTurnPrompt(
     case 'Builds': {
       const buildCount = mySCs - myUnits.length;
       if (buildCount > 0) {
+        // Find open home centers for build suggestions
+        const homeCenters = [...state.supplyCenters.entries()]
+          .filter(([, p]) => p === power)
+          .map(([prov]) => prov)
+          .filter((prov) => PROVINCES[prov]?.homeCenter === power)
+          .filter((prov) => !state.units.some((u) => u.province === prov));
+        const homeList =
+          homeCenters.length > 0
+            ? `\nYour open home centers: ${homeCenters.join(', ')}`
+            : '\nWARNING: All home centers are occupied — you must Waive.';
+        const example =
+          homeCenters.length > 0
+            ? `\nExample: submitBuilds({ builds: [{ type: "Build", unitType: "Army", province: "${homeCenters[0]}" }] })`
+            : '\nExample: submitBuilds({ builds: [{ type: "Waive" }] })';
         lines.push(
           `\n⚠️ ACTION REQUIRED: You have ${mySCs} supply centers and ${myUnits.length} units — you MUST build ${buildCount} unit(s).` +
-            '\nCall submitBuilds with an array of Build orders. Each build needs: type "Build", unitType ("Army" or "Fleet"), and province (one of your unoccupied home centers).' +
-            '\nFor fleet builds on multi-coast provinces (stp, spa, bul), you MUST specify coast: e.g. province "stp" with coast "nc" or "sc".' +
-            '\nIf all your home centers are occupied, use type "Waive" instead (no unitType or province needed).' +
+            homeList +
+            example +
+            '\nDo NOT submit an empty array — you must build units to grow stronger!' +
+            '\nFor fleet builds on multi-coast provinces (stp, spa, bul), specify coast: "nc" or "sc".' +
             '\nThen call ready().',
         );
       } else if (buildCount < 0) {
