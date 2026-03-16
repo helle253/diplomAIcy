@@ -1,6 +1,16 @@
 import { PROVINCES } from '../../engine/map';
 import { GameState, Message, OrderResolution, Power, Unit, UnitType } from '../../engine/types';
 
+const PLAN_BLOCK_RE = /```plan\s*\n([\s\S]*?)```/;
+
+export function extractPlanBlock(response: string): { plan: string | null; cleaned: string } {
+  const match = response.match(PLAN_BLOCK_RE);
+  if (!match) return { plan: null, cleaned: response };
+  const plan = match[1].trim();
+  const cleaned = response.replace(PLAN_BLOCK_RE, '').trim();
+  return { plan: plan || null, cleaned };
+}
+
 function unitStr(u: Unit): string {
   const t = u.type === UnitType.Army ? 'A' : 'F';
   const coast = u.coast ? `/${u.coast}` : '';
@@ -31,6 +41,97 @@ function formatMessage(m: Message, self: Power): string {
     tag = ` [SHARED - visible to: ${visible.join(', ')}]`;
   }
   return `${phaseLabel}${m.from} -> ${to}: ${m.content}${tag}`;
+}
+
+export function buildStrategicSummary(state: GameState, power: Power): string {
+  const lines: string[] = ['--- Strategic Situation ---'];
+
+  // Power rankings from current SC ownership
+  const currentSCs = new Map<Power, number>();
+  for (const [, p] of state.supplyCenters) {
+    currentSCs.set(p, (currentSCs.get(p) ?? 0) + 1);
+  }
+
+  // Starting SC counts derived from map data (not hardcoded)
+  const startingSCs = new Map<Power, number>();
+  for (const prov of Object.values(PROVINCES)) {
+    if (prov.homeCenter) {
+      const p = prov.homeCenter as Power;
+      startingSCs.set(p, (startingSCs.get(p) ?? 0) + 1);
+    }
+  }
+
+  const allPowers = Object.values(Power);
+  const ranked = allPowers
+    .map((p) => ({ power: p, scs: currentSCs.get(p) ?? 0, start: startingSCs.get(p) ?? 0 }))
+    .sort((a, b) => b.scs - a.scs);
+
+  lines.push('POWER RANKINGS (by supply centers):');
+  for (const { power: p, scs, start } of ranked) {
+    const delta = scs - start;
+    const trend = delta > 0 ? ` (+${delta})` : delta < 0 ? ` (${delta})` : '';
+    const arrow = delta > 0 ? ' ▲' : delta < 0 ? ' ▼' : '';
+    const you = p === power ? ' ← YOU' : '';
+    lines.push(`  ${p}: ${scs} SCs${trend}${arrow}${you}`);
+  }
+
+  // Neutral supply centers
+  const neutralSCs: string[] = [];
+  for (const [id, prov] of Object.entries(PROVINCES)) {
+    if (prov.supplyCenter && !state.supplyCenters.has(id)) {
+      neutralSCs.push(id);
+    }
+  }
+  if (neutralSCs.length > 0) {
+    lines.push(`\nNEUTRAL SUPPLY CENTERS (unclaimed — capture these!): ${neutralSCs.join(', ')}`);
+  }
+
+  // Neighbor detection
+  const myUnits = state.units.filter((u) => u.power === power);
+  const unitsByProvince = new Map<string, Unit>();
+  for (const u of state.units) {
+    unitsByProvince.set(u.province, u);
+  }
+
+  const neighborUnits = new Map<Power, string[]>();
+  for (const u of myUnits) {
+    const prov = PROVINCES[u.province];
+    const adj =
+      u.type === UnitType.Army
+        ? (prov?.adjacency.army ?? [])
+        : u.coast && prov?.adjacency.fleetByCoast?.[u.coast]
+          ? prov.adjacency.fleetByCoast[u.coast]!
+          : (prov?.adjacency.fleet ?? []);
+    for (const a of adj) {
+      const enemy = unitsByProvince.get(a);
+      if (enemy && enemy.power !== power) {
+        const list = neighborUnits.get(enemy.power) ?? [];
+        list.push(`${unitStr(enemy)} near ${u.province}`);
+        neighborUnits.set(enemy.power, list);
+      }
+    }
+  }
+
+  if (neighborUnits.size > 0) {
+    lines.push('\nYOUR NEIGHBORS (enemy units adjacent to yours):');
+    for (const [p, adjUnits] of neighborUnits) {
+      lines.push(`  ${p}: ${adjUnits.join(', ')}`);
+    }
+  }
+
+  // My position
+  const mySCCount = currentSCs.get(power) ?? 0;
+  const myHomeCenters = Object.entries(PROVINCES)
+    .filter(([, prov]) => prov.homeCenter === power)
+    .map(([id]) => id);
+  const lostHomes = myHomeCenters.filter((id) => state.supplyCenters.get(id) !== power);
+
+  lines.push(`\nYOUR POSITION: ${myUnits.length} units, ${mySCCount} supply centers`);
+  if (lostHomes.length > 0) {
+    lines.push(`  Lost home centers: ${lostHomes.join(', ')} — recapture these!`);
+  }
+
+  return lines.join('\n');
 }
 
 export function buildToolSystemPrompt(power: Power, endYear?: number): string {
@@ -76,13 +177,20 @@ HOW TO PLAY:
 - Use getProvinceInfo to scout enemy positions if needed
 - Use sendMessage to negotiate with other powers
 - During Orders/Retreats/Builds phases: you MUST call submitOrders/submitRetreats/submitBuilds before calling ready()
-- During the Diplomacy phase: only use sendMessage and ready() — no submission tools are available`;
+- During the Diplomacy phase: only use sendMessage and ready() — no submission tools are available
+
+PLANNING:
+- You have a persistent plan that carries over between phases
+- Include a \`\`\`plan block in your response alongside your tool calls
+- Format: GOAL (what you're trying to achieve), ALLIES, ENEMIES, NEXT (specific orders for next turn)
+- Your plan from last phase is shown in the turn prompt — review and update it`;
 }
 
 export function buildTurnPrompt(
   state: GameState,
   power: Power,
   pendingMessages: Message[],
+  plan?: string,
 ): string {
   const lines: string[] = [];
   const { phase } = state;
@@ -147,6 +255,17 @@ export function buildTurnPrompt(
   } else {
     lines.push('(none)');
   }
+
+  // Strategic situation (auto-computed)
+  lines.push('\n' + buildStrategicSummary(state, power));
+
+  // Agent plan (persisted across phases)
+  const planContent = plan ?? '(No plan yet — write one!)';
+  lines.push(
+    '\n--- Your Plan (from last phase) ---\n' +
+      planContent +
+      '\n\nReview your plan. Update it if the situation has changed by including a ```plan block in your response.',
+  );
 
   // Pending messages (phase labels included by formatMessage for temporal context)
   if (pendingMessages.length > 0) {
