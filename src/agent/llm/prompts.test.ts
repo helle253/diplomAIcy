@@ -31,12 +31,12 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
   return {
     phase: { year: 1901, season: Season.Spring, type: PhaseType.Orders },
     units: [
-      { power: Power.England, type: UnitType.Army, province: 'lon', coast: null },
-      { power: Power.England, type: UnitType.Fleet, province: 'edi', coast: null },
-      { power: Power.England, type: UnitType.Fleet, province: 'lvp', coast: null },
-      { power: Power.France, type: UnitType.Army, province: 'par', coast: null },
-      { power: Power.France, type: UnitType.Army, province: 'mar', coast: null },
-      { power: Power.France, type: UnitType.Fleet, province: 'bre', coast: null },
+      { power: Power.England, type: UnitType.Army, province: 'lon', coast: undefined },
+      { power: Power.England, type: UnitType.Fleet, province: 'edi', coast: undefined },
+      { power: Power.England, type: UnitType.Fleet, province: 'lvp', coast: undefined },
+      { power: Power.France, type: UnitType.Army, province: 'par', coast: undefined },
+      { power: Power.France, type: UnitType.Army, province: 'mar', coast: undefined },
+      { power: Power.France, type: UnitType.Fleet, province: 'bre', coast: undefined },
     ],
     supplyCenters,
     orderHistory: [],
@@ -80,8 +80,8 @@ describe('buildStrategicSummary', () => {
   it('identifies neighboring enemy units', () => {
     const state = makeState({
       units: [
-        { power: Power.England, type: UnitType.Fleet, province: 'lon', coast: null },
-        { power: Power.France, type: UnitType.Fleet, province: 'eng', coast: null },
+        { power: Power.England, type: UnitType.Fleet, province: 'lon', coast: undefined },
+        { power: Power.France, type: UnitType.Fleet, province: 'eng', coast: undefined },
       ],
     });
     const summary = buildStrategicSummary(state, Power.England);
@@ -98,8 +98,8 @@ describe('buildStrategicSummary', () => {
     const state = makeState({
       supplyCenters,
       units: [
-        { power: Power.England, type: UnitType.Fleet, province: 'lon', coast: null },
-        { power: Power.England, type: UnitType.Fleet, province: 'edi', coast: null },
+        { power: Power.England, type: UnitType.Fleet, province: 'lon', coast: undefined },
+        { power: Power.England, type: UnitType.Fleet, province: 'edi', coast: undefined },
       ],
     });
     const summary = buildStrategicSummary(state, Power.England);

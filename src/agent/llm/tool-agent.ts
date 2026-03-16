@@ -1,4 +1,6 @@
 import type { Unsubscribable } from '@trpc/server/observable';
+import { mkdir, readFile, writeFile } from 'fs/promises';
+import { dirname, join } from 'path';
 
 import type { GameState } from '../../engine/types';
 import { Message, PhaseType, Power } from '../../engine/types';
@@ -6,7 +8,7 @@ import { logger } from '../../util/logger';
 import type { GameClient } from '../remote/client';
 import { deserializeGameState, type SerializedGameState } from '../remote/deserialize';
 import type { LLMClient, ToolDefinition } from './llm-client';
-import { buildToolSystemPrompt, buildTurnPrompt } from './prompts';
+import { buildToolSystemPrompt, buildTurnPrompt, extractPlanBlock } from './prompts';
 import { GameToolExecutor, TOOL_DEFINITIONS, type ToolGameClient } from './tools';
 
 const MAP_QUERY_TOOLS = [
@@ -45,6 +47,7 @@ export async function connectToolAgent(
   llm: LLMClient,
   power: Power,
   lobbyId: string,
+  planDir?: string,
 ): Promise<{ unsubscribe: () => void }> {
   // 1. Fetch initial state
   const serializedState = await client.game.getState.query({ lobbyId });
@@ -52,6 +55,24 @@ export async function connectToolAgent(
 
   // 2. Build system prompt (once at init)
   const systemPrompt = buildToolSystemPrompt(power, initialState.endYear);
+
+  // ── Plan persistence ─────────────────────────────────────────────
+  const planFilePath = planDir ? join(planDir, lobbyId, `${power}-plan.md`) : null;
+
+  async function readPlan(): Promise<string | undefined> {
+    if (!planFilePath) return undefined;
+    try {
+      return await readFile(planFilePath, 'utf-8');
+    } catch {
+      return undefined;
+    }
+  }
+
+  async function savePlan(plan: string): Promise<void> {
+    if (!planFilePath) return;
+    await mkdir(dirname(planFilePath), { recursive: true });
+    await writeFile(planFilePath, plan);
+  }
 
   // ── Serialized work queue + message accumulator ──────────────────
   const MESSAGE_BATCH_DELAY = parseInt(process.env.MESSAGE_BATCH_DELAY ?? '5000', 10);
@@ -162,11 +183,13 @@ export async function connectToolAgent(
         `[${power}] Including ${accumulatedMessages.length} accumulated messages in phase prompt`,
       );
     }
-    const userMessage = buildTurnPrompt(gameState, power, accumulatedMessages);
+    const currentPlan = await readPlan();
+    const userMessage = buildTurnPrompt(gameState, power, accumulatedMessages, currentPlan);
 
     logger.info(`[${power}] Starting tool loop for phase ${gameState.phase.type}`);
+    let response = '';
     try {
-      await llm.runToolLoop(
+      response = await llm.runToolLoop(
         [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userMessage },
@@ -175,6 +198,15 @@ export async function connectToolAgent(
         executor,
       );
       logger.info(`[${power}] Tool loop complete for phase ${gameState.phase.type}`);
+
+      // Extract and persist plan block from primary response
+      if (response) {
+        const { plan } = extractPlanBlock(response);
+        if (plan) {
+          await savePlan(plan);
+          logger.info(`[${power}] Plan saved for next phase`);
+        }
+      }
     } catch (err) {
       logger.error(`[${power}] Tool loop error:`, err);
     }
@@ -234,7 +266,8 @@ export async function connectToolAgent(
       const executor = new GameToolExecutor(client as unknown as ToolGameClient, gameState, power);
       const tools = filterToolsByPhase(gameState.phase.type as PhaseType);
       // Pass ALL accumulated messages so the agent has full diplomatic context
-      const userMessage = buildTurnPrompt(gameState, power, accumulatedMessages);
+      const messagePlan = await readPlan();
+      const userMessage = buildTurnPrompt(gameState, power, accumulatedMessages, messagePlan);
 
       logger.info(
         `[${power}] Starting tool loop for ${newMessages.length} new message(s) (${accumulatedMessages.length} total context)`,
