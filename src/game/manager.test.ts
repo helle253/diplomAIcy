@@ -71,7 +71,7 @@ describe('GameManager — Initialization', () => {
     expect(state.phase.type).toBe(PhaseType.Diplomacy);
     expect(state.units).toHaveLength(22);
     expect(state.supplyCenters.size).toBe(22);
-    expect(state.endYear).toBe(1950);
+    expect(state.endYear).toBeUndefined();
   });
 });
 

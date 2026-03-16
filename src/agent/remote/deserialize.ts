@@ -21,7 +21,7 @@ export interface SerializedGameState {
   map: Record<string, ProvinceState>;
   orderHistory: Record<string, WireOrderRound[]>;
   retreatSituations: RetreatSituation[];
-  endYear: number;
+  endYear?: number;
   deadlineMs: number;
   gameOver?: boolean;
 }

@@ -80,7 +80,7 @@ export class GameManager {
   private eventListeners: GameEventListener[] = [];
   private phaseChangeListeners: PhaseChangeListener[] = [];
   private startYear: number;
-  private endYear: number;
+  private endYear: number | undefined;
   private phaseDelayMs: number;
   private remoteTimeoutMs: number;
   private victoryThreshold: number;
@@ -100,7 +100,7 @@ export class GameManager {
 
   constructor(config: GameManagerConfig = {}) {
     const {
-      maxYears = 50,
+      maxYears,
       phaseDelayMs = 0,
       remoteTimeoutMs = 0,
       pressDelayMin = 0,
@@ -112,7 +112,7 @@ export class GameManager {
     } = config;
     this.bus = new MessageBus({ pressDelayMin, pressDelayMax });
     this.startYear = startYear;
-    this.endYear = startYear - 1 + maxYears;
+    this.endYear = maxYears !== undefined ? startYear - 1 + maxYears : undefined;
     this.phaseDelayMs = phaseDelayMs;
     this.remoteTimeoutMs = remoteTimeoutMs;
     this.victoryThreshold = victoryThreshold;
@@ -299,7 +299,7 @@ export class GameManager {
     });
 
     // Main game loop
-    while (this.state.phase.year <= this.endYear) {
+    while (this.endYear === undefined || this.state.phase.year <= this.endYear) {
       // Spring
       await this.runDiplomacyPhase(Season.Spring);
       const springDraw = this.checkDrawVote();
