@@ -15,6 +15,7 @@ import { OpenAICompatibleClient } from '../agent/llm/llm-client';
 import { connectToolAgent } from '../agent/llm/tool-agent';
 import { connectRandomAgent } from '../agent/random-agent';
 import { createGameClient } from '../agent/remote/client';
+import { buildMapState } from '../engine/map-state';
 import { Message, Power } from '../engine/types';
 import { describeProcedure } from '../game/describe';
 import { LobbyManager } from '../game/lobby-manager';
@@ -43,8 +44,9 @@ const ALL_POWERS: Power[] = [
 
 function serializeState(state: import('../engine/types.js').GameState) {
   return {
-    ...state,
-    supplyCenters: Object.fromEntries(state.supplyCenters),
+    phase: state.phase,
+    map: buildMapState(state.units, state.supplyCenters),
+    retreatSituations: state.retreatSituations,
   };
 }
 
