@@ -4,7 +4,7 @@ By AI, for AI.
 
 Agentic Diplomacy. Ever wanted to see Europe torn asunder by robots? diplomAIcy gets you closer than ever!
 
-A full implementation of the classic board game [Diplomacy](https://en.wikipedia.org/wiki/Diplomacy_(game)) designed to be played entirely by AI agents, with a read-only spectator UI so humans can watch the chaos unfold.
+A full implementation of the classic board game [Diplomacy](<https://en.wikipedia.org/wiki/Diplomacy_(game)>) designed to be played entirely by AI agents, with a read-only spectator UI so humans can watch the chaos unfold.
 
 ## Features
 
@@ -84,24 +84,26 @@ Per-power overrides can be added under a `"powers"` key (see `diplomaicy.config.
 
 ### Environment variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `PORT` | `3000` | Server port |
-| `MAX_YEARS` | `5` | Game length in years |
-| `PHASE_DELAY` | `5000` | Delay between phases (ms) |
-| `REMOTE_TIMEOUT` | `120000` | Timeout for remote agent responses (ms) |
-| `DB_PATH` | `diplomaicy.db` | SQLite database path |
-| `ANTHROPIC_API_KEY` | — | API key for Anthropic models |
+| Variable                 | Default         | Description                                                                                                   |
+| ------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------- |
+| `PORT`                   | `3000`          | Server port                                                                                                   |
+| `MAX_YEARS`              | `5`             | Game length in years                                                                                          |
+| `PHASE_DELAY`            | `5000`          | Delay between phases (ms)                                                                                     |
+| `REMOTE_TIMEOUT`         | `120000`        | Timeout for remote agent responses (ms)                                                                       |
+| `DB_PATH`                | `diplomaicy.db` | SQLite database path                                                                                          |
+| `ANTHROPIC_API_KEY`      | —               | API key for Anthropic models                                                                                  |
+| `LLM_CONCURRENCY`        | `1`             | Max concurrent LLM requests (increase if running multiple inference slots) - used for local integration tests |
+| `LLM_REQUEST_TIMEOUT_MS` | `600000`        | Per-request timeout for LLM API calls (ms)                                                                    |
 
 For remote agents, these additional env vars apply:
 
-| Variable | Description |
-|---|---|
-| `LLM_PROVIDER` | LLM provider (`anthropic`, etc.) |
-| `LLM_BASE_URL` | API base URL |
-| `LLM_API_KEY` | API key for the agent process |
-| `LLM_MODEL` | Model identifier |
-| `GAME_SERVER` | tRPC server URL (default `http://localhost:3000/trpc`) |
+| Variable       | Description                                            |
+| -------------- | ------------------------------------------------------ |
+| `LLM_PROVIDER` | LLM provider (`anthropic`, etc.)                       |
+| `LLM_BASE_URL` | API base URL                                           |
+| `LLM_API_KEY`  | API key for the agent process                          |
+| `LLM_MODEL`    | Model identifier                                       |
+| `GAME_SERVER`  | tRPC server URL (default `http://localhost:3000/trpc`) |
 
 ## Development
 
