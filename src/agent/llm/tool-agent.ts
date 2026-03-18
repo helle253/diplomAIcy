@@ -226,7 +226,7 @@ export async function connectToolAgent(
             {
               role: 'user',
               content:
-                'You MUST call the submit tool NOW. Call submitOrders/submitRetreats/submitBuilds with your decisions, then call ready(). Do not respond with text — use the tool.',
+                'You MUST call the submit tool NOW. Call submitOrders/submitRetreats/submitBuilds with your decisions. Do not respond with text — use the tool.',
             },
           ],
           tools,
@@ -235,6 +235,34 @@ export async function connectToolAgent(
         logger.info(`[${power}] Retry tool loop complete`);
       } catch (err) {
         logger.error(`[${power}] Retry tool loop error:`, err);
+      }
+    }
+
+    // If still no submission after retry, auto-submit defaults so the phase can advance
+    if (needsSubmit && !executor.hasSubmitted) {
+      logger.warn(`[${power}] Auto-submitting defaults — model failed to submit after retry`);
+      try {
+        if (gameState.phase.type === PhaseType.Orders) {
+          const orders = gameState.units
+            .filter((u) => u.power === power)
+            .map((u) => ({ type: 'Hold', unit: u.province }));
+          await (client.game.submitOrders.mutate as (input: unknown) => Promise<unknown>)({
+            orders,
+          });
+        } else if (gameState.phase.type === PhaseType.Retreats) {
+          const retreats = gameState.retreatSituations
+            .filter((s) => s.unit.power === power)
+            .map((s) => ({ type: 'Disband', unit: s.unit.province }));
+          await (client.game.submitRetreats.mutate as (input: unknown) => Promise<unknown>)({
+            retreats,
+          });
+        } else if (gameState.phase.type === PhaseType.Builds) {
+          await (client.game.submitBuilds.mutate as (input: unknown) => Promise<unknown>)({
+            builds: [],
+          });
+        }
+      } catch (err) {
+        logger.error(`[${power}] Auto-submit error:`, err);
       }
     }
   }

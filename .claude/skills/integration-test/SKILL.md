@@ -229,20 +229,19 @@ Update referee notes at milestones (yearly, on retreats, at game end).
 
 When the game ends (or to abort early), kill all agent processes and the server using saved PIDs:
 
+**CRITICAL: Only kill processes using saved PIDs.** NEVER use `lsof | xargs kill`, `pkill -f`, or `kill -9` — these can kill devcontainer infrastructure and disconnect VS Code.
+
 ```bash
-# Kill agents
+# Kill agents (ONLY using saved PIDs)
 PID_FILE="$GAME_DIR/agent-pids.txt"
 if [ -f "$PID_FILE" ]; then
   while read -r pid; do
     kill "$pid" 2>/dev/null
   done < "$PID_FILE"
   echo "All agents stopped."
-else
-  pkill -f "run-with-notes.ts" 2>/dev/null
-  echo "Agents stopped (fallback)."
 fi
 
-# Kill server
+# Kill server (ONLY the saved PID)
 if [ -n "$SERVER_PID" ]; then
   kill "$SERVER_PID" 2>/dev/null
   echo "Server stopped."
@@ -251,6 +250,8 @@ fi
 # Clean up file semaphore locks
 rm -rf /tmp/diplomaicy-llm-locks
 ```
+
+If you don't have `$SERVER_PID` (e.g. from a previous session), ask the user to restart the devcontainer or kill the process manually. Do NOT use `lsof`, `pkill`, `killall`, or any pattern-matching kill command.
 
 ### Alternative: Automated Script
 

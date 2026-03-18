@@ -12,9 +12,9 @@ export function extractPlanBlock(response: string): { plan: string | null; clean
 }
 
 function unitStr(u: Unit): string {
-  const t = u.type === UnitType.Army ? 'A' : 'F';
-  const coast = u.coast ? `/${u.coast}` : '';
-  return `${t} ${u.province}${coast}`;
+  const t = u.type === UnitType.Army ? 'Army' : 'Fleet';
+  const coast = u.coast ? ` (${u.coast} coast)` : '';
+  return `${u.province} [${t}]${coast}`;
 }
 
 /**
@@ -188,7 +188,7 @@ PLANNING:
   GOAL: What supply center am I targeting next and why?
   ALLIES: Who am I working with? What did we agree to?
   THREATS: Who is threatening me? What are they likely to do next turn?
-  ORDERS: What EXACTLY will I submit next turn? (e.g. A vie -> bud, F tri -> alb)
+  ORDERS: What EXACTLY will I submit next turn? (e.g. vie -> bud, tri -> alb)
   REFLECTION: What worked last turn? What failed? What should I change?
 - The ORDERS field is critical — pre-commit to specific moves so you follow through next turn`;
 }
