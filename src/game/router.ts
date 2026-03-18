@@ -221,8 +221,8 @@ export function createGameRouter(lobbyManager: LobbyManager) {
       const yearLimitNote = config.endYear ? ` by **${config.endYear}** (the final year)` : '';
       const drawRules = config.allowDraws
         ? config.endYear
-          ? `If no power reaches the victory threshold${yearLimitNote}, the game ends in a draw among all surviving powers. Any power may propose a draw during any phase. If all surviving powers propose a draw in the same season, the game ends immediately as a shared draw.`
-          : `The game continues until a power reaches the victory threshold. Any power may propose a draw during any phase. If all surviving powers propose a draw in the same season, the game ends immediately as a shared draw.`
+          ? `If no power reaches the victory threshold${yearLimitNote}, the game ends in a draw among all surviving powers. Any power may propose a draw during any phase. If all surviving powers propose a draw in the same season, the game ends as a shared draw at the next phase boundary.`
+          : `The game continues until a power reaches the victory threshold. Any power may propose a draw during any phase. If all surviving powers propose a draw in the same season, the game ends as a shared draw at the next phase boundary.`
         : config.endYear
           ? `Draws are disabled. The game continues until a power reaches the victory threshold or the final year (**${config.endYear}**) is reached.`
           : `Draws are disabled. The game continues until a power reaches the victory threshold.`;
