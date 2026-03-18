@@ -106,7 +106,7 @@ function startServer(): void {
   const storage = new GameStorage(DB_PATH);
 
   // Load defaults from env vars + config file
-  const maxYears = parseInt(process.env.MAX_YEARS || '10');
+  const maxYears = process.env.MAX_YEARS ? parseInt(process.env.MAX_YEARS) : undefined;
   const phaseDelayMs = parseInt(process.env.PHASE_DELAY || '600000');
   const remoteTimeoutMs = parseInt(process.env.REMOTE_TIMEOUT || '0');
   const pressDelayMin = parseInt(process.env.PRESS_DELAY_MIN || '0');
@@ -150,7 +150,7 @@ function startServer(): void {
       runtime.allMessages.push(message);
       broadcastToLobby(id, { type: 'message', message }, (clientPower) => {
         if (message.to === 'Global') return true;
-        if (!clientPower) return false; // spectators don't see private press
+        if (!clientPower) return true; // spectators see private press
         if (message.to === clientPower) return true;
         if (message.from === clientPower) return true;
         if (Array.isArray(message.to) && message.to.includes(clientPower)) return true;
@@ -183,7 +183,7 @@ function startServer(): void {
               ...snapshot,
               messages: snapshot.messages.filter((msg) => {
                 if (msg.to === 'Global') return true;
-                if (!clientPower) return false;
+                if (!clientPower) return true; // spectators see all press
                 return (
                   msg.to === clientPower ||
                   msg.from === clientPower ||
@@ -348,7 +348,7 @@ function startServer(): void {
       ...s,
       messages: s.messages.filter((msg) => {
         if (msg.to === 'Global') return true;
-        if (!clientPower) return false;
+        if (!clientPower) return true; // spectators see all press
         return (
           msg.to === clientPower ||
           msg.from === clientPower ||
