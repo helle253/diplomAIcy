@@ -108,14 +108,19 @@ If the desired model is not listed, ask the user which model to use from the ava
 
 ### 3. Start the server
 
+Start the server and wait for it to be healthy. This MUST run in the foreground (not as a background Bash task) so the health check completes before proceeding.
+
 ```bash
 npx tsx src/ui/server.ts > /tmp/server-boot.log 2>&1 &
 SERVER_PID=$!
+# Health check — wait for /api/health to respond before proceeding
 until curl -sf http://localhost:3000/api/health > /dev/null 2>&1; do sleep 1; done
 echo "Server ready (PID $SERVER_PID)"
 ```
 
 Save `SERVER_PID` for cleanup in step 9. After creating `$GAME_DIR` in step 5, move `/tmp/server-boot.log` into `$GAME_DIR/server.log`.
+
+**Important**: Steps 3-7 should be run as separate sequential Bash tool calls, NOT combined into a single background command. The health check in step 3 must complete before creating the lobby in step 4, and agents in step 7 must be launched after the lobby exists.
 
 ### 4. Create a lobby
 
