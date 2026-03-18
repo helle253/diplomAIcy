@@ -6,7 +6,7 @@ import { GameManager, type GameResult } from './manager';
 
 export interface LobbyConfig {
   name: string;
-  maxYears: number;
+  maxYears?: number;
   victoryThreshold: number;
   startYear: number;
   phaseDelayMs: number;

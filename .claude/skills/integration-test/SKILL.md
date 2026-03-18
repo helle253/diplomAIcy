@@ -30,6 +30,48 @@ Verify reachability: `curl -s http://host.docker.internal:11434/api/tags`
   - Pass a different model name as an argument: `.devcontainer/start-ollama.sh qwen2.5:3b`
 - Verify Ollama is reachable: `curl -s http://ollama:11434/api/tags`
 
+## Configuration Gathering
+
+**Before any setup steps**, gather the following configuration values. Extract from the user's prompt where provided. For anything missing or ambiguous, use `AskUserQuestion` to prompt the user — do NOT guess at values that meaningfully affect game behavior.
+
+### Values to collect
+
+| Setting | Prompt question | Default | Notes |
+|---------|----------------|---------|-------|
+| **Model** | "Which model should the agents use?" | (none — must be provided or chosen from list) | Show available models from Ollama preflight check |
+| **Ollama host** | "Should agents use host Ollama or Docker Ollama?" | host (if reachable) | Determine automatically via reachability; only ask if ambiguous |
+| **Max years** | "How many years should the game run, or should it run until the win condition is met?" | (omit — run until win) | Omit from lobby creation to run indefinitely; "100 years" → 100; "quick test" → 2 |
+| **Victory threshold** | "How many supply centers are needed to win?" | 18 | Standard Diplomacy is 18; max 34 (all SCs) |
+| **Allow draws** | "Should powers be able to propose and accept draws?" | true | Set false to force a decisive winner |
+| **Fast adjudication** | "Should the engine advance as soon as all agents submit, without waiting for the phase duration?" | true | "fast adjudication" or "fast" in prompt → true |
+| **Phase duration (ms)** | "What is the maximum time each phase should last?" | 0 (no limit) | With fast adjudication: phase ends when all submit OR timer fires, whichever is first. Without: phase always waits the full duration. e.g. "60 minute phases" → 3600000 |
+| **LLM concurrency** | "How many agents can call Ollama simultaneously? (should match OLLAMA_NUM_PARALLEL on host)" | 1 | If user mentions GPU/VRAM or parallel, ask for this explicitly |
+| **Remote timeout (ms)** | "How long should the server wait for agent submissions per phase?" | 600000 | 10 min default; increase for slow models or long games |
+| **LLM request timeout (ms)** | "Per-request timeout for LLM calls?" | 900000 | 15 min default for safety |
+| **Monitor interval** | "How often should the referee check in on the game?" | half the phase duration, or 10m if no phase cap | e.g. 60 min phases → 30m check-ins; no cap → 10m. User can override. Used for `/loop` interval in step 8. |
+
+### Ambiguity rules
+
+- If user specifies a model name not exactly matching an available model, show the available list and ask which to use (do not silently substitute).
+- If the user does not mention a year limit, omit `maxYears` entirely — the game runs until victory or a draw.
+- If user says "100 years", use `maxYears: 100`. If they say "quick test", use `maxYears: 2`.
+- If user says "fast adjudication" or "fast", use `fastAdjudication: true`.
+- If the user specifies a phase duration (e.g. "60 minute phases"), set `phaseDelayMs` accordingly. These two settings compose: with both set, the phase ends when all agents submit OR when the timer fires — whichever comes first.
+- If the user provides `LLM_CONCURRENCY` or mentions parallel requests, use that value.
+- If Ollama is reachable at host.docker.internal, default to host config; if only docker is reachable, default to docker config; if both or neither, ask.
+
+### Example extraction
+
+> "run a 100 year integration test, using ollama qwen2.5:7b - with fast adjudication"
+
+→ maxYears: 100, model: qwen2.5:7b (verify against available list), fastAdjudication: true, all other values → defaults. No questions needed.
+
+> "run an integration test using ollama qwen2.5:3b until someone wins"
+
+→ maxYears: omitted (run until win condition), model: qwen2.5:3b, fastAdjudication: true (default), no questions needed.
+
+---
+
 ## Setup
 
 ### 1. Build the project
@@ -69,8 +111,8 @@ If the desired model is not listed, ask the user which model to use from the ava
 ```bash
 npx tsx src/ui/server.ts &
 SERVER_PID=$!
-# Wait for server to be ready
-until curl -sf http://localhost:3000/health > /dev/null 2>&1; do sleep 1; done
+# Wait for server to be ready (no /health endpoint — check root)
+until curl -sf http://localhost:3000/api/health > /dev/null 2>&1; do sleep 1; done
 echo "Server ready (PID $SERVER_PID)"
 ```
 
@@ -98,7 +140,7 @@ Create `game-notes/REFEREE_NOTES_{lobbyId}.md` with setup info (lobby ID, model,
 
 ### 7. Launch 7 Ollama-powered agents
 
-Launch each power as a background remote agent process. All agents launch simultaneously — Ollama queues requests naturally. PIDs are saved to a file for reliable cleanup later.
+Launch each power as a background remote agent process. A cross-process file semaphore (`FileSemaphore` in `src/agent/llm/semaphore.ts`) limits concurrent Ollama requests to avoid undici's 5-minute `headersTimeout` (see Troubleshooting). PIDs are saved for cleanup.
 
 ```bash
 POWERS=(England France Germany Italy Austria Russia Turkey)
@@ -111,8 +153,14 @@ PID_FILE="game-notes/agent-pids.txt"
 ## Option B (docker Ollama): DIPLOMAICY_CONFIG=diplomaicy.config.ollama-docker.json
 DIPLOMAICY_CONFIG=diplomaicy.config.ollama-host.json
 
+## LLM_CONCURRENCY controls how many agents can call Ollama simultaneously.
+## Set this to match OLLAMA_NUM_PARALLEL on the host (default: 1).
+## LLM_REQUEST_TIMEOUT_MS is the per-request timeout (default: 600s / 10 min).
+
 for power in "${POWERS[@]}"; do
   DIPLOMAICY_CONFIG="$DIPLOMAICY_CONFIG" \
+  LLM_CONCURRENCY=2 \
+  LLM_REQUEST_TIMEOUT_MS=900000 \
   npx tsx integration-test/run-with-notes.ts --power "$power" --lobby "$LOBBY_ID" --type llm --notes-dir "game-notes" > "game-notes/${power}.log" 2>&1 &
   echo $! >> "$PID_FILE"
 done
@@ -123,12 +171,19 @@ You MUST run this via the Bash tool — these are native remote agent processes,
 
 ### 8. Monitor as referee using /loop
 
-After all agents are connected, invoke the `/loop` skill to set up recurring monitoring. Set the interval to roughly **half the observed phase length** — watch the first phase complete to gauge timing, then set the loop accordingly.
+After all agents are connected, invoke the `/loop` skill to set up recurring monitoring. Use the **monitor interval** from the configuration gathering step.
 
-Use the `/loop` skill with a prompt like:
+**IMPORTANT:** NEVER cancel the monitoring loop unless the user explicitly asks you to. Games may appear stalled between checks but are still progressing — phases can take a long time with slow models. Only the user should decide when to stop monitoring.
+
+**Default monitor interval logic:**
+- If phase duration is set: use **half** the phase duration (e.g. 60 min phases → `30m`)
+- If no phase duration cap: use **`10m`**
+- If the user specified a custom interval, use that instead
+
+Use the `/loop` skill with the computed interval:
 
 ```text
-/loop <interval> Check game <LOBBY_ID>: curl game state from localhost:3000, report phase/year, SC counts per power, unit positions, check lobby status for game completion. If game is finished, report final results and stop. Append notable events to game-notes/REFEREE_NOTES_<LOBBY_ID>.md.
+/loop <monitor-interval> Check game <LOBBY_ID>: curl game state from localhost:3000, report phase/year, SC counts per power, unit positions, check lobby status for game completion. If game is finished, report final results and stop. Append notable events to game-notes/REFEREE_NOTES_<LOBBY_ID>.md.
 ```
 
 You can also poll manually at any time:
@@ -182,6 +237,9 @@ if [ -n "$SERVER_PID" ]; then
   kill "$SERVER_PID" 2>/dev/null
   echo "Server stopped."
 fi
+
+# Clean up file semaphore locks
+rm -rf /tmp/diplomaicy-llm-locks
 ```
 
 ### Alternative: Automated Script
@@ -198,43 +256,34 @@ If Ollama is running somewhere other than the devcontainer service:
 LLM_BASE_URL=http://localhost:11434/v1  # or wherever Ollama is
 ```
 
-### Parallel Ollama Slots
+### Concurrency: LLM_CONCURRENCY and OLLAMA_NUM_PARALLEL
 
-By default, Ollama processes requests sequentially (`OLLAMA_NUM_PARALLEL=1`). With 7 agents each making 3-5 LLM calls per phase, this creates a bottleneck where phases take 10-15 minutes to resolve.
+Node.js `fetch` uses undici, which has a hardcoded 5-minute `headersTimeout`. When 7 agents all queue requests on Ollama simultaneously, later requests wait >5 min for a slot, and undici kills the connection — Ollama logs this as a 500 error.
 
-Setting `OLLAMA_NUM_PARALLEL` allows multiple agents to query simultaneously:
+**The fix:** A cross-process file semaphore (`FileSemaphore` in `src/agent/llm/semaphore.ts`) limits how many agents can call Ollama at once. Set via the `LLM_CONCURRENCY` env var (default: 1). Lock files live in `/tmp/diplomaicy-llm-locks/` and are cleaned up automatically (stale PID detection on startup, removal on process exit/SIGTERM).
+
+**`LLM_CONCURRENCY` should match `OLLAMA_NUM_PARALLEL`** on the host. If Ollama can handle 2 parallel requests, set both to 2.
 
 ```bash
-# On the host machine (stop existing Ollama first):
-OLLAMA_NUM_PARALLEL=3 ollama serve
+# On the host machine:
+OLLAMA_NUM_PARALLEL=2 ollama serve
+
+# When launching agents (inside devcontainer):
+LLM_CONCURRENCY=2
 ```
 
-**VRAM budget** (qwen2.5:14b Q4_K_M uses ~9.3GB base):
-- **16GB unified memory (M2 Pro etc.):** `N=2` safe, `N=3` tight but workable
+**VRAM budget** (each parallel slot adds ~0.5-1GB for KV cache):
+
+- **16GB unified memory (M2 Pro etc.):** `N=2` safe, `N=3` tight
 - **32GB:** `N=4-5` comfortably
-- **48GB+:** `N=7` (one slot per agent)
-
-Each parallel slot adds ~0.5-1GB for KV cache. If you see performance degrade or swapping, reduce `N`.
-
-**Alternative:** Use a smaller model (`qwen2.5:7b` at ~4.7GB) with higher parallelism — e.g., `N=3` with 7b on 16GB gives ~6x speedup vs `N=1` with 14b.
-
-If Ollama is managed by Homebrew:
-```bash
-brew services stop ollama
-OLLAMA_NUM_PARALLEL=3 ollama serve   # runs in foreground
-```
-
-Or via launchctl:
-```bash
-launchctl setenv OLLAMA_NUM_PARALLEL 3
-brew services restart ollama
-```
+- **48GB+:** `N=7` (one slot per agent — no semaphore needed)
 
 ### Timeouts
 
-- `remoteTimeoutMs` in lobby creation controls how long the server waits for agent submissions
-- The default of 600000 (10 min) is generous; for faster models you can decrease it (e.g. `"remoteTimeoutMs": 180000` for 3 min)
-- `PHASE_DELAY` env var on the server controls the minimum delay between engine phases (default 10 minutes). With `fastAdjudication: true`, the engine advances as soon as all agents submit, so `PHASE_DELAY` only matters if agents are faster than the delay
+- **`LLM_REQUEST_TIMEOUT_MS`** — Per-request timeout on the agent side (default: 600s / 10 min). Set to 900000 (15 min) for slower models or large prompts.
+- **`remoteTimeoutMs`** — In lobby creation, controls how long the server waits for agent submissions per phase.
+- **`keep_alive`** — Sent in every LLM request body (hardcoded to `60m`). Tells Ollama to keep the model loaded for 60 minutes between requests instead of the default 5 minutes. This prevents unnecessary model reloads during long games.
+- **`PHASE_DELAY`** — Server env var for minimum delay between engine phases. With `fastAdjudication: true`, the engine advances as soon as all agents submit, so this only matters if agents are faster than the delay.
 
 ## Monitoring
 
@@ -251,6 +300,7 @@ curl -s http://ollama:11434/api/ps | python3 -m json.tool
 ```
 
 Common issues to watch for:
+
 - `"aborting completion request due to client closing the connection"` — LLM client timeout too short for inference. The default is 600s (10 min). Set `LLM_REQUEST_TIMEOUT_MS` env var to adjust
 - `size_vram: 0` in `api/ps` output — model is running on CPU only, expect slow inference. Use a smaller model (3B or 0.5B)
 - OOM kills — model too large for available memory
@@ -277,6 +327,10 @@ Review these to understand agent behavior and identify prompt improvements.
 **"Ollama not reachable"** — Ollama doesn't start by default. Run `.devcontainer/start-ollama.sh` to start it.
 
 **"model not found"** — Pull the model first: `curl http://ollama:11434/api/pull -d '{"name":"qwen2.5:7b"}'`
+
+**Ollama 500 errors at exactly 5 minutes** — This is Node.js undici's `headersTimeout` (5 min default) killing connections when Ollama takes too long to respond. The fix is the `FileSemaphore` + `LLM_CONCURRENCY` env var, which queues requests in-process instead of on Ollama's side. Ensure `LLM_CONCURRENCY` matches `OLLAMA_NUM_PARALLEL`. If you see `UND_ERR_HEADERS_TIMEOUT` in agent logs, this is the cause.
+
+**"Lobby is not accepting players"** — Agent crashed and tried to rejoin a running game. The `run-with-notes.ts` script has no rejoin path — you must start a fresh lobby. Kill everything, `rm diplomaicy.db`, and restart.
 
 **Agents hang** — The model may be too slow. Try a smaller model or increase timeouts.
 

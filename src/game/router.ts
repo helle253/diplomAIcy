@@ -14,15 +14,35 @@ const RULES_TEMPLATE = readFileSync(new URL('../engine/RULES.md', import.meta.ur
 
 // ── Zod schemas ────────────────────────────────────────────────────────
 
-const powerEnum = z.enum([
-  Power.England,
-  Power.France,
-  Power.Germany,
-  Power.Italy,
-  Power.Austria,
-  Power.Russia,
-  Power.Turkey,
-]);
+const POWER_ABBREV: Record<string, Power> = {
+  eng: Power.England,
+  fra: Power.France,
+  ger: Power.Germany,
+  ita: Power.Italy,
+  aus: Power.Austria,
+  rus: Power.Russia,
+  tur: Power.Turkey,
+};
+
+const powerEnum = z
+  .enum([
+    Power.England,
+    Power.France,
+    Power.Germany,
+    Power.Italy,
+    Power.Austria,
+    Power.Russia,
+    Power.Turkey,
+    // Accept abbreviations too
+    'eng',
+    'fra',
+    'ger',
+    'ita',
+    'aus',
+    'rus',
+    'tur',
+  ])
+  .transform((val) => POWER_ABBREV[val] ?? val) as unknown as z.ZodType<Power>;
 
 const coastEnum = z.enum([Coast.North, Coast.South]);
 
@@ -198,9 +218,14 @@ export function createGameRouter(lobbyManager: LobbyManager) {
       const fastAdjStr = config.fastAdjudication
         ? 'Enabled — the diplomacy phase ends as soon as all powers signal ready (via submitReady). Send your messages promptly; once all powers are ready, negotiations close immediately'
         : 'Disabled — the diplomacy phase always runs for the full duration regardless of readiness';
+      const yearLimitNote = config.endYear ? ` by **${config.endYear}** (the final year)` : '';
       const drawRules = config.allowDraws
-        ? `If no power reaches the victory threshold by **${config.endYear}** (the final year), the game ends in a draw among all surviving powers. Any power may propose a draw during a diplomacy phase. If all surviving powers propose a draw in the same phase, the game ends immediately as a shared draw.`
-        : `Draws are disabled. The game continues until a power reaches the victory threshold or the final year (**${config.endYear}**) is reached.`;
+        ? config.endYear
+          ? `If no power reaches the victory threshold${yearLimitNote}, the game ends in a draw among all surviving powers. Any power may propose a draw during a diplomacy phase. If all surviving powers propose a draw in the same phase, the game ends immediately as a shared draw.`
+          : `The game continues until a power reaches the victory threshold. Any power may propose a draw during a diplomacy phase. If all surviving powers propose a draw in the same phase, the game ends immediately as a shared draw.`
+        : config.endYear
+          ? `Draws are disabled. The game continues until a power reaches the victory threshold or the final year (**${config.endYear}**) is reached.`
+          : `Draws are disabled. The game continues until a power reaches the victory threshold.`;
       const rules = RULES_TEMPLATE.replace('{{VICTORY_THRESHOLD}}', String(config.victoryThreshold))
         .replace('{{START_YEAR}}', String(config.startYear))
         .replace('{{DRAW_RULES}}', drawRules)
@@ -229,8 +254,8 @@ export function createGameRouter(lobbyManager: LobbyManager) {
           return manager.getMessagesFor(identity.power as Power);
         }
       }
-      // Spectator: only global messages
-      return manager.getMessages().filter((m) => m.to === 'Global');
+      // Spectator: see all messages (private + global)
+      return manager.getMessages();
     }),
 
     getResult: publicProcedure.input(lobbyIdInput).query(({ input }) => {

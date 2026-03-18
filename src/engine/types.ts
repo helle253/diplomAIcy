@@ -180,7 +180,7 @@ export interface GameState {
   supplyCenters: Map<string, Power>; // province id -> owning power
   orderHistory: OrderResolution[][];
   retreatSituations: RetreatSituation[];
-  endYear: number; // final year of the game (e.g. 1901 for a 1-year game)
+  endYear?: number; // final year of the game. undefined = no year limit (victory/draw only)
 }
 
 // === Province State (wire format) ===

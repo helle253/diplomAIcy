@@ -80,7 +80,7 @@ export class GameManager {
   private eventListeners: GameEventListener[] = [];
   private phaseChangeListeners: PhaseChangeListener[] = [];
   private startYear: number;
-  private endYear: number;
+  private endYear: number | undefined;
   private phaseDelayMs: number;
   private remoteTimeoutMs: number;
   private victoryThreshold: number;
@@ -100,7 +100,7 @@ export class GameManager {
 
   constructor(config: GameManagerConfig = {}) {
     const {
-      maxYears = 50,
+      maxYears,
       phaseDelayMs = 0,
       remoteTimeoutMs = 0,
       pressDelayMin = 0,
@@ -112,7 +112,7 @@ export class GameManager {
     } = config;
     this.bus = new MessageBus({ pressDelayMin, pressDelayMax });
     this.startYear = startYear;
-    this.endYear = startYear - 1 + maxYears;
+    this.endYear = maxYears !== undefined ? startYear - 1 + maxYears : undefined;
     this.phaseDelayMs = phaseDelayMs;
     this.remoteTimeoutMs = remoteTimeoutMs;
     this.victoryThreshold = victoryThreshold;
@@ -299,7 +299,7 @@ export class GameManager {
     });
 
     // Main game loop
-    while (this.state.phase.year <= this.endYear) {
+    while (this.endYear === undefined || this.state.phase.year <= this.endYear) {
       // Spring
       await this.runDiplomacyPhase(Season.Spring);
       const springDraw = this.checkDrawVote();
@@ -445,8 +445,10 @@ export class GameManager {
   private async runOrdersPhase(season: Season): Promise<void> {
     await this.startPhase({ year: this.state.phase.year, season, type: PhaseType.Orders });
 
+    const deadlineMs = this.phaseDelayMs > 0 ? Date.now() + this.phaseDelayMs : undefined;
+
     // Wait for all active powers to submit orders
-    const orderMap = await this.collectOrders();
+    const orderMap = await this.collectOrders(deadlineMs);
 
     // Resolve orders
     const result = resolveOrders(this.state.units, orderMap, PROVINCES);
@@ -468,7 +470,7 @@ export class GameManager {
 
     // Handle retreats if any
     if (result.dislodgedUnits.length > 0) {
-      await this.runRetreatsPhase(season, result);
+      await this.runRetreatsPhase(season, result, deadlineMs);
     } else {
       this.state.units = result.newPositions;
       this.state.retreatSituations = [];
@@ -480,12 +482,13 @@ export class GameManager {
   private async runRetreatsPhase(
     season: Season,
     resolutionResult: ResolutionResult,
+    deadlineMs?: number,
   ): Promise<void> {
     this.state.retreatSituations = resolutionResult.dislodgedUnits;
     await this.startPhase({ year: this.state.phase.year, season, type: PhaseType.Retreats });
 
     // Wait for affected powers to submit retreats
-    const allRetreatOrders = await this.collectRetreats(resolutionResult);
+    const allRetreatOrders = await this.collectRetreats(resolutionResult, deadlineMs);
 
     // Process retreat orders
     const newPositions = [...resolutionResult.newPositions];
@@ -545,8 +548,10 @@ export class GameManager {
       type: PhaseType.Builds,
     });
 
+    const deadlineMs = this.phaseDelayMs > 0 ? Date.now() + this.phaseDelayMs : undefined;
+
     // Wait for powers that need to build/disband to submit
-    const allBuildOrders = await this.collectBuilds();
+    const allBuildOrders = await this.collectBuilds(deadlineMs);
 
     const turnRecord: TurnRecord = {
       phase: { ...this.state.phase },
@@ -604,9 +609,20 @@ export class GameManager {
     if (readyGate) readyGate();
   }
 
-  /** Wraps a promise with an optional timeout. Returns true if timed out. */
-  private withTimeout(promise: Promise<void>, power: Power, label: string): Promise<boolean> {
-    if (this.remoteTimeoutMs <= 0) return promise.then(() => false);
+  /** Wraps a promise with an optional timeout. Returns true if timed out.
+   * If deadlineMs is provided, uses whichever limit fires first. */
+  private withTimeout(
+    promise: Promise<void>,
+    power: Power,
+    label: string,
+    deadlineMs?: number,
+  ): Promise<boolean> {
+    let timeoutMs: number | undefined = this.remoteTimeoutMs > 0 ? this.remoteTimeoutMs : undefined;
+    if (deadlineMs !== undefined) {
+      const remaining = Math.max(0, deadlineMs - Date.now());
+      timeoutMs = timeoutMs !== undefined ? Math.min(timeoutMs, remaining) : remaining;
+    }
+    if (timeoutMs === undefined) return promise.then(() => false);
     let timer: ReturnType<typeof setTimeout>;
     return Promise.race([
       promise.then(() => {
@@ -615,16 +631,14 @@ export class GameManager {
       }),
       new Promise<boolean>((resolve) => {
         timer = setTimeout(() => {
-          logger.warn(
-            `[${power}] ${label} timed out after ${this.remoteTimeoutMs}ms — using defaults`,
-          );
+          logger.warn(`[${power}] ${label} timed out after ${timeoutMs}ms — using defaults`);
           resolve(true);
-        }, this.remoteTimeoutMs);
+        }, timeoutMs);
       }),
     ]);
   }
 
-  private async collectOrders(): Promise<Map<string, Order>> {
+  private async collectOrders(deadlineMs?: number): Promise<Map<string, Order>> {
     const activePowers = this.getActivePowers();
     const orderMap = new Map<string, Order>();
 
@@ -645,7 +659,7 @@ export class GameManager {
         });
       });
 
-      const timedOut = await this.withTimeout(gate, power, 'orders');
+      const timedOut = await this.withTimeout(gate, power, 'orders', deadlineMs);
       if (timedOut) {
         this.orderGates.delete(power);
         // Default: Hold all units
@@ -657,11 +671,18 @@ export class GameManager {
       }
     });
 
-    await Promise.all(promises);
+    const waitForDeadline =
+      deadlineMs !== undefined && !this.fastAdjudication
+        ? new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, deadlineMs - Date.now())))
+        : Promise.resolve();
+    await Promise.all([Promise.all(promises), waitForDeadline]);
     return orderMap;
   }
 
-  private async collectRetreats(resolutionResult: ResolutionResult): Promise<RetreatOrder[]> {
+  private async collectRetreats(
+    resolutionResult: ResolutionResult,
+    deadlineMs?: number,
+  ): Promise<RetreatOrder[]> {
     const affectedPowers = new Set(resolutionResult.dislodgedUnits.map((d) => d.unit.power));
     const allRetreatOrders: RetreatOrder[] = [];
 
@@ -675,7 +696,7 @@ export class GameManager {
         });
       });
 
-      const timedOut = await this.withTimeout(gate, power, 'retreats');
+      const timedOut = await this.withTimeout(gate, power, 'retreats', deadlineMs);
       if (timedOut) {
         this.retreatGates.delete(power);
         // Default: Disband all dislodged units
@@ -687,11 +708,15 @@ export class GameManager {
       }
     });
 
-    await Promise.all(promises);
+    const waitForDeadline =
+      deadlineMs !== undefined && !this.fastAdjudication
+        ? new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, deadlineMs - Date.now())))
+        : Promise.resolve();
+    await Promise.all([Promise.all(promises), waitForDeadline]);
     return allRetreatOrders;
   }
 
-  private async collectBuilds(): Promise<BuildOrder[]> {
+  private async collectBuilds(deadlineMs?: number): Promise<BuildOrder[]> {
     const activePowers = this.getActivePowers();
     const allBuildOrders: BuildOrder[] = [];
 
@@ -711,7 +736,7 @@ export class GameManager {
         });
       });
 
-      const timedOut = await this.withTimeout(gate, power, 'builds');
+      const timedOut = await this.withTimeout(gate, power, 'builds', deadlineMs);
       if (timedOut) {
         this.buildGates.delete(power);
         if (buildCount > 0) {
@@ -736,7 +761,11 @@ export class GameManager {
       }
     });
 
-    await Promise.all(promises);
+    const waitForDeadline =
+      deadlineMs !== undefined && !this.fastAdjudication
+        ? new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, deadlineMs - Date.now())))
+        : Promise.resolve();
+    await Promise.all([Promise.all(promises), waitForDeadline]);
     return allBuildOrders;
   }
 

@@ -29,7 +29,7 @@ const agentConfigSchema = z.object({
 
 const lobbyConfigSchema = z.object({
   name: z.string().min(1).max(100),
-  maxYears: z.number().int().min(1).max(100).default(10),
+  maxYears: z.number().int().min(1).optional(),
   victoryThreshold: z.number().int().min(1).max(34).default(18),
   startYear: z.number().int().min(1).max(9999).default(1901),
   phaseDelayMs: z.number().int().min(0).default(0),
@@ -62,7 +62,7 @@ function serializeLobby(lobby: Lobby) {
 }
 
 export interface LobbyDefaults {
-  maxYears: number;
+  maxYears?: number;
   phaseDelayMs: number;
   remoteTimeoutMs: number;
   pressDelayMin: number;

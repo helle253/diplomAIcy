@@ -44,6 +44,7 @@ export interface LLMClientConfig {
 }
 
 import { logger } from '../../util/logger';
+import { llmSemaphore } from './semaphore';
 
 export class OpenAICompatibleClient implements LLMClient {
   private config: Required<Omit<LLMClientConfig, 'numCtx'>>;
@@ -73,6 +74,7 @@ export class OpenAICompatibleClient implements LLMClient {
         await new Promise((r) => setTimeout(r, baseDelay + jitter));
       }
 
+      await llmSemaphore.acquire();
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
       try {
@@ -115,6 +117,7 @@ export class OpenAICompatibleClient implements LLMClient {
         continue;
       } finally {
         clearTimeout(timeout);
+        llmSemaphore.release();
       }
     }
 
@@ -128,6 +131,7 @@ export class OpenAICompatibleClient implements LLMClient {
       messages,
       temperature: this.config.temperature,
       max_tokens: this.config.maxTokens,
+      keep_alive: '60m',
     };
 
     // Ollama supports num_ctx via options to control context window size
@@ -163,6 +167,7 @@ export class OpenAICompatibleClient implements LLMClient {
         messages: conversation,
         temperature: this.config.temperature,
         max_tokens: this.config.maxTokens,
+        keep_alive: '60m',
       };
 
       if (tools.length > 0) {

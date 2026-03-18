@@ -145,7 +145,7 @@ async function main() {
     console.log(
       `Starting tool-calling agent with notes for ${power} (${cfg.provider ?? 'openai'}/${cfg.model}), notes → ${notesDir}/${lobbyId}/${power}.md`,
     );
-    const { unsubscribe } = await connectToolAgent(trpcClient, llmClient, power, lobbyId);
+    const { unsubscribe } = await connectToolAgent(trpcClient, llmClient, power, lobbyId, notesDir);
 
     const shutdown = () => {
       unsubscribe();

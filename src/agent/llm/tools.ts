@@ -576,14 +576,23 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         properties: {
           to: {
             oneOf: [
-              { type: 'string', description: 'Target power name or "Global"' },
+              {
+                type: 'string',
+                enum: ['eng', 'fra', 'ger', 'ita', 'aus', 'rus', 'tur', 'Global'],
+                description:
+                  'Single recipient: a power abbreviation (eng, fra, ger, ita, aus, rus, tur) or "Global" for all',
+              },
               {
                 type: 'array',
-                items: { type: 'string' },
-                description: 'List of target power names',
+                items: {
+                  type: 'string',
+                  enum: ['eng', 'fra', 'ger', 'ita', 'aus', 'rus', 'tur'],
+                },
+                description: 'List of power abbreviations to send to',
               },
             ],
-            description: 'Recipient(s) of the message',
+            description:
+              'Recipient(s): use power abbreviations (eng, fra, ger, ita, aus, rus, tur) or "Global"',
           },
           content: { type: 'string', description: 'Message content' },
         },
