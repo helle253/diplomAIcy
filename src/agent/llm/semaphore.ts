@@ -42,10 +42,15 @@ export class FileSemaphore {
     }
 
     // Release our slot on process exit
-    const cleanup = () => this.release();
-    process.on('exit', cleanup);
-    process.on('SIGTERM', cleanup);
-    process.on('SIGINT', cleanup);
+    process.on('exit', () => this.release());
+    process.on('SIGTERM', () => {
+      this.release();
+      process.exit(128 + 15);
+    });
+    process.on('SIGINT', () => {
+      this.release();
+      process.exit(128 + 2);
+    });
   }
 
   private slotPath(i: number): string {
