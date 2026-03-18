@@ -8,7 +8,12 @@ function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
+  } catch (err: unknown) {
+    // EPERM means process exists but we lack permission to signal it
+    if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'EPERM') {
+      return true;
+    }
+    // ESRCH means no such process
     return false;
   }
 }
@@ -91,5 +96,5 @@ export class FileSemaphore {
 // With 7 agents each running tool loops, requests pile up and hit undici's
 // 5-minute headersTimeout. The file semaphore ensures at most N requests
 // reach Ollama at once, with the rest waiting in-process (no timeout).
-const LLM_CONCURRENCY = parseInt(process.env.LLM_CONCURRENCY ?? '1', 10);
+const LLM_CONCURRENCY = Math.max(1, parseInt(process.env.LLM_CONCURRENCY ?? '1', 10) || 1);
 export const llmSemaphore = new FileSemaphore(LLM_CONCURRENCY);
