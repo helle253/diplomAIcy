@@ -31,7 +31,7 @@ export const describeProcedure = publicProcedure.query(() => ({
         type: 'mutation',
         input: {
           name: 'string (required)',
-          maxYears: 'number (default: 10)',
+          maxYears: 'number (default: none)',
           victoryThreshold: 'number (default: 18)',
           startYear: 'number (default: 1901)',
           phaseDelayMs: 'number (default: 0)',

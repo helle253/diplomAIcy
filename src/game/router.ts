@@ -14,15 +14,35 @@ const RULES_TEMPLATE = readFileSync(new URL('../engine/RULES.md', import.meta.ur
 
 // ── Zod schemas ────────────────────────────────────────────────────────
 
-const powerEnum = z.enum([
-  Power.England,
-  Power.France,
-  Power.Germany,
-  Power.Italy,
-  Power.Austria,
-  Power.Russia,
-  Power.Turkey,
-]);
+const POWER_ABBREV: Record<string, Power> = {
+  eng: Power.England,
+  fra: Power.France,
+  ger: Power.Germany,
+  ita: Power.Italy,
+  aus: Power.Austria,
+  rus: Power.Russia,
+  tur: Power.Turkey,
+};
+
+const powerEnum = z
+  .enum([
+    Power.England,
+    Power.France,
+    Power.Germany,
+    Power.Italy,
+    Power.Austria,
+    Power.Russia,
+    Power.Turkey,
+    // Accept abbreviations too
+    'eng',
+    'fra',
+    'ger',
+    'ita',
+    'aus',
+    'rus',
+    'tur',
+  ])
+  .transform((val) => POWER_ABBREV[val] ?? val) as unknown as z.ZodType<Power>;
 
 const coastEnum = z.enum([Coast.North, Coast.South]);
 
@@ -232,8 +252,8 @@ export function createGameRouter(lobbyManager: LobbyManager) {
           return manager.getMessagesFor(identity.power as Power);
         }
       }
-      // Spectator: only global messages
-      return manager.getMessages().filter((m) => m.to === 'Global');
+      // Spectator: see all messages (private + global)
+      return manager.getMessages();
     }),
 
     getResult: publicProcedure.input(lobbyIdInput).query(({ input }) => {
