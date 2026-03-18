@@ -216,13 +216,13 @@ export function createGameRouter(lobbyManager: LobbyManager) {
           ? `${Math.round(config.phaseDeadlineMs / 1000)} seconds per phase`
           : 'No time limit — phases resolve when all orders are submitted';
       const fastAdjStr = config.fastAdjudication
-        ? 'Enabled — the diplomacy phase ends as soon as all powers signal ready (via submitReady). Send your messages promptly; once all powers are ready, negotiations close immediately'
-        : 'Disabled — the diplomacy phase always runs for the full duration regardless of readiness';
+        ? 'Enabled — phases resolve as soon as all powers submit their orders, without waiting for the full deadline'
+        : 'Disabled — phases always run for the full deadline duration regardless of when orders are submitted';
       const yearLimitNote = config.endYear ? ` by **${config.endYear}** (the final year)` : '';
       const drawRules = config.allowDraws
         ? config.endYear
-          ? `If no power reaches the victory threshold${yearLimitNote}, the game ends in a draw among all surviving powers. Any power may propose a draw during a diplomacy phase. If all surviving powers propose a draw in the same phase, the game ends immediately as a shared draw.`
-          : `The game continues until a power reaches the victory threshold. Any power may propose a draw during a diplomacy phase. If all surviving powers propose a draw in the same phase, the game ends immediately as a shared draw.`
+          ? `If no power reaches the victory threshold${yearLimitNote}, the game ends in a draw among all surviving powers. Any power may propose a draw during any phase. If all surviving powers propose a draw in the same season, the game ends immediately as a shared draw.`
+          : `The game continues until a power reaches the victory threshold. Any power may propose a draw during any phase. If all surviving powers propose a draw in the same season, the game ends immediately as a shared draw.`
         : config.endYear
           ? `Draws are disabled. The game continues until a power reaches the victory threshold or the final year (**${config.endYear}**) is reached.`
           : `Draws are disabled. The game continues until a power reaches the victory threshold.`;
@@ -334,12 +334,6 @@ export function createGameRouter(lobbyManager: LobbyManager) {
         });
         return { ok: true };
       }),
-
-    submitReady: playerProcedure.mutation(({ ctx }) => {
-      const manager = resolveManager(lobbyManager, ctx.lobbyId);
-      manager.submitReady(ctx.power);
-      return { ok: true };
-    }),
 
     // Subscriptions
     onPhaseChange: publicProcedure.input(lobbyIdInput).subscription(async function* ({

@@ -176,9 +176,10 @@ STRATEGY:
 HOW TO PLAY:
 - Your units and reachable provinces are shown in the turn prompt
 - Use getProvinceInfo to scout enemy positions if needed
-- Use sendMessage to negotiate with other powers
-- During Orders/Retreats/Builds phases: you MUST call submitOrders/submitRetreats/submitBuilds before calling ready()
-- During the Diplomacy phase: only use sendMessage and ready() — no submission tools are available
+- Use sendMessage to negotiate with other powers during any phase
+- During Orders phase: call submitOrders with one order per unit
+- During Retreats phase: call submitRetreats for dislodged units
+- During Builds phase: call submitBuilds for builds/removals
 
 PLANNING:
 - You MUST include a \`\`\`plan block in EVERY response — this is your memory between turns
@@ -284,15 +285,6 @@ export function buildTurnPrompt(
 
   // Phase-specific instructions
   switch (phase.type) {
-    case 'Diplomacy':
-      lines.push(
-        '\nThis is the diplomacy phase. Use sendMessage to:' +
-          '\n- Propose alliances and coordinate attacks on shared enemies' +
-          '\n- Agree on which neutral SCs each power will take' +
-          '\n- Warn neighbors against attacking you' +
-          '\nSend at least one message, then call ready() when done.',
-      );
-      break;
     case 'Orders': {
       // Identify nearby unowned SCs to suggest targets
       const targets: string[] = [];
@@ -316,7 +308,8 @@ export function buildTurnPrompt(
           ? `\n\nNEARBY NEUTRAL SUPPLY CENTERS (capture these!):\n${targets.join('\n')}`
           : '';
       lines.push(
-        '\n⚠️ ACTION REQUIRED: You MUST call submitOrders with one order per unit, then call ready().' +
+        '\n⚠️ ACTION REQUIRED: You MUST call submitOrders with one order per unit.' +
+          '\nUse sendMessage to negotiate before submitting — propose alliances, coordinate attacks, or warn neighbors.' +
           '\nDo NOT hold all units — move toward supply centers! Holding every unit is losing.' +
           '\nUse Move orders to advance, Support orders to help allies or reinforce your own moves.' +
           targetHint,
@@ -326,7 +319,7 @@ export function buildTurnPrompt(
     case 'Retreats':
       lines.push(
         '\n⚠️ ACTION REQUIRED: You MUST call the submitRetreats tool.' +
-          '\nSteps: 1) getRetreatOptions 2) submitRetreats 3) ready()' +
+          '\nSteps: 1) getRetreatOptions 2) submitRetreats' +
           '\nDo NOT end your turn without calling submitRetreats.',
       );
       break;
@@ -352,18 +345,16 @@ export function buildTurnPrompt(
           `\n⚠️ ACTION REQUIRED: You MUST build ${buildCount} unit(s).` +
             homeList +
             buildInstructions +
-            '\nDo NOT submit an empty array — you must build to grow stronger!' +
-            '\nThen call ready().',
+            '\nDo NOT submit an empty array — you must build to grow stronger!',
         );
       } else if (buildCount < 0) {
         lines.push(
           `\n⚠️ ACTION REQUIRED: You have ${myUnits.length} units but only ${mySCs} supply centers — you MUST disband ${-buildCount} unit(s).` +
-            '\nCall submitBuilds with an array of Remove orders. Each remove needs: type "Remove" and province (where the unit to disband is).' +
-            '\nThen call ready().',
+            '\nCall submitBuilds with an array of Remove orders. Each remove needs: type "Remove" and province (where the unit to disband is).',
         );
       } else {
         lines.push(
-          '\nYou have equal units and supply centers — no builds or disbands needed. Call submitBuilds with an empty array, then ready().',
+          '\nYou have equal units and supply centers — no builds or disbands needed. Call submitBuilds with an empty array.',
         );
       }
       break;

@@ -94,7 +94,7 @@ export const STARTING_SC: Record<string, string> = {
 export function makeSnapshot(
   units: TestUnit[],
   supplyCenters: Record<string, string> = STARTING_SC,
-  phase = { year: 1901, season: 'Spring', type: 'Diplomacy' },
+  phase = { year: 1901, season: 'Spring', type: 'Orders' },
   turnRecord?: unknown,
 ): TestSnapshot {
   const engineUnits: Unit[] = units.map((u) => ({

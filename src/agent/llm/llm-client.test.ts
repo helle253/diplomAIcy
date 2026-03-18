@@ -20,7 +20,6 @@ describe('OpenAICompatibleClient.runToolLoop', () => {
     });
 
     const executor: ToolExecutor = {
-      isReady: false,
       execute: vi.fn(),
     };
 
@@ -70,7 +69,6 @@ describe('OpenAICompatibleClient.runToolLoop', () => {
     });
 
     const executor: ToolExecutor = {
-      isReady: false,
       execute: vi.fn().mockResolvedValue('[{"province":"lon","type":"Fleet"}]'),
     };
 
@@ -86,7 +84,7 @@ describe('OpenAICompatibleClient.runToolLoop', () => {
     vi.unstubAllGlobals();
   });
 
-  it('terminates when executor signals ready', async () => {
+  it('terminates when executor signals hasSubmitted', async () => {
     const mockFetch = vi.fn().mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -99,7 +97,7 @@ describe('OpenAICompatibleClient.runToolLoop', () => {
                 {
                   id: 'call_1',
                   type: 'function',
-                  function: { name: 'ready', arguments: '{}' },
+                  function: { name: 'submitOrders', arguments: '{"orders":[]}' },
                 },
               ],
             },
@@ -115,10 +113,10 @@ describe('OpenAICompatibleClient.runToolLoop', () => {
       model: 'test-model',
     });
 
-    const executor: ToolExecutor = {
-      isReady: false,
+    const executor: ToolExecutor & { hasSubmitted: boolean } = {
+      hasSubmitted: false,
       execute: vi.fn().mockImplementation(async () => {
-        executor.isReady = true;
+        executor.hasSubmitted = true;
         return '{"ok":true}';
       }),
     };
@@ -126,7 +124,7 @@ describe('OpenAICompatibleClient.runToolLoop', () => {
     const result = await client.runToolLoop([{ role: 'user', content: 'Go' }], [], executor);
 
     expect(result).toBe('');
-    expect(executor.isReady).toBe(true);
+    expect(executor.hasSubmitted).toBe(true);
     vi.unstubAllGlobals();
   });
 
@@ -160,7 +158,6 @@ describe('OpenAICompatibleClient.runToolLoop', () => {
     });
 
     const executor: ToolExecutor = {
-      isReady: false,
       execute: vi.fn().mockResolvedValue('[]'),
     };
 

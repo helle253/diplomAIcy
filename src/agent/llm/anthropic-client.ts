@@ -234,8 +234,8 @@ export class AnthropicClient implements LLMClient {
       // Append tool results as a user message
       conversation.push({ role: 'user', content: toolResults });
 
-      // Check if executor is ready (model called ready() tool)
-      if (executor.isReady) {
+      // Check if executor has submitted orders — no need to continue the loop
+      if ('hasSubmitted' in executor && (executor as { hasSubmitted: boolean }).hasSubmitted) {
         return allText.join('\n');
       }
     }

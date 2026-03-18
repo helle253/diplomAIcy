@@ -143,7 +143,6 @@ export enum Season {
 }
 
 export enum PhaseType {
-  Diplomacy = 'Diplomacy',
   Orders = 'Orders',
   Retreats = 'Retreats',
   Builds = 'Builds',

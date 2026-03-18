@@ -13,7 +13,7 @@ describe('MessageBus', () => {
 
   function makeBus(pressDelayMin = 0, pressDelayMax = 0) {
     const bus = new MessageBus({ pressDelayMin, pressDelayMax });
-    bus.phase = { year: 1901, season: Season.Spring, type: PhaseType.Diplomacy };
+    bus.phase = { year: 1901, season: Season.Spring, type: PhaseType.Orders };
     return bus;
   }
 
@@ -22,7 +22,7 @@ describe('MessageBus', () => {
       from,
       to,
       content: 'hello',
-      phase: { year: 1901, season: Season.Spring, type: PhaseType.Diplomacy },
+      phase: { year: 1901, season: Season.Spring, type: PhaseType.Orders },
       timestamp: 0,
     };
   }

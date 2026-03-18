@@ -68,7 +68,7 @@ describe('GameManager — Initialization', () => {
 
     expect(state.phase.year).toBe(1901);
     expect(state.phase.season).toBe(Season.Spring);
-    expect(state.phase.type).toBe(PhaseType.Diplomacy);
+    expect(state.phase.type).toBe(PhaseType.Orders);
     expect(state.units).toHaveLength(22);
     expect(state.supplyCenters.size).toBe(22);
     expect(state.endYear).toBeUndefined();
@@ -116,8 +116,7 @@ describe('GameManager — All-Hold game', () => {
 
     await manager.run();
 
-    // Expected sequence: game_start, spring diplomacy, spring orders,
-    // fall diplomacy, fall orders, winter builds
+    // Expected sequence: game_start, spring orders, fall orders, winter builds
     expect(eventTypes[0]).toBe('game_start');
     expect(eventTypes).toContain('phase_start');
     expect(eventTypes).toContain('orders_resolved');
@@ -320,43 +319,6 @@ describe('GameManager — Config object', () => {
 // ============================================================================
 
 describe('GameManager — Fast adjudication', () => {
-  it('diplomacy phase ends early when all powers call submitReady', async () => {
-    const manager = new GameManager({ maxYears: 1, phaseDelayMs: 60_000 });
-    connectAllHold(manager);
-
-    manager.onPhaseChange((phase) => {
-      if (phase.type === PhaseType.Diplomacy) {
-        for (const power of ALL_POWERS) {
-          manager.submitReady(power);
-        }
-      }
-    });
-
-    const start = Date.now();
-    await manager.run();
-    const elapsed = Date.now() - start;
-
-    expect(elapsed).toBeLessThan(5000);
-  });
-
-  it('diplomacy phase waits full delay when fastAdjudication is false', async () => {
-    const DELAY = 200;
-    const manager = new GameManager({ maxYears: 1, phaseDelayMs: DELAY, fastAdjudication: false });
-    connectAllHold(manager);
-
-    const start = Date.now();
-    await manager.run();
-    const elapsed = Date.now() - start;
-
-    // Should have waited for at least 2 diplomacy phases worth of delay
-    expect(elapsed).toBeGreaterThanOrEqual(DELAY * 2 - 50);
-  });
-
-  it('submitReady is ignored when not in diplomacy phase', () => {
-    const manager = new GameManager();
-    manager.submitReady(Power.England);
-  });
-
   it('getGameConfig includes fastAdjudication', () => {
     const manager = new GameManager();
     expect(manager.getGameConfig().fastAdjudication).toBe(true);
@@ -376,7 +338,7 @@ describe('GameManager — Draw voting', () => {
     connectAllHold(manager);
 
     manager.onPhaseChange((phase) => {
-      if (phase.type === PhaseType.Diplomacy) {
+      if (phase.type === PhaseType.Orders) {
         for (const power of manager.getActivePowers()) {
           manager.proposeDraw(power);
         }
@@ -393,7 +355,7 @@ describe('GameManager — Draw voting', () => {
     connectAllHold(manager);
 
     manager.onPhaseChange((phase) => {
-      if (phase.type === PhaseType.Diplomacy) {
+      if (phase.type === PhaseType.Orders) {
         manager.proposeDraw(Power.England);
       }
     });
@@ -402,13 +364,13 @@ describe('GameManager — Draw voting', () => {
     expect(result.winner).toBeNull();
   });
 
-  it('draw votes reset each diplomacy phase', async () => {
+  it('draw votes reset each season', async () => {
     const manager = new GameManager({ maxYears: 1 });
     connectAllHold(manager);
 
     let phaseCount = 0;
     manager.onPhaseChange((phase) => {
-      if (phase.type === PhaseType.Diplomacy) {
+      if (phase.type === PhaseType.Orders) {
         phaseCount++;
         if (phaseCount === 1) {
           manager.proposeDraw(Power.England);
@@ -426,7 +388,7 @@ describe('GameManager — Draw voting', () => {
     connectAllHold(manager);
 
     manager.onPhaseChange((phase) => {
-      if (phase.type === PhaseType.Diplomacy) {
+      if (phase.type === PhaseType.Orders) {
         for (const power of manager.getActivePowers()) {
           manager.proposeDraw(power);
         }
@@ -443,7 +405,7 @@ describe('GameManager — Draw voting', () => {
 
     let accepted: boolean | undefined;
     manager.onPhaseChange((phase) => {
-      if (phase.type === PhaseType.Diplomacy) {
+      if (phase.type === PhaseType.Orders) {
         accepted = manager.proposeDraw(Power.England);
       }
     });
@@ -453,7 +415,7 @@ describe('GameManager — Draw voting', () => {
 
     let rejected: boolean | undefined;
     managerNoDraws.onPhaseChange((phase) => {
-      if (phase.type === PhaseType.Diplomacy) {
+      if (phase.type === PhaseType.Orders) {
         rejected = managerNoDraws.proposeDraw(Power.England);
       }
     });
@@ -543,7 +505,7 @@ describe('GameManager — Concession', () => {
 
     // All remaining active powers propose a draw
     manager.onPhaseChange((phase) => {
-      if (phase.type === PhaseType.Diplomacy) {
+      if (phase.type === PhaseType.Orders) {
         for (const power of manager.getActivePowers()) {
           manager.proposeDraw(power);
         }

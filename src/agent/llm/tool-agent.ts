@@ -18,7 +18,7 @@ const MAP_QUERY_TOOLS = [
   'getSupplyCenterCounts',
   'getPhaseInfo',
 ];
-const COMMON_TOOLS = ['sendMessage', 'ready'];
+const COMMON_TOOLS = ['sendMessage'];
 
 function filterToolsByPhase(phaseType: PhaseType): ToolDefinition[] {
   const allowed = new Set([...MAP_QUERY_TOOLS, ...COMMON_TOOLS]);
@@ -237,12 +237,6 @@ export async function connectToolAgent(
         logger.error(`[${power}] Retry tool loop error:`, err);
       }
     }
-
-    // Ensure phase progresses even if the model never called ready()
-    if (!executor.isReady) {
-      logger.warn(`[${power}] Model did not call ready() — signaling automatically`);
-      await executor.execute('ready', {});
-    }
   }
 
   // ── Message batch handler ─────────────────────────────────────────
@@ -382,8 +376,7 @@ export async function connectToolAgent(
     const key = phaseKey(currentGameState);
     if (
       key !== lastHandledPhase &&
-      (currentGameState.phase.type === PhaseType.Diplomacy ||
-        currentGameState.phase.type === PhaseType.Orders ||
+      (currentGameState.phase.type === PhaseType.Orders ||
         currentGameState.phase.type === PhaseType.Retreats ||
         currentGameState.phase.type === PhaseType.Builds)
     ) {

@@ -341,9 +341,6 @@ export async function connectRandomAgent(
   // ── Phase handler ──────────────────────────────────────────────────
 
   async function handlePhase(gameState: GameState, deadlineMs: number) {
-    const targetPhaseKey = phaseKey(gameState);
-    const isStale = () => targetPhaseKey !== lastHandledPhase;
-
     if (deadlineMs > 0) {
       const remaining = Math.max(0, Math.round((deadlineMs - Date.now()) / 1000));
       logger.info(`[${power}] Phase ${gameState.phase.type} -- deadline in ${remaining}s`);
@@ -400,19 +397,6 @@ export async function connectRandomAgent(
       } catch (err) {
         logger.error(`[${power}] sendMessage error:`, err);
       }
-    }
-
-    if (isStale()) {
-      logger.info(`[${power}] Phase advanced before ready; skipping submitReady`);
-      return;
-    }
-
-    // Signal ready
-    try {
-      await client.game.submitReady.mutate();
-      logger.info(`[${power}] signaled ready`);
-    } catch (err) {
-      logger.error(`[${power}] submitReady error:`, err);
     }
   }
 
@@ -536,8 +520,7 @@ export async function connectRandomAgent(
     const key = phaseKey(currentGameState);
     if (
       key !== lastHandledPhase &&
-      (currentGameState.phase.type === 'Diplomacy' ||
-        currentGameState.phase.type === 'Orders' ||
+      (currentGameState.phase.type === 'Orders' ||
         currentGameState.phase.type === 'Retreats' ||
         currentGameState.phase.type === 'Builds')
     ) {

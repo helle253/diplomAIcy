@@ -311,17 +311,17 @@ test('multiple successful moves render separate arrows', async ({ page }) => {
 });
 
 // ---------------------------------------------------------------------------
-// No arrows on Diplomacy phase (no turnRecord)
+// No arrows on phase without turnRecord
 // ---------------------------------------------------------------------------
 
-test('no arrows on Diplomacy phase', async ({ page }) => {
+test('no arrows on phase without turnRecord', async ({ page }) => {
   await gotoAndWaitForMap(page, server.url);
 
   server.setSnapshot(
     makeSnapshot([{ type: 'Army', power: 'France', province: 'par' }], STARTING_SC, {
       year: 1901,
       season: 'Spring',
-      type: 'Diplomacy',
+      type: 'Orders',
     }),
   );
   // Wait for the snapshot to be processed (units rendered)

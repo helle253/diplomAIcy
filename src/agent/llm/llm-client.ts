@@ -20,7 +20,6 @@ export interface ToolDefinition {
 }
 
 export interface ToolExecutor {
-  isReady: boolean;
   execute(name: string, args: Record<string, unknown>): Promise<string>;
 }
 
@@ -249,8 +248,8 @@ export class OpenAICompatibleClient implements LLMClient {
         });
       }
 
-      // Check if executor is ready (model called ready() tool)
-      if (executor.isReady) {
+      // Check if executor has submitted orders — no need to continue the loop
+      if ('hasSubmitted' in executor && (executor as { hasSubmitted: boolean }).hasSubmitted) {
         return allText.join('\n');
       }
     }
