@@ -30,6 +30,48 @@ Verify reachability: `curl -s http://host.docker.internal:11434/api/tags`
   - Pass a different model name as an argument: `.devcontainer/start-ollama.sh qwen2.5:3b`
 - Verify Ollama is reachable: `curl -s http://ollama:11434/api/tags`
 
+## Configuration Gathering
+
+**Before any setup steps**, gather the following configuration values. Extract from the user's prompt where provided. For anything missing or ambiguous, use `AskUserQuestion` to prompt the user — do NOT guess at values that meaningfully affect game behavior.
+
+### Values to collect
+
+| Setting | Prompt question | Default | Notes |
+|---------|----------------|---------|-------|
+| **Model** | "Which model should the agents use?" | (none — must be provided or chosen from list) | Show available models from Ollama preflight check |
+| **Ollama host** | "Should agents use host Ollama or Docker Ollama?" | host (if reachable) | Determine automatically via reachability; only ask if ambiguous |
+| **Max years** | "How many years should the game run, or should it run until the win condition is met?" | (omit — run until win) | Omit from lobby creation to run indefinitely; "100 years" → 100; "quick test" → 2 |
+| **Victory threshold** | "How many supply centers are needed to win?" | 18 | Standard Diplomacy is 18; max 34 (all SCs) |
+| **Allow draws** | "Should powers be able to propose and accept draws?" | true | Set false to force a decisive winner |
+| **Fast adjudication** | "Should the engine advance as soon as all agents submit, without waiting for the phase duration?" | true | "fast adjudication" or "fast" in prompt → true |
+| **Phase duration (ms)** | "What is the maximum time each phase should last?" | 0 (no limit) | With fast adjudication: phase ends when all submit OR timer fires, whichever is first. Without: phase always waits the full duration. e.g. "60 minute phases" → 3600000 |
+| **LLM concurrency** | "How many agents can call Ollama simultaneously? (should match OLLAMA_NUM_PARALLEL on host)" | 1 | If user mentions GPU/VRAM or parallel, ask for this explicitly |
+| **Remote timeout (ms)** | "How long should the server wait for agent submissions per phase?" | 600000 | 10 min default; increase for slow models or long games |
+| **LLM request timeout (ms)** | "Per-request timeout for LLM calls?" | 900000 | 15 min default for safety |
+| **Monitor interval** | "How often should the referee check in on the game?" | half the phase duration, or 10m if no phase cap | e.g. 60 min phases → 30m check-ins; no cap → 10m. User can override. Used for `/loop` interval in step 8. |
+
+### Ambiguity rules
+
+- If user specifies a model name not exactly matching an available model, show the available list and ask which to use (do not silently substitute).
+- If the user does not mention a year limit, omit `maxYears` entirely — the game runs until victory or a draw.
+- If user says "100 years", use `maxYears: 100`. If they say "quick test", use `maxYears: 2`.
+- If user says "fast adjudication" or "fast", use `fastAdjudication: true`.
+- If the user specifies a phase duration (e.g. "60 minute phases"), set `phaseDelayMs` accordingly. These two settings compose: with both set, the phase ends when all agents submit OR when the timer fires — whichever comes first.
+- If the user provides `LLM_CONCURRENCY` or mentions parallel requests, use that value.
+- If Ollama is reachable at host.docker.internal, default to host config; if only docker is reachable, default to docker config; if both or neither, ask.
+
+### Example extraction
+
+> "run a 100 year integration test, using ollama qwen2.5:7b - with fast adjudication"
+
+→ maxYears: 100, model: qwen2.5:7b (verify against available list), fastAdjudication: true, all other values → defaults. No questions needed.
+
+> "run an integration test using ollama qwen2.5:3b until someone wins"
+
+→ maxYears: omitted (run until win condition), model: qwen2.5:3b, fastAdjudication: true (default), no questions needed.
+
+---
+
 ## Setup
 
 ### 1. Build the project
@@ -129,12 +171,19 @@ You MUST run this via the Bash tool — these are native remote agent processes,
 
 ### 8. Monitor as referee using /loop
 
-After all agents are connected, invoke the `/loop` skill to set up recurring monitoring. Set the interval to roughly **half the observed phase length** — watch the first phase complete to gauge timing, then set the loop accordingly.
+After all agents are connected, invoke the `/loop` skill to set up recurring monitoring. Use the **monitor interval** from the configuration gathering step.
 
-Use the `/loop` skill with a prompt like:
+**IMPORTANT:** NEVER cancel the monitoring loop unless the user explicitly asks you to. Games may appear stalled between checks but are still progressing — phases can take a long time with slow models. Only the user should decide when to stop monitoring.
+
+**Default monitor interval logic:**
+- If phase duration is set: use **half** the phase duration (e.g. 60 min phases → `30m`)
+- If no phase duration cap: use **`10m`**
+- If the user specified a custom interval, use that instead
+
+Use the `/loop` skill with the computed interval:
 
 ```text
-/loop <interval> Check game <LOBBY_ID>: curl game state from localhost:3000, report phase/year, SC counts per power, unit positions, check lobby status for game completion. If game is finished, report final results and stop. Append notable events to game-notes/REFEREE_NOTES_<LOBBY_ID>.md.
+/loop <monitor-interval> Check game <LOBBY_ID>: curl game state from localhost:3000, report phase/year, SC counts per power, unit positions, check lobby status for game completion. If game is finished, report final results and stop. Append notable events to game-notes/REFEREE_NOTES_<LOBBY_ID>.md.
 ```
 
 You can also poll manually at any time:
