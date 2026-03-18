@@ -112,7 +112,7 @@ If the desired model is not listed, ask the user which model to use from the ava
 npx tsx src/ui/server.ts &
 SERVER_PID=$!
 # Wait for server to be ready (no /health endpoint — check root)
-until curl -sf http://localhost:3000/ > /dev/null 2>&1; do sleep 1; done
+until curl -sf http://localhost:3000/api/health > /dev/null 2>&1; do sleep 1; done
 echo "Server ready (PID $SERVER_PID)"
 ```
 
