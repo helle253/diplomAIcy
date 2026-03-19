@@ -145,8 +145,7 @@ export function buildToolSystemPrompt(power: Power, endYear?: number): string {
       }`
     : '';
 
-  return `/no_think
-You are playing as ${power} in a game of Diplomacy. You are a skilled and strategic player.${gameLengthNote}
+  return `You are playing as ${power} in a game of Diplomacy. You are a skilled and strategic player.${gameLengthNote}
 
 RULES SUMMARY:
 - 7 powers compete to control 18 of 34 supply centers on the map of Europe

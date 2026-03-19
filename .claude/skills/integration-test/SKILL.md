@@ -115,10 +115,12 @@ npx tsx src/ui/server.ts > /tmp/server-boot.log 2>&1 &
 SERVER_PID=$!
 # Health check — wait for /api/health to respond before proceeding
 until curl -sf http://localhost:3000/api/health > /dev/null 2>&1; do sleep 1; done
+# Save PID to a well-known file for cleanup across sessions
+echo "$SERVER_PID" > game-notes/server.pid
 echo "Server ready (PID $SERVER_PID)"
 ```
 
-Save `SERVER_PID` for cleanup in step 9. After creating `$GAME_DIR` in step 5, move `/tmp/server-boot.log` into `$GAME_DIR/server.log`.
+The server PID is saved to `game-notes/server.pid` so it can be killed from any session. After creating `$GAME_DIR` in step 5, move `/tmp/server-boot.log` into `$GAME_DIR/server.log`.
 
 **Important**: Steps 3-7 should be run as separate sequential Bash tool calls, NOT combined into a single background command. The health check in step 3 must complete before creating the lobby in step 4, and agents in step 7 must be launched after the lobby exists.
 
@@ -241,17 +243,21 @@ if [ -f "$PID_FILE" ]; then
   echo "All agents stopped."
 fi
 
-# Kill server (ONLY the saved PID)
+# Kill server (from saved PID file or variable)
 if [ -n "$SERVER_PID" ]; then
   kill "$SERVER_PID" 2>/dev/null
   echo "Server stopped."
+elif [ -f "game-notes/server.pid" ]; then
+  kill "$(cat game-notes/server.pid)" 2>/dev/null
+  rm game-notes/server.pid
+  echo "Server stopped (from PID file)."
 fi
 
 # Clean up file semaphore locks
 rm -rf /tmp/diplomaicy-llm-locks
 ```
 
-If you don't have `$SERVER_PID` (e.g. from a previous session), ask the user to restart the devcontainer or kill the process manually. Do NOT use `lsof`, `pkill`, `killall`, or any pattern-matching kill command.
+If neither `$SERVER_PID` nor `game-notes/server.pid` exist, use `ps aux | grep "src/ui/server.ts"` to find the specific PID, then kill that PID. Do NOT use `lsof`, `pkill`, `killall`, or any pattern-matching kill command.
 
 ### Alternative: Automated Script
 
