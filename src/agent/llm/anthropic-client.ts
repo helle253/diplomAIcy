@@ -196,26 +196,29 @@ export class AnthropicClient implements LLMClient {
       );
       const textContent = textBlocks.map((b) => b.text).join('');
 
-      // Log model response text (truncated)
+      // Log model response
       if (textContent) {
         const truncated =
           textContent.length > 300 ? textContent.slice(0, 300) + '...' : textContent;
-        logger.debug(`[LLM] iter=${i} text: ${truncated}`);
+        logger.debug(`[LLM] iter=${i} text (${textContent.length} chars): ${truncated}`);
+        logger.trace(`[LLM] iter=${i} full response:\n${textContent}`);
       }
 
       if (textContent) allText.push(textContent);
 
       // No tool calls — model is done
       if (toolUseBlocks.length === 0) {
-        logger.debug(`[LLM] iter=${i} no tool calls, ending loop`);
+        logger.info(
+          `[LLM] iter=${i} no tool calls, ending loop (response: ${textContent.length} chars)`,
+        );
         return allText.join('\n');
       }
 
       // Log which tools the model chose
       const callSummary = toolUseBlocks
-        .map((tb) => `${tb.name}(${JSON.stringify(tb.input).slice(0, 100)})`)
+        .map((tb) => `${tb.name}(${JSON.stringify(tb.input).slice(0, 200)})`)
         .join(', ');
-      logger.debug(`[LLM] iter=${i} tool_calls: ${callSummary}`);
+      logger.info(`[LLM] iter=${i} tool_calls: ${callSummary}`);
 
       // Append assistant message with full content blocks
       conversation.push({ role: 'assistant', content: data.content });

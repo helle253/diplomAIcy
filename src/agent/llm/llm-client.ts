@@ -199,17 +199,20 @@ export class OpenAICompatibleClient implements LLMClient {
       const content = assistantMsg.content ?? '';
       const toolCalls = assistantMsg.tool_calls;
 
-      // Log model response text (truncated)
+      // Log model response
       if (content) {
         const truncated = content.length > 300 ? content.slice(0, 300) + '...' : content;
-        logger.debug(`[LLM] iter=${i} text: ${truncated}`);
+        logger.debug(`[LLM] iter=${i} text (${content.length} chars): ${truncated}`);
+        logger.trace(`[LLM] iter=${i} full response:\n${content}`);
       }
 
       if (content) allText.push(content);
 
       // No tool calls — model is done
       if (!toolCalls || toolCalls.length === 0) {
-        logger.debug(`[LLM] iter=${i} no tool calls, ending loop`);
+        logger.info(
+          `[LLM] iter=${i} no tool calls, ending loop (response: ${content.length} chars)`,
+        );
         return allText.join('\n');
       }
 
@@ -217,10 +220,10 @@ export class OpenAICompatibleClient implements LLMClient {
       const callSummary = toolCalls
         .map(
           (tc) =>
-            `${tc.function.name}(${tc.function.arguments.length > 100 ? tc.function.arguments.slice(0, 100) + '...' : tc.function.arguments})`,
+            `${tc.function.name}(${tc.function.arguments.length > 200 ? tc.function.arguments.slice(0, 200) + '...' : tc.function.arguments})`,
         )
         .join(', ');
-      logger.debug(`[LLM] iter=${i} tool_calls: ${callSummary}`);
+      logger.info(`[LLM] iter=${i} tool_calls: ${callSummary}`);
 
       // Append assistant message with tool calls
       conversation.push({
