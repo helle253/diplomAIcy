@@ -3,6 +3,7 @@ import { readFileSync } from 'fs';
 import { z } from 'zod';
 import { toJSONSchema } from 'zod/v4';
 
+import { PROVINCES } from '../engine/map';
 import { buildMapState } from '../engine/map-state';
 import type { OrderResolution } from '../engine/types';
 import { Coast, OrderType, Phase, Power, UnitType } from '../engine/types';
@@ -280,6 +281,30 @@ export function createGameRouter(lobbyManager: LobbyManager) {
       .input(z.object({ orders: z.array(orderSchema) }))
       .mutation(({ ctx, input }) => {
         const manager = resolveManager(lobbyManager, ctx.lobbyId);
+        const state = manager.getState();
+
+        // Reject syntactically invalid orders (unknown province, unit not yours)
+        const myUnitProvinces = state.units
+          .filter((u) => u.power === ctx.power)
+          .map((u) => u.province);
+        const errors: { unit: string; error: string }[] = [];
+        for (const order of input.orders) {
+          if (!PROVINCES[order.unit]) {
+            errors.push({ unit: order.unit, error: `Unknown province '${order.unit}'` });
+          } else if (!myUnitProvinces.includes(order.unit)) {
+            errors.push({
+              unit: order.unit,
+              error: `No unit of yours at '${order.unit}'. Your units: ${myUnitProvinces.join(', ')}`,
+            });
+          }
+        }
+        if (errors.length > 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: JSON.stringify({ invalidOrders: errors }),
+          });
+        }
+
         manager.submitOrders(ctx.power, input.orders);
         return { ok: true };
       }),

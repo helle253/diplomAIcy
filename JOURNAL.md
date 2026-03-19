@@ -977,3 +977,308 @@ That would be a real Diplomacy game. Powers moving, supply centers changing hand
 | R10 | Attention decay / prompt ordering | **→ MVB Change 3** |
 | R11 | Tool loop as conversation | Enabled by Change 1 (validation creates dialogue) |
 | R12 | Synthesis / MVB | This reflection |
+
+---
+
+## Reflection 13 — Post-Implementation: What I Learned By Building It (2026-03-19 19:10)
+
+The MVB changes are implemented. Before we test, I want to reflect on what the implementation taught me — things I couldn't have predicted from pure architecture thinking.
+
+### The validation revealed a design tension
+
+When I built the validation in `submitOrders`, I had to decide: reject the entire batch on any error, or accept the valid orders and reject the invalid ones?
+
+I chose reject-all. The reasoning: if the model submits 3 orders and 1 is invalid, the model needs to resubmit all 3. It already knows the valid ones (they were correct the first time), so resubmitting them is cheap. And it keeps the semantics clean — `hasSubmitted` is either true or false, not "partially submitted."
+
+But there's a subtle downside. The model has to reconstruct the entire order set in its next tool call. With qwen3:8b's attention issues, there's a non-zero chance it introduces NEW errors while fixing the old one. "Fix order for lon" → model fixes lon but now gets edi wrong.
+
+A future improvement: accept valid orders, reject only the invalid ones, and tell the model which units still need orders. This is more complex (need to track partial submissions) but more forgiving. It's the difference between a compiler that fails on the first error vs. one that collects all errors and reports them together. We chose the "collect all errors" approach for the error messages, but the "fail the whole batch" approach for the submission. There's a mismatch there worth resolving later.
+
+### The text parser forced me to think about grammar
+
+Writing the regex patterns for `text-parser.ts` was harder than I expected. Diplomacy orders look simple — "lon -> nth" — but there's real ambiguity:
+
+- "Support London" — support what? hold? a move? which move?
+- "lon to nth" — is this a move or part of a sentence ("I want to move lon to nth to secure the channel")?
+- "A lon -> nth" — is "A" an article or "Army"?
+- Province IDs are 2-3 lowercase letters — they match random words ("the", "and", "for")
+
+I solved this by requiring the source province to be a known unit position for this power. That eliminates most false positives. But it means the parser can't extract orders for units it doesn't know about — which is fine, since you can only order your own units.
+
+The ordering of patterns matters too. I put Support before Move because "yor S lon -> nth" could match the move pattern on "lon -> nth" if checked first. This is exactly the kind of parser precedence issue that compiler engineers deal with. The journal's compiler metaphor (R9) wasn't just an analogy — it predicted real implementation challenges.
+
+### The prompt reorder was the scariest change
+
+Removing `buildStrategicSummary()` from the turn prompt felt risky. That function produces useful information — power rankings, neighbor detection, lost home centers. Replacing it with a one-line SC count feels like a downgrade.
+
+But I keep reminding myself of R10's insight: **the right information in the wrong position is functionally absent.** The strategic summary was 200+ tokens in the attention dead zone. The compact SC counts line is 50 tokens near the top. The model will actually READ the SC counts. It was probably ignoring most of the strategic summary.
+
+If this hurts strategic quality, we can add a `getStrategicSummary` tool that returns the full analysis on demand. The information isn't lost — it's just moved from force-fed to pull-based. That's the Claude Code pattern: I don't read every file at startup, I read them when I need them.
+
+### What I expect from the integration test
+
+Prediction for the next run:
+
+- **Validation (Change 1)**: England's `lon→nor` type errors will trigger a retry with correct adjacencies shown in the error. The model fixes and resubmits. Expected: recover 50-70% of invalid-destination orders.
+
+- **Prompt reorder (Change 2)**: Units + action at the top means the model sees "you have 3 units, here's where they can go, submit orders" before anything else. Expected: higher tool-call rate, especially in Year 2+.
+
+- **Text parsing (Change 3)**: Italy-type failures (1596 chars of text, no tool calls) get scanned for order patterns. If the text says anything like "I'll move from Rome to Tuscany" we extract it. Expected: recover 30-50% of text-only responses.
+
+**Combined prediction**: Year 1 hold rate drops from 50% to ~20-25%. Year 2 drops from 80% to ~35-45%. The big unknown is whether the validation retry adds enough tool loop iterations to create semaphore contention. Each retry is another LLM call through the queue.
+
+### The meta-observation
+
+Building these three changes took about 30 minutes of implementation. The 12 preceding reflections took about 2 hours. That's a 4:1 ratio of thinking to doing — which feels right for architectural work. The reflections saved me from building the wrong thing (the multi-step harness would have been days of work for uncertain benefit). The MVB approach validates the ideas cheaply before committing to big changes.
+
+This is, again, how I work best: think broadly, converge on the simplest viable approach, build it, test it, iterate. The journal process forced that discipline.
+
+---
+
+## Reflection 14 — Where Validation Lives Reveals What You Think an Agent Is (2026-03-19 19:30)
+
+A small thing happened during implementation that turned into a big insight. I built the order validation in the agent-side tool executor (`tools.ts`). The user corrected me: "that rejection should occur in the server-agent interface." Then a further refinement: "reject only syntactically incorrect orders, not mechanically incorrect ones."
+
+This sounds like a minor code-placement decision. It's not. It reveals a fundamental question about the agent architecture: **where does the agent end and the game begin?**
+
+### Three possible boundaries
+
+**Boundary A: Validation in the tool executor (where I put it first)**
+
+This says: "The agent is responsible for producing valid orders. The tool executor is the agent's quality gate. Bad orders never reach the server."
+
+Problem: the agent-side executor has stale game state (it received a snapshot at phase start). The server is the source of truth. If the executor validates against stale state, it might reject valid orders or accept invalid ones.
+
+Deeper problem: different agent types (LLM, random, remote) would each need their own validation. That's duplicated logic.
+
+**Boundary B: Validation in the server router (where the user said to put it)**
+
+This says: "The server defines the contract. Any client that sends a malformed request gets a clear error. The game rules are the server's responsibility."
+
+This is the REST/tRPC philosophy: the API is the contract. Validation lives at the API boundary. All clients — LLM agents, random agents, human players, external bots — get the same behavior. The error response is part of the API spec.
+
+This is where we landed, and it's right.
+
+**Boundary C: Validation in the game engine (GameManager)**
+
+This would say: "The engine already validates orders during resolution — invalid moves become holds." This is the current behavior for *mechanical* invalidity. The engine is the ultimate authority.
+
+The user's refinement ("reject syntactic, accept mechanical") draws the perfect line between B and C:
+- **Syntactic errors** (wrong province ID, unit not yours) → server rejects with `BAD_REQUEST`. These are format errors — the order literally can't be processed.
+- **Mechanical errors** (non-adjacent move, unsupported convoy) → server accepts, engine resolves as hold. These are *legal orders* that happen to fail. A human player can legally order `lon → nor` — it's a bad move, not an illegal one.
+
+### The Claude Code parallel
+
+This maps precisely to how my tool system works:
+
+- If I call `Edit` with an `old_string` that doesn't exist in the file, the tool returns an error. That's a **syntactic** rejection — my request doesn't match reality. I need to fix my input.
+- If I call `Edit` and the change compiles but introduces a bug, the tool succeeds. That's a **mechanical** failure — my request was valid but my intent was wrong. I discover it later when tests fail.
+
+The Edit tool doesn't refuse to make a change because it might introduce a bug. It's not the tool's job to evaluate strategy. It validates format and existence, then executes.
+
+### What this means for the agent harness
+
+The agent's tool executor (`GameToolExecutor`) should be thin — just format conversion and tRPC calls. It's a translator, not a gatekeeper. The server is the gatekeeper for syntactic validity. The engine is the gatekeeper for mechanical validity.
+
+The tool executor DOES still have a role: it catches tRPC errors and returns them as tool results to the model. When the server rejects with `BAD_REQUEST`, the executor's `catch (e) { return JSON.stringify({ error: String(e) }) }` handles it naturally. The model sees the error in the tool loop and can retry. No special validation code needed in the executor.
+
+This also clarifies the text parser's role (Change 3): it's a **translator**, not a validator. It translates natural language into order format. Whether those orders are syntactically or mechanically valid is someone else's problem — the server and engine respectively.
+
+### The design principle
+
+**Each layer validates what it owns:**
+- Tool executor: format translation (raw LLM output → typed order objects)
+- Server router: syntactic validity (does this order reference real entities?)
+- Game engine: mechanical validity (does this order follow the rules?)
+
+No layer reaches into another's domain. This is separation of concerns at the validation level — and it's the same principle that makes compiler architectures clean (R9): frontend validates syntax, middle-end validates semantics, backend validates target constraints.
+
+---
+
+## Reflection 15 — The Error Message the Model Actually Sees (2026-03-19 19:45)
+
+I just audited the end-to-end error path for server-side validation. There's a real problem.
+
+### The bug
+
+When the server rejects an order with `TRPCError`, the agent-side catch block does `String(e)`, which produces:
+
+```
+TRPCError: {"invalidOrders":[{"unit":"xyz","error":"Unknown province 'xyz'"}]}
+```
+
+The model sees this as a tool result:
+```json
+{"error": "TRPCError: {\"invalidOrders\":[{\"unit\":\"xyz\",\"error\":\"Unknown province 'xyz'\"}]}"}
+```
+
+That's a stringified error wrapped in JSON with escaped quotes. The actual helpful information — "Unknown province 'xyz'" and "Your units: lon, edi, lvp" — is buried inside a double-serialized mess. A small model like qwen3:8b might not parse through two layers of serialization to extract the fix hint.
+
+Compare to what the model SHOULD see:
+```json
+{"error": "Invalid orders", "invalidOrders": [{"unit": "xyz", "error": "Unknown province 'xyz'. Your units: lon, edi, lvp"}]}
+```
+
+Clean, structured, immediately actionable. The model sees `Your units: lon, edi, lvp` and picks one for the retry.
+
+### The fix
+
+The `catch` block in `submitOrders` (and the other submit methods) should parse the TRPCError message and forward the structured error, not stringify the exception object:
+
+```typescript
+} catch (e) {
+  // Try to extract structured error from TRPCError
+  if (e instanceof Error && e.message) {
+    try {
+      const parsed = JSON.parse(e.message);
+      if (parsed.invalidOrders) {
+        return JSON.stringify({
+          error: 'Invalid orders — fix and resubmit',
+          ...parsed,
+          hint: 'Fix the listed orders and call submitOrders again.',
+        });
+      }
+    } catch { /* not JSON, fall through */ }
+  }
+  return JSON.stringify({ error: String(e) });
+}
+```
+
+Actually, even simpler: `TRPCClientError` (which is what the agent receives on the client side) has a `message` field that IS the JSON string we passed. We can try parsing it.
+
+### The deeper point
+
+This is a gap I wouldn't have found from architecture diagrams. It's a **serialization boundary** issue — the error crosses two serialization layers (server → tRPC wire → client exception → String() → JSON.stringify) and the useful content gets mangled at each crossing.
+
+This is extremely common in distributed systems and it's exactly the kind of bug that makes AI agents fail silently. The model gets an error response, but the error is so garbled that it can't extract actionable information. So it either retries with the same bad input (getting the same garbled error) or gives up (text response, auto-submit holds).
+
+### How I handle errors
+
+When a tool returns an error to me, I see the raw error message — "String to replace not found in file" or "File does not exist." Clean, specific, actionable. My harness doesn't wrap the error in three layers of serialization. That's why I can self-correct effectively.
+
+Our agents need the same clarity in error messages. The fix is small (parse the TRPCError message in the catch block) but the impact on the feedback loop is significant.
+
+### Status: FIXED — added `formatError()` method that parses TRPCError JSON messages.
+
+---
+
+## Reflection 16 — tool_choice "required" Means the Model MUST Call a Tool, Any Tool (2026-03-19 20:00)
+
+### The observation
+
+In `llm-client.ts` line 174: `body.tool_choice = 'required'`. This is set for EVERY iteration of the tool loop when tools are present.
+
+During the Orders phase, the model has 8 tools available: `getMyUnits`, `getAdjacentProvinces`, `getProvinceInfo`, `getSupplyCenterCounts`, `getPhaseInfo`, `sendMessage`, `submitOrders`, plus `getRetreatOptions` is excluded but close.
+
+With `tool_choice: "required"`, the model MUST produce a tool call. It can't respond with text-only. This should mean our "model produces text instead of tool calls" failure mode is impossible... but we saw it happen repeatedly in integration tests. Italy produced 1596 chars of text with no tool calls.
+
+### How is this possible?
+
+Two explanations:
+
+1. **Ollama's OpenAI-compatible endpoint might not fully support `tool_choice: "required"`**. The parameter is passed in the body, but Ollama may ignore it for some models. qwen3:8b's tool-calling was bolted on via fine-tuning — the model may not always comply with the constraint.
+
+2. **The model produces text AND tool calls, but the tool calls are malformed**. If the model generates JSON that doesn't parse as valid tool_calls, the response falls back to text-only. The LLM client code checks `if (!toolCalls || toolCalls.length === 0)` — if Ollama couldn't parse the tool call JSON, it might return `tool_calls: null` with the text in `content`.
+
+Either way, the text parsing fallback (Change 3) is the right safety net. But we should also consider whether `tool_choice: "required"` is actually helping or hurting.
+
+### When "required" hurts
+
+With `tool_choice: "required"`, the model is forced to produce a tool call even when it wants to express something in text. This creates pressure. If the model's "natural" response would be strategic reasoning followed by a tool call, but `required` forces it to skip the reasoning and go straight to a tool call, the tool call might be lower quality (wrong destinations, incomplete order set).
+
+What if we used `tool_choice: "auto"` instead? The model could:
+- Call `sendMessage` to negotiate (currently almost never happens)
+- Call `getProvinceInfo` to scout (currently almost never happens)
+- Respond with text analysis, then call `submitOrders` on the next iteration
+- Or go straight to `submitOrders` if it's confident
+
+With "auto", the text parsing fallback becomes even more important — the model will sometimes produce text instead of tool calls, and we need to catch orders in that text.
+
+### But "auto" has a risk
+
+With "auto", the model might ALWAYS respond with text and never call tools. We saw this pattern in the early runs — the model just writes prose. The text parser would catch some orders, but it's not as reliable as actual tool calls.
+
+### A middle ground: "required" for submission iterations, "auto" for exploration
+
+What if the first N iterations used `tool_choice: "auto"` (letting the model query and reason freely), and the last iteration switched to `tool_choice: "required"` (forcing a submission)?
+
+```typescript
+const isLastChance = i >= maxIterations - 2;
+body.tool_choice = isLastChance ? 'required' : 'auto';
+```
+
+This gives the model freedom to explore and negotiate in early iterations, then forces action at the end. It maps to how I work: I freely read and explore early in a task, but at some point I commit to an edit.
+
+### Status: worth testing but not blocking. The current "required" + text fallback is a reasonable baseline.
+
+---
+
+## Reflection 17 — Field Name Mismatch Between Tools: "province" vs "unit" (2026-03-19 20:15)
+
+### The bug
+
+The model interacts with two tools that refer to the same concept — "where a unit is" — using different field names:
+
+**`getMyUnits` returns:**
+```json
+[{"province": "lon", "type": "Fleet"}, {"province": "edi", "type": "Fleet"}]
+```
+
+**`submitOrders` expects:**
+```json
+{"orders": [{"unit": "lon", "type": "Move", "destination": "nth"}]}
+```
+
+The unit's location is called `province` in the query result but `unit` in the submission input. A model that calls `getMyUnits` first (as R11 suggested) gets back objects with a `province` field, then needs to map that to the `unit` field when calling `submitOrders`.
+
+For a large model, this is trivial. For qwen3:8b with attention issues, this is a needless cognitive tax. The model might:
+- Copy the whole getMyUnits object structure into the orders array (wrong field name)
+- Get confused about what `unit` means (is it the unit type? the province? the object?)
+- Not realize the two fields refer to the same value
+
+### The fix options
+
+**Option A**: Rename `getMyUnits` output to use `unit` instead of `province`:
+```json
+[{"unit": "lon", "type": "Fleet"}]
+```
+Pro: matches submitOrders input. Con: `unit` is less descriptive than `province`.
+
+**Option B**: Rename `submitOrders` input to use `province` instead of `unit`:
+```json
+{"orders": [{"province": "lon", "type": "Move", "destination": "nth"}]}
+```
+Pro: more descriptive. Con: breaks the existing API contract (server router uses `unit`).
+
+**Option C**: Add an explicit example to the `submitOrders` description:
+```
+description: 'Province ID where the unit is located (e.g. "lon" from getMyUnits province field)'
+```
+Pro: no schema changes. Con: still relies on the model cross-referencing.
+
+Option A is cleanest — align the output field name with the input field name so the model can pipe data directly. But it changes a tool response format that external agents might depend on.
+
+### The turn prompt already uses a third format
+
+The turn prompt shows: `lon [Fleet] -> can reach: nth, eng, wal, yor`
+
+Here the province ID is the leading token, not a JSON field. Three different representations of the same information:
+1. Turn prompt: `lon [Fleet]` (bare text, province leads)
+2. getMyUnits: `{"province": "lon", "type": "Fleet"}` (JSON, `province` key)
+3. submitOrders: `{"unit": "lon"}` (JSON, `unit` key)
+
+This is fine for a human who understands they're all "London." But for a small model parsing structured output, consistency matters. Every format translation is a chance for error.
+
+### What I would prefer as a model
+
+If I were the agent receiving tool results, I'd want `getMyUnits` to return data in EXACTLY the shape I need to submit:
+
+```json
+[{"unit": "lon", "type": "Fleet", "canReach": ["nth", "eng", "wal", "yor"]}]
+```
+
+Then I just pick a destination from `canReach` and submit the object. No field renaming, no cross-referencing the turn prompt for adjacencies. The tool result IS the template for the submission.
+
+This is a bigger change but it would eliminate both the field name mismatch AND the adjacency-checking issue (R10/R15) in one move.
+
+### Status: Option A (rename getMyUnits output) is the minimum fix. The "submission-shaped results" idea is worth considering for the multi-step harness (R1) if we build that later.

@@ -8,7 +8,9 @@ import { logger } from '../../util/logger';
 import type { GameClient } from '../remote/client';
 import { deserializeGameState, type SerializedGameState } from '../remote/deserialize';
 import type { LLMClient, ToolDefinition } from './llm-client';
+import { validateMoveOrder } from './order-validation';
 import { buildToolSystemPrompt, buildTurnPrompt, extractPlanBlock } from './prompts';
+import { parseTextOrders } from './text-parser';
 import { GameToolExecutor, TOOL_DEFINITIONS, type ToolGameClient } from './tools';
 
 const MAP_QUERY_TOOLS = [
@@ -216,10 +218,11 @@ export async function connectToolAgent(
       gameState.phase.type === PhaseType.Orders ||
       gameState.phase.type === PhaseType.Retreats ||
       gameState.phase.type === PhaseType.Builds;
+    let retryResponse = '';
     if (needsSubmit && !executor.hasSubmitted) {
       logger.warn(`[${power}] Model did not submit — retrying with explicit prompt`);
       try {
-        await llm.runToolLoop(
+        retryResponse = await llm.runToolLoop(
           [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userMessage },
@@ -238,7 +241,55 @@ export async function connectToolAgent(
       }
     }
 
-    // If still no submission after retry, auto-submit defaults so the phase can advance
+    // If still no submission, try parsing orders from the text responses
+    if (needsSubmit && !executor.hasSubmitted && gameState.phase.type === PhaseType.Orders) {
+      const combinedText = [response, retryResponse].filter(Boolean).join('\n');
+      if (combinedText.length > 0) {
+        const parsed = parseTextOrders(combinedText, gameState, power);
+        if (parsed && parsed.orders.length > 0) {
+          // Validate parsed orders and keep only valid ones
+          const validOrders = parsed.orders.filter((o) => {
+            if (o.type !== 'Move' || !o.destination) return true; // Hold/Support/Convoy pass through
+            const unit = gameState.units.find((u) => u.province === o.unit && u.power === power);
+            if (!unit) return false;
+            const result = validateMoveOrder(
+              o.unit,
+              unit.type,
+              o.destination,
+              undefined,
+              unit.coast,
+            );
+            return result.valid;
+          });
+
+          if (validOrders.length > 0) {
+            // Fill holds for uncovered units
+            const coveredUnits = new Set(validOrders.map((o) => o.unit));
+            const myUnits = gameState.units.filter((u) => u.power === power);
+            const allOrders = [
+              ...validOrders,
+              ...myUnits
+                .filter((u) => !coveredUnits.has(u.province))
+                .map((u) => ({ unit: u.province, type: 'Hold' as const })),
+            ];
+
+            logger.warn(
+              `[${power}] Parsed ${validOrders.length} orders from text (${parsed.unmatched.length} unmatched lines)`,
+            );
+            try {
+              await (client.game.submitOrders.mutate as (input: unknown) => Promise<unknown>)({
+                orders: allOrders,
+              });
+              executor.hasSubmitted = true;
+            } catch (err) {
+              logger.error(`[${power}] Text-parsed order submission error:`, err);
+            }
+          }
+        }
+      }
+    }
+
+    // If still no submission after retry and text parsing, auto-submit defaults
     if (needsSubmit && !executor.hasSubmitted) {
       logger.warn(`[${power}] Auto-submitting defaults — model failed to submit after retry`);
       try {

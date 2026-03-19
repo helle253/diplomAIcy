@@ -105,7 +105,7 @@ export class GameToolExecutor implements ToolExecutor {
     const units = this.gameState.units
       .filter((u) => u.power === this.power)
       .map((u) => ({
-        province: u.province,
+        unit: u.province,
         type: u.type,
         ...(u.coast !== undefined ? { coast: u.coast } : {}),
       }));
@@ -274,7 +274,7 @@ export class GameToolExecutor implements ToolExecutor {
       this.hasSubmitted = true;
       return JSON.stringify(result);
     } catch (e) {
-      return JSON.stringify({ error: String(e) });
+      return this.formatError(e);
     }
   }
 
@@ -317,7 +317,7 @@ export class GameToolExecutor implements ToolExecutor {
       this.hasSubmitted = true;
       return JSON.stringify(result);
     } catch (e) {
-      return JSON.stringify({ error: String(e) });
+      return this.formatError(e);
     }
   }
 
@@ -337,8 +337,22 @@ export class GameToolExecutor implements ToolExecutor {
       const result = await this.client.game.sendMessage.mutate({ to, content });
       return JSON.stringify(result);
     } catch (e) {
-      return JSON.stringify({ error: String(e) });
+      return this.formatError(e);
     }
+  }
+
+  /** Extract structured error from TRPCError or fall back to string representation. */
+  private formatError(e: unknown): string {
+    if (e instanceof Error && e.message) {
+      try {
+        const parsed = JSON.parse(e.message) as Record<string, unknown>;
+        return JSON.stringify({ error: 'Request failed', ...parsed });
+      } catch {
+        // message wasn't JSON — use it directly
+        return JSON.stringify({ error: e.message });
+      }
+    }
+    return JSON.stringify({ error: String(e) });
   }
 }
 
@@ -347,7 +361,8 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'getMyUnits',
-      description: "Get all units belonging to your power (the current player's units).",
+      description:
+        'Get all your units. Returns [{unit: "lon", type: "Fleet"}, ...] — use the "unit" field as the province ID in submitOrders.',
       parameters: {
         type: 'object',
         properties: {},
