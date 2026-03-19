@@ -58,8 +58,8 @@ cat > "$CONFIG_FILE" << EOF
     "apiKey": "ollama",
     "model": "$MODEL",
     "temperature": 0.7,
-    "maxTokens": 2048,
-    "numCtx": 8192
+    "maxTokens": 16384,
+    "numCtx": 40960
   }
 }
 EOF
