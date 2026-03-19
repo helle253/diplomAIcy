@@ -8,7 +8,6 @@ import { logger } from '../../util/logger';
 import type { GameClient } from '../remote/client';
 import { deserializeGameState, type SerializedGameState } from '../remote/deserialize';
 import type { LLMClient, ToolDefinition } from './llm-client';
-import { validateMoveOrder } from './order-validation';
 import { buildToolSystemPrompt, buildTurnPrompt, extractPlanBlock } from './prompts';
 import { parseTextOrders } from './text-parser';
 import { GameToolExecutor, TOOL_DEFINITIONS, type ToolGameClient } from './tools';
@@ -250,20 +249,10 @@ export async function connectToolAgent(
       if (combinedText.length > 0) {
         const parsed = parseTextOrders(combinedText, gameState, power);
         if (parsed && parsed.orders.length > 0) {
-          // Validate parsed orders and keep only valid ones
-          const validOrders = parsed.orders.filter((o) => {
-            if (o.type !== 'Move' || !o.destination) return true; // Hold/Support/Convoy pass through
-            const unit = gameState.units.find((u) => u.province === o.unit && u.power === power);
-            if (!unit) return false;
-            const result = validateMoveOrder(
-              o.unit,
-              unit.type,
-              o.destination,
-              undefined,
-              unit.coast,
-            );
-            return result.valid;
-          });
+          // Only keep orders for units we actually have (syntactic check)
+          const validOrders = parsed.orders.filter((o) =>
+            gameState.units.some((u) => u.province === o.unit && u.power === power),
+          );
 
           if (validOrders.length > 0) {
             // Fill holds for uncovered units
