@@ -5,7 +5,8 @@ import { toJSONSchema } from 'zod/v4';
 
 import { PROVINCES } from '../engine/map';
 import { buildMapState } from '../engine/map-state';
-import type { OrderResolution } from '../engine/types';
+import { resolveOrders, resolveRetreats } from '../engine/resolver';
+import type { Order, OrderResolution, RetreatOrder } from '../engine/types';
 import { Coast, OrderType, Phase, Power, UnitType } from '../engine/types';
 import type { LobbyManager } from './lobby-manager';
 import type { GameManager, TurnRecord } from './manager';
@@ -245,6 +246,84 @@ export function createGameRouter(lobbyManager: LobbyManager) {
       const manager = resolveManager(lobbyManager, input.lobbyId);
       return manager.getActivePowers();
     }),
+
+    testOrders: playerProcedure
+      .input(
+        z.object({
+          orders: z.array(orderSchema).optional(),
+          retreats: z
+            .array(
+              z.object({
+                unit: z.string(),
+                destination: z.string().optional(),
+                coast: coastEnum.optional(),
+              }),
+            )
+            .optional(),
+        }),
+      )
+      .query(({ ctx, input }) => {
+        const manager = resolveManager(lobbyManager, ctx.lobbyId);
+        const state = manager.getState();
+
+        // Retreat simulation
+        if (input.retreats) {
+          const retreatOrders: RetreatOrder[] = input.retreats.map((r) =>
+            r.destination
+              ? {
+                  type: 'RetreatMove' as const,
+                  unit: r.unit,
+                  destination: r.destination,
+                  coast: r.coast,
+                }
+              : { type: 'Disband' as const, unit: r.unit },
+          );
+
+          const result = resolveRetreats(
+            retreatOrders,
+            state.retreatSituations,
+            state.units.filter(
+              (u) => !state.retreatSituations.some((s) => s.unit.province === u.province),
+            ),
+          );
+
+          return {
+            retreatResults: {
+              succeeded: result.succeeded.map((s) => ({
+                unit: s.unit.province,
+                destination: s.destination,
+              })),
+              disbanded: result.disbanded.map((u) => u.province),
+              collisions: result.collisions.map((c) => ({
+                destination: c.destination,
+                units: c.units.map((u) => u.province),
+              })),
+            },
+          };
+        }
+
+        // Order simulation (default)
+        const orderMap = new Map<string, Order>();
+        for (const order of input.orders ?? []) {
+          orderMap.set(order.unit, order);
+        }
+
+        const result = resolveOrders(state.units, orderMap, PROVINCES);
+
+        return {
+          resolutions: result.resolutions.map((r) => ({
+            order: r.order,
+            power: r.power,
+            status: r.status,
+            reason: r.reason,
+          })),
+          dislodgedUnits: result.dislodgedUnits.map((d) => ({
+            unit: d.unit,
+            attackedFrom: d.attackedFrom,
+            validDestinations: d.validDestinations,
+          })),
+        };
+      }),
 
     getMessages: publicProcedure.input(lobbyIdInput).query(({ input, ctx }) => {
       const manager = resolveManager(lobbyManager, input.lobbyId);
