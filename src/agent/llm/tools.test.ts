@@ -141,7 +141,6 @@ describe('GameToolExecutor - action tools', () => {
         submitRetreats: { mutate: vi.fn().mockResolvedValue({ ok: true }) },
         submitBuilds: { mutate: vi.fn().mockResolvedValue({ ok: true }) },
         sendMessage: { mutate: vi.fn().mockResolvedValue({ ok: true }) },
-        submitReady: { mutate: vi.fn().mockResolvedValue({ ok: true }) },
       },
     } as MockToolGameClient;
   }
@@ -187,15 +186,6 @@ describe('GameToolExecutor - action tools', () => {
       to: 'France',
       content: 'Shall we ally?',
     });
-  });
-
-  it('ready calls submitReady and sets isReady', async () => {
-    const client = makeMockClient();
-    const exec = new GameToolExecutor(client, makeState(), Power.England);
-    expect(exec.isReady).toBe(false);
-    await exec.execute('ready', {});
-    expect(exec.isReady).toBe(true);
-    expect(client.game.submitReady.mutate).toHaveBeenCalledOnce();
   });
 
   it('submitRetreats converts to proper discriminated union', async () => {

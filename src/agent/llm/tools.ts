@@ -11,7 +11,6 @@ export interface ToolGameClient {
     sendMessage: {
       mutate: (input: { to: string | string[]; content: string }) => Promise<{ ok: boolean }>;
     };
-    submitReady: { mutate: () => Promise<{ ok: boolean }> };
   };
 }
 
@@ -39,7 +38,6 @@ interface FlatBuild {
 }
 
 export class GameToolExecutor implements ToolExecutor {
-  isReady = false;
   hasSubmitted = false;
 
   constructor(
@@ -84,21 +82,14 @@ export class GameToolExecutor implements ToolExecutor {
       case 'sendMessage':
         result = await this.sendMessage(args);
         break;
-      case 'ready':
-        result = await this.ready();
-        break;
       default:
         result = JSON.stringify({ error: `Unknown tool: ${name}` });
     }
 
     // Log submission results and messages at info level, query results at debug
-    const isAction = [
-      'submitOrders',
-      'submitRetreats',
-      'submitBuilds',
-      'sendMessage',
-      'ready',
-    ].includes(name);
+    const isAction = ['submitOrders', 'submitRetreats', 'submitBuilds', 'sendMessage'].includes(
+      name,
+    );
     if (isAction) {
       logger.info(`[${this.power}] tool:${name} => ${result}`);
     } else {
@@ -349,16 +340,6 @@ export class GameToolExecutor implements ToolExecutor {
       return JSON.stringify({ error: String(e) });
     }
   }
-
-  private async ready(): Promise<string> {
-    try {
-      const result = await this.client.game.submitReady.mutate();
-      this.isReady = true;
-      return JSON.stringify(result);
-    } catch (e) {
-      return JSON.stringify({ error: String(e) });
-    }
-  }
 }
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
@@ -597,19 +578,6 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           content: { type: 'string', description: 'Message content' },
         },
         required: ['to', 'content'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'ready',
-      description:
-        'Signal that you are ready to end the diplomacy phase. Call this when done sending messages.',
-      parameters: {
-        type: 'object',
-        properties: {},
-        required: [],
       },
     },
   },

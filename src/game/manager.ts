@@ -87,7 +87,6 @@ export class GameManager {
   private _deadlineMs = 0; // unix timestamp when current phase's submission window closes (0 = no deadline)
   private allowDraws: boolean;
   private drawVotes = new Set<Power>();
-  private drawResolve: (() => void) | null = null;
   private concededPowers = new Set<Power>();
   readonly bus: MessageBus;
 
@@ -95,7 +94,6 @@ export class GameManager {
   private orderGates = new Map<Power, (orders: Order[]) => void>();
   private retreatGates = new Map<Power, (retreats: RetreatOrder[]) => void>();
   private buildGates = new Map<Power, (builds: BuildOrder[]) => void>();
-  private readyGates = new Map<Power, () => void>();
   private fastAdjudication: boolean;
 
   constructor(config: GameManagerConfig = {}) {
@@ -119,7 +117,7 @@ export class GameManager {
     this.fastAdjudication = fastAdjudication;
     this.allowDraws = allowDraws;
     this.state = {
-      phase: { year: startYear, season: Season.Spring, type: PhaseType.Diplomacy },
+      phase: { year: startYear, season: Season.Spring, type: PhaseType.Orders },
       units: STARTING_UNITS.map((u) => ({ ...u })),
       supplyCenters: new Map(STARTING_SUPPLY_CENTERS),
       orderHistory: [],
@@ -167,15 +165,6 @@ export class GameManager {
     gate(builds);
   }
 
-  submitReady(power: Power): void {
-    const gate = this.readyGates.get(power);
-    if (!gate) {
-      logger.warn(`[${power}] submitReady ignored — not expecting ready signal`);
-      return;
-    }
-    gate();
-  }
-
   sendMessage(message: Message): void {
     this.bus.send(message);
   }
@@ -203,9 +192,6 @@ export class GameManager {
       timestamp: Date.now(),
     });
 
-    if (activePowers.every((p) => this.drawVotes.has(p))) {
-      if (this.drawResolve) this.drawResolve();
-    }
     return true;
   }
 
@@ -300,8 +286,9 @@ export class GameManager {
 
     // Main game loop
     while (this.endYear === undefined || this.state.phase.year <= this.endYear) {
-      // Spring
-      await this.runDiplomacyPhase(Season.Spring);
+      // Spring Orders (press open throughout)
+      this.drawVotes.clear();
+      await this.runOrdersPhase(Season.Spring);
       const springDraw = this.checkDrawVote();
       if (springDraw) {
         await this.emit({
@@ -312,12 +299,12 @@ export class GameManager {
         });
         return springDraw;
       }
-      await this.runOrdersPhase(Season.Spring);
       const springVictory = await this.checkVictory();
       if (springVictory) return springVictory;
 
-      // Fall
-      await this.runDiplomacyPhase(Season.Fall);
+      // Fall Orders (press open throughout)
+      this.drawVotes.clear();
+      await this.runOrdersPhase(Season.Fall);
       const fallDraw = this.checkDrawVote();
       if (fallDraw) {
         await this.emit({
@@ -328,7 +315,6 @@ export class GameManager {
         });
         return fallDraw;
       }
-      await this.runOrdersPhase(Season.Fall);
 
       // Update supply center ownership after Fall
       this.updateSupplyCenterOwnership();
@@ -338,6 +324,16 @@ export class GameManager {
 
       // Winter builds
       await this.runBuildsPhase();
+      const winterDraw = this.checkDrawVote();
+      if (winterDraw) {
+        await this.emit({
+          type: 'game_end',
+          phase: this.state.phase,
+          gameState: this.state,
+          result: winterDraw,
+        });
+        return winterDraw;
+      }
 
       // Eliminate dead powers
       this.eliminateDeadPowers();
@@ -346,7 +342,7 @@ export class GameManager {
       this.state.phase = {
         year: this.state.phase.year + 1,
         season: Season.Spring,
-        type: PhaseType.Diplomacy,
+        type: PhaseType.Orders,
       };
     }
 
@@ -367,12 +363,7 @@ export class GameManager {
     this.bus.phase = phase;
 
     // Set deadline for phases that require submissions
-    if (
-      this.remoteTimeoutMs > 0 &&
-      (phase.type === PhaseType.Orders ||
-        phase.type === PhaseType.Retreats ||
-        phase.type === PhaseType.Builds)
-    ) {
+    if (this.remoteTimeoutMs > 0) {
       this._deadlineMs = Date.now() + this.remoteTimeoutMs;
     } else {
       this._deadlineMs = 0;
@@ -387,58 +378,6 @@ export class GameManager {
     // Notify phase change listeners (agents react to this)
     for (const listener of this.phaseChangeListeners) {
       listener(this.state.phase, this.state);
-    }
-  }
-
-  private async runDiplomacyPhase(season: Season): Promise<void> {
-    this.drawVotes.clear();
-    this.drawResolve = null;
-
-    if (this.phaseDelayMs > 0 && this.fastAdjudication) {
-      // Set up ready gates before startPhase so that phase change listeners
-      // (which fire during startPhase) can resolve them immediately.
-      const activePowers = this.getActivePowers();
-      let readyCount = 0;
-      let resolveAllReady: () => void;
-      const allReady = new Promise<void>((resolve) => {
-        resolveAllReady = resolve;
-      });
-
-      for (const power of activePowers) {
-        this.readyGates.set(power, () => {
-          this.readyGates.delete(power);
-          readyCount++;
-          if (readyCount >= activePowers.length) {
-            resolveAllReady();
-          }
-        });
-      }
-
-      await this.startPhase({ year: this.state.phase.year, season, type: PhaseType.Diplomacy });
-
-      const drawPromise = new Promise<void>((resolve) => {
-        this.drawResolve = resolve;
-      });
-
-      await Promise.race([
-        allReady,
-        drawPromise,
-        new Promise<void>((resolve) => setTimeout(resolve, this.phaseDelayMs)),
-      ]);
-
-      this.readyGates.clear();
-    } else {
-      await this.startPhase({ year: this.state.phase.year, season, type: PhaseType.Diplomacy });
-
-      if (this.phaseDelayMs > 0) {
-        const drawPromise = new Promise<void>((resolve) => {
-          this.drawResolve = resolve;
-        });
-        await Promise.race([
-          new Promise((resolve) => setTimeout(resolve, this.phaseDelayMs)),
-          drawPromise,
-        ]);
-      }
     }
   }
 
@@ -604,9 +543,6 @@ export class GameManager {
         buildGate([]);
       }
     }
-
-    const readyGate = this.readyGates.get(power);
-    if (readyGate) readyGate();
   }
 
   /** Wraps a promise with an optional timeout. Returns true if timed out.

@@ -135,13 +135,6 @@ export const describeProcedure = publicProcedure.query(() => ({
         input: { to: 'Power | Power[] | "Global"', content: 'string' },
         description: 'Send a diplomatic message to one or more powers, or broadcast globally',
       },
-      submitReady: {
-        type: 'mutation',
-        auth: 'seatToken',
-        input: null,
-        description:
-          'Signal that you are done negotiating during the diplomacy phase. When all active powers signal ready, the diplomacy phase ends early.',
-      },
       onPhaseChange: {
         type: 'subscription',
         transport: 'SSE (httpSubscriptionLink) or WebSocket',

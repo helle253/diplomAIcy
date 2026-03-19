@@ -3,8 +3,12 @@ function timestamp(): string {
 }
 
 const DEBUG = process.env.DEBUG === '1' || process.env.DEBUG === 'true';
+const TRACE = process.env.TRACE === '1' || process.env.TRACE === 'true';
 
 export const logger = {
+  trace(message: string, ...args: unknown[]): void {
+    if (TRACE) console.log(`[${timestamp()}] [TRACE] ${message}`, ...args);
+  },
   debug(message: string, ...args: unknown[]): void {
     if (DEBUG) console.log(`[${timestamp()}] [DEBUG] ${message}`, ...args);
   },

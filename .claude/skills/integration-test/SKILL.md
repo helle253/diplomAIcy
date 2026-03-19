@@ -108,15 +108,21 @@ If the desired model is not listed, ask the user which model to use from the ava
 
 ### 3. Start the server
 
+Start the server and wait for it to be healthy. This MUST run in the foreground (not as a background Bash task) so the health check completes before proceeding.
+
 ```bash
-npx tsx src/ui/server.ts &
+npx tsx src/ui/server.ts > /tmp/server-boot.log 2>&1 &
 SERVER_PID=$!
-# Wait for server to be ready (no /health endpoint — check root)
+# Health check — wait for /api/health to respond before proceeding
 until curl -sf http://localhost:3000/api/health > /dev/null 2>&1; do sleep 1; done
+# Save PID to a well-known file for cleanup across sessions
+echo "$SERVER_PID" > game-notes/server.pid
 echo "Server ready (PID $SERVER_PID)"
 ```
 
-Save `SERVER_PID` for cleanup in step 9.
+The server PID is saved to `game-notes/server.pid` so it can be killed from any session. After creating `$GAME_DIR` in step 5, move `/tmp/server-boot.log` into `$GAME_DIR/server.log`.
+
+**Important**: Steps 3-7 should be run as separate sequential Bash tool calls, NOT combined into a single background command. The health check in step 3 must complete before creating the lobby in step 4, and agents in step 7 must be launched after the lobby exists.
 
 ### 4. Create a lobby
 
@@ -128,24 +134,31 @@ curl -s -X POST http://localhost:3000/trpc/lobby.create \
 
 Response: `{"result":{"data":{"lobbyId":"...","creatorToken":"..."}}}`. Extract `lobbyId` from `result.data`. `maxYears: 2` keeps the test short (1901-1902). `fastAdjudication: true` means the engine advances as soon as all agents have submitted — no waiting for `PHASE_DELAY`.
 
-### 5. Create game-notes directory
+### 5. Create dated game directory
+
+Each game run gets its own directory under `game-notes/` with the naming convention `YYYY-MM-DD_HHMM_<lobbyId>`. All artifacts for the run (referee notes, agent logs, PIDs) go inside this folder. A symlink from the bare lobby ID ensures `run-with-notes.ts` can still write agent notes to `game-notes/{lobbyId}/`.
 
 ```bash
-mkdir -p game-notes
+LOBBY_ID="<lobby-id-from-step-4>"
+NOW=$(date +%Y-%m-%d_%H%M)
+GAME_DIR="game-notes/${NOW}_${LOBBY_ID}"
+mkdir -p "$GAME_DIR"
+
+# Symlink so run-with-notes.ts can write to game-notes/{lobbyId}/
+ln -sf "${NOW}_${LOBBY_ID}" "game-notes/${LOBBY_ID}"
 ```
 
 ### 6. Write initial referee notes
 
-Create `game-notes/REFEREE_NOTES_{lobbyId}.md` with setup info (lobby ID, model, start time).
+Create `$GAME_DIR/REFEREE_NOTES.md` with setup info (lobby ID, model, start time, config values).
 
 ### 7. Launch 7 Ollama-powered agents
 
-Launch each power as a background remote agent process. A cross-process file semaphore (`FileSemaphore` in `src/agent/llm/semaphore.ts`) limits concurrent Ollama requests to avoid undici's 5-minute `headersTimeout` (see Troubleshooting). PIDs are saved for cleanup.
+Launch each power as a background remote agent process. A cross-process file semaphore (`FileSemaphore` in `src/agent/llm/semaphore.ts`) limits concurrent Ollama requests to avoid undici's 5-minute `headersTimeout` (see Troubleshooting). PIDs and per-power logs are saved inside `$GAME_DIR`.
 
 ```bash
 POWERS=(England France Germany Italy Austria Russia Turkey)
-LOBBY_ID="<lobby-id-from-step-4>"
-PID_FILE="game-notes/agent-pids.txt"
+PID_FILE="$GAME_DIR/agent-pids.txt"
 > "$PID_FILE"
 
 ## Set config based on Ollama setup:
@@ -161,7 +174,7 @@ for power in "${POWERS[@]}"; do
   DIPLOMAICY_CONFIG="$DIPLOMAICY_CONFIG" \
   LLM_CONCURRENCY=2 \
   LLM_REQUEST_TIMEOUT_MS=900000 \
-  npx tsx integration-test/run-with-notes.ts --power "$power" --lobby "$LOBBY_ID" --type llm --notes-dir "game-notes" > "game-notes/${power}.log" 2>&1 &
+  npx tsx integration-test/run-with-notes.ts --power "$power" --lobby "$LOBBY_ID" --type llm --notes-dir "game-notes" > "$GAME_DIR/${power}.log" 2>&1 &
   echo $! >> "$PID_FILE"
 done
 echo "All 7 agents launched. PIDs saved to $PID_FILE"
@@ -183,7 +196,7 @@ After all agents are connected, invoke the `/loop` skill to set up recurring mon
 Use the `/loop` skill with the computed interval:
 
 ```text
-/loop <monitor-interval> Check game <LOBBY_ID>: curl game state from localhost:3000, report phase/year, SC counts per power, unit positions, check lobby status for game completion. If game is finished, report final results and stop. Append notable events to game-notes/REFEREE_NOTES_<LOBBY_ID>.md.
+/loop <monitor-interval> Check game <LOBBY_ID>: curl game state from localhost:3000, report phase/year, SC counts per power, unit positions, check lobby status for game completion. If game is finished, report final results and stop. Append notable events to <GAME_DIR>/REFEREE_NOTES.md.
 ```
 
 You can also poll manually at any time:
@@ -206,10 +219,10 @@ Tail individual agent logs for real-time debugging (invalid orders, LLM timeouts
 
 ```bash
 # Tail a specific agent
-tail -f game-notes/England.log
+tail -f $GAME_DIR/England.log
 
 # Tail all agents at once
-tail -f game-notes/*.log
+tail -f $GAME_DIR/*.log
 ```
 
 Update referee notes at milestones (yearly, on retreats, at game end).
@@ -218,29 +231,33 @@ Update referee notes at milestones (yearly, on retreats, at game end).
 
 When the game ends (or to abort early), kill all agent processes and the server using saved PIDs:
 
+**CRITICAL: Only kill processes using saved PIDs.** NEVER use `lsof | xargs kill`, `pkill -f`, or `kill -9` — these can kill devcontainer infrastructure and disconnect VS Code.
+
 ```bash
-# Kill agents
-PID_FILE="game-notes/agent-pids.txt"
+# Kill agents (ONLY using saved PIDs)
+PID_FILE="$GAME_DIR/agent-pids.txt"
 if [ -f "$PID_FILE" ]; then
   while read -r pid; do
     kill "$pid" 2>/dev/null
   done < "$PID_FILE"
-  rm "$PID_FILE"
   echo "All agents stopped."
-else
-  pkill -f "run-with-notes.ts" 2>/dev/null
-  echo "Agents stopped (fallback)."
 fi
 
-# Kill server
+# Kill server (from saved PID file or variable)
 if [ -n "$SERVER_PID" ]; then
   kill "$SERVER_PID" 2>/dev/null
   echo "Server stopped."
+elif [ -f "game-notes/server.pid" ]; then
+  kill "$(cat game-notes/server.pid)" 2>/dev/null
+  rm game-notes/server.pid
+  echo "Server stopped (from PID file)."
 fi
 
 # Clean up file semaphore locks
 rm -rf /tmp/diplomaicy-llm-locks
 ```
+
+If neither `$SERVER_PID` nor `game-notes/server.pid` exist, use `ps aux | grep "src/ui/server.ts"` to find the specific PID, then kill that PID. Do NOT use `lsof`, `pkill`, `killall`, or any pattern-matching kill command.
 
 ### Alternative: Automated Script
 
@@ -307,15 +324,15 @@ Common issues to watch for:
 
 ## What to watch for
 
-1. **Invalid orders** — check agent logs (`game-notes/*.log`) for orders that silently became Hold (indicates the model isn't following the province ID format)
+1. **Invalid orders** — check agent logs (`$GAME_DIR/*.log`) for orders that silently became Hold (indicates the model isn't following the province ID format)
 2. **Timeouts** — if agents don't submit in time, their orders default. Increase `remoteTimeoutMs` or use a faster model
-3. **Agent crashes** — check per-power log files in `game-notes/`. Common cause: Ollama OOM on large models
+3. **Agent crashes** — check per-power log files in `$GAME_DIR/`. Common cause: Ollama OOM on large models
 4. **Phase progression** — game should advance through Spring 1901 Orders → Fall 1901 Orders → Winter 1901 Builds → etc.
 5. **Diplomacy messages** — agents should be sending press messages via `sendMessage`
 
 ## Reviewing Agent Notes
 
-After the game, each agent's notes are in `game-notes/{lobbyId}/{Power}.md`. These contain:
+After the game, each agent's notes are in `$GAME_DIR/{Power}.md` (written via the symlink from `game-notes/{lobbyId}/`). These contain:
 
 - **Strategy sections** — the agent's plans, alliance assessments, and reflections on what worked
 - **UX Feedback sections** — observations about prompt clarity, format confusion, and suggestions

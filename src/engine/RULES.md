@@ -27,15 +27,15 @@ Some coastal provinces have multiple coasts (Spain, St. Petersburg, Bulgaria). W
 Each game year has two seasons:
 
 **Spring:**
-1. Diplomacy — powers exchange messages
-2. Orders — all powers submit orders simultaneously
-3. Retreats — dislodged units retreat or disband (only if units were dislodged)
+1. Orders — all powers submit orders simultaneously
+2. Retreats — dislodged units retreat or disband (only if units were dislodged)
 
 **Fall:**
-1. Diplomacy — powers exchange messages
-2. Orders — all powers submit orders simultaneously
-3. Retreats — dislodged units retreat or disband (only if units were dislodged)
-4. Builds — powers build new units or remove excess units (only after Fall)
+1. Orders — all powers submit orders simultaneously
+2. Retreats — dislodged units retreat or disband (only if units were dislodged)
+3. Builds — powers build new units or remove excess units (only after Fall)
+
+Press (diplomatic messaging) is open throughout all phases.
 
 ## Order Field Convention
 

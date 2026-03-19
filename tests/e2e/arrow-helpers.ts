@@ -34,7 +34,7 @@ export async function gotoAndWaitForMap(page: Page, url: string): Promise<void> 
 }
 
 /**
- * Set up a two-snapshot scenario (Diplomacy + Orders) and move the slider
+ * Set up a two-snapshot scenario (pre-orders + Orders) and move the slider
  * to the Orders phase, waiting for the arrows layer to be populated.
  * Replaces the old `setupArrowScenario` + `waitForTimeout(500)` pattern.
  */
@@ -46,17 +46,17 @@ export async function setupArrowScenario(
   orders: Parameters<typeof makeOrdersSnapshot>[1],
   expectedArrowCount?: number,
 ): Promise<void> {
-  const diplomacySnap = makeSnapshot(beforeUnits, STARTING_SC, {
+  const preOrdersSnap = makeSnapshot(beforeUnits, STARTING_SC, {
     year: 1901,
     season: 'Spring',
-    type: 'Diplomacy',
+    type: 'Orders',
   });
   const ordersSnap = makeOrdersSnapshot(afterUnits, orders, STARTING_SC, {
     year: 1901,
     season: 'Spring',
     type: 'Orders',
   });
-  server.setSnapshots([diplomacySnap, ordersSnap]);
+  server.setSnapshots([preOrdersSnap, ordersSnap]);
   await page.evaluate(() => {
     const slider = document.querySelector('#phase-slider') as HTMLInputElement;
     slider.value = '1';
