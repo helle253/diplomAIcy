@@ -27,10 +27,12 @@ function filterToolsByPhase(phaseType: PhaseType): ToolDefinition[] {
   switch (phaseType) {
     case PhaseType.Orders:
       allowed.add('submitOrders');
+      allowed.add('testOrders');
       break;
     case PhaseType.Retreats:
       allowed.add('getRetreatOptions');
       allowed.add('submitRetreats');
+      allowed.add('testOrders');
       break;
     case PhaseType.Builds:
       allowed.add('submitBuilds');
@@ -201,7 +203,7 @@ export async function connectToolAgent(
       );
       logger.info(`[${power}] Tool loop complete for phase ${gameState.phase.type}`);
 
-      // Extract and persist plan block from primary response
+      // Extract and persist plan block from primary response (if any text was produced)
       if (response) {
         const { plan } = extractPlanBlock(response);
         if (plan) {
@@ -209,6 +211,7 @@ export async function connectToolAgent(
           logger.info(`[${power}] Plan saved for next phase`);
         }
       }
+      // Note: when tool calls succeed, response is typically empty — previous plan is kept
     } catch (err) {
       logger.error(`[${power}] Tool loop error:`, err);
     }

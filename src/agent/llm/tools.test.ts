@@ -6,9 +6,9 @@ import { GameToolExecutor, type ToolGameClient } from './tools';
 
 type MockToolGameClient = {
   game: {
-    [K in keyof ToolGameClient['game']]: {
-      mutate: Mock;
-    };
+    [K in keyof ToolGameClient['game']]: K extends 'testOrders'
+      ? { query: Mock }
+      : { mutate: Mock };
   };
 };
 
@@ -137,6 +137,7 @@ describe('GameToolExecutor - action tools', () => {
         submitRetreats: { mutate: vi.fn().mockResolvedValue({ ok: true }) },
         submitBuilds: { mutate: vi.fn().mockResolvedValue({ ok: true }) },
         sendMessage: { mutate: vi.fn().mockResolvedValue({ ok: true }) },
+        testOrders: { query: vi.fn().mockResolvedValue({ resolutions: [] }) },
       },
     } as MockToolGameClient;
   }
