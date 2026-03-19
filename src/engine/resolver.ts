@@ -14,12 +14,19 @@ import {
   UnitType,
 } from './types';
 
-// === Result type ===
+// === Result types ===
 
 export interface ResolutionResult {
   resolutions: OrderResolution[];
   dislodgedUnits: RetreatSituation[];
   newPositions: Unit[];
+}
+
+export interface RetreatResolutionResult {
+  newPositions: Unit[];
+  disbanded: Unit[];
+  succeeded: { unit: Unit; destination: string; coast?: Coast }[];
+  collisions: { destination: string; units: Unit[] }[];
 }
 
 // === Internal state for the iterative resolver ===
@@ -820,4 +827,77 @@ function getRetreatDestinations(
     if (unit.type === UnitType.Fleet && adjProv.type === ProvinceType.Land) return false;
     return true;
   });
+}
+
+// === Retreat resolution ===
+
+import type { RetreatOrder } from './types';
+
+/**
+ * Resolve retreat orders. Two retreats to the same province = both disbanded.
+ * Returns new unit positions after retreats are applied.
+ */
+export function resolveRetreats(
+  retreatOrders: RetreatOrder[],
+  dislodgedUnits: RetreatSituation[],
+  survivingPositions: Unit[],
+): RetreatResolutionResult {
+  const newPositions = [...survivingPositions];
+  const disbanded: Unit[] = [];
+  const succeeded: { unit: Unit; destination: string; coast?: Coast }[] = [];
+  const retreatDestinations = new Map<string, RetreatOrder[]>();
+
+  // Group retreat-moves by destination
+  for (const order of retreatOrders) {
+    if (order.type === 'RetreatMove') {
+      const existing = retreatDestinations.get(order.destination) ?? [];
+      existing.push(order);
+      retreatDestinations.set(order.destination, existing);
+    }
+  }
+
+  // Collect collision info
+  const collisions: { destination: string; units: Unit[] }[] = [];
+
+  for (const [dest, orders] of retreatDestinations) {
+    if (orders.length === 1) {
+      const order = orders[0] as {
+        type: 'RetreatMove';
+        unit: string;
+        destination: string;
+        coast?: Coast;
+      };
+      const dislodgedInfo = dislodgedUnits.find((d) => d.unit.province === order.unit);
+      if (dislodgedInfo) {
+        const movedUnit = {
+          ...dislodgedInfo.unit,
+          province: order.destination,
+          coast: order.coast,
+        };
+        newPositions.push(movedUnit);
+        succeeded.push({ unit: dislodgedInfo.unit, destination: dest, coast: order.coast });
+      }
+    } else {
+      // Collision — all units retreating here are disbanded
+      const collidedUnits: Unit[] = [];
+      for (const order of orders) {
+        const dislodgedInfo = dislodgedUnits.find((d) => d.unit.province === order.unit);
+        if (dislodgedInfo) {
+          disbanded.push(dislodgedInfo.unit);
+          collidedUnits.push(dislodgedInfo.unit);
+        }
+      }
+      collisions.push({ destination: dest, units: collidedUnits });
+    }
+  }
+
+  // Disband units that chose to disband (no destination)
+  for (const order of retreatOrders) {
+    if (order.type === 'Disband') {
+      const dislodgedInfo = dislodgedUnits.find((d) => d.unit.province === order.unit);
+      if (dislodgedInfo) disbanded.push(dislodgedInfo.unit);
+    }
+  }
+
+  return { newPositions, disbanded, succeeded, collisions };
 }
