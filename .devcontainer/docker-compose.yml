@@ -5,6 +5,8 @@ services:
     environment:
       - CLAUDE_CONFIG_DIR=/home/node/.claude
       - OLLAMA_HOST=http://ollama:11434
+    ports:
+      - "3000:3000"
     volumes:
       - ../..:/workspaces:cached
       - claude-config:/home/node/.claude
