@@ -114,7 +114,7 @@ Start the server and wait for it to be healthy. This MUST run in the foreground 
 npx tsx src/ui/server.ts > /tmp/server-boot.log 2>&1 &
 SERVER_PID=$!
 # Health check — wait for /api/health to respond before proceeding
-until curl -sf http://localhost:3000/api/health > /dev/null 2>&1; do sleep 1; done
+until curl -sf http://localhost:5173/api/health > /dev/null 2>&1; do sleep 1; done
 # Save PID to a well-known file for cleanup across sessions
 echo "$SERVER_PID" > game-notes/server.pid
 echo "Server ready (PID $SERVER_PID)"
@@ -127,7 +127,7 @@ The server PID is saved to `game-notes/server.pid` so it can be killed from any 
 ### 4. Create a lobby
 
 ```bash
-curl -s -X POST http://localhost:3000/trpc/lobby.create \
+curl -s -X POST http://localhost:5173/trpc/lobby.create \
   -H "Content-Type: application/json" \
   -d '{"name":"Ollama Integration Test","maxYears":2,"autostart":true,"fastAdjudication":true,"agentConfig":{"defaultAgent":{"type":"remote"}},"remoteTimeoutMs":600000}'
 ```
@@ -196,19 +196,19 @@ After all agents are connected, invoke the `/loop` skill to set up recurring mon
 Use the `/loop` skill with the computed interval:
 
 ```text
-/loop <monitor-interval> Check game <LOBBY_ID>: curl game state from localhost:3000, report phase/year, SC counts per power, unit positions, check lobby status for game completion. If game is finished, report final results and stop. Append notable events to <GAME_DIR>/REFEREE_NOTES.md.
+/loop <monitor-interval> Check game <LOBBY_ID>: curl game state from localhost:5173, report phase/year, SC counts per power, unit positions, check lobby status for game completion. If game is finished, report final results and stop. Append notable events to <GAME_DIR>/REFEREE_NOTES.md.
 ```
 
 You can also poll manually at any time:
 
 ```bash
-curl -s "http://localhost:3000/trpc/game.getState?input=%7B%22lobbyId%22%3A%22${LOBBY_ID}%22%7D" | python3 -m json.tool
+curl -s "http://localhost:5173/trpc/game.getState?input=%7B%22lobbyId%22%3A%22${LOBBY_ID}%22%7D" | python3 -m json.tool
 ```
 
 Check lobby status for game completion:
 
 ```bash
-curl -s "http://localhost:3000/trpc/lobby.get?input=%7B%22id%22%3A%22${LOBBY_ID}%22%7D" | python3 -m json.tool
+curl -s "http://localhost:5173/trpc/lobby.get?input=%7B%22id%22%3A%22${LOBBY_ID}%22%7D" | python3 -m json.tool
 ```
 
 Response data is at `result.data`.
