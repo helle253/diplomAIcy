@@ -1372,3 +1372,91 @@ Conducted a systematic audit of the tool-calling pipeline. Stopped the recurring
 ### Remaining before integration test
 1. Apply lightweight plan fix (keep previous plan on empty response) — 1 line
 2. Commit and push all fixes
+
+---
+
+## Reflection 19 — Why Builds Fail: A Different Problem Than Orders (2026-03-20 12:00)
+
+Austria missed builds for 5 straight years. The auto-submit sent `{ builds: [] }` (waive) every time. This cost Austria the game — with 7 units instead of 5, it could have dominated. Why?
+
+### What the model sees during a builds phase
+
+The prompt shows:
+```
+=== Fall 1902 (Builds) ===
+You have 5 units and 7 supply centers.
+
+--- Your Units ---
+bud [Army] -> can reach: ...
+vie [Army] -> can reach: ...
+...
+
+⚠️ ACTION REQUIRED: Build 2 unit(s).
+Open home centers: vie, tri
+```
+
+The model has: unit count, SC count, build count, and the list of open home centers. This is actually GOOD information — it tells the model exactly what to do. The problem isn't missing information.
+
+### What the model must produce
+
+```json
+{"builds": [
+  {"type": "Build", "unitType": "Army", "province": "tri"},
+  {"type": "Build", "unitType": "Army", "province": "vie"}
+]}
+```
+
+This is a simpler tool call than `submitOrders`. Only 2-3 fields per item, no adjacency to think about, no strategic choices beyond Army vs Fleet. The prompt even lists the valid provinces.
+
+### So why does it fail?
+
+Looking at the tools available during Builds: `getMyUnits`, `getAdjacentProvinces`, `getProvinceInfo`, `getSupplyCenterCounts`, `getPhaseInfo`, `sendMessage`, `submitBuilds`. That's 7 tools with `tool_choice: "required"`.
+
+The model must pick `submitBuilds` from 7 options. During Orders, it must pick `submitOrders` from 9 options (the same 7 plus `submitOrders` and `testOrders`). The tool selection problem is slightly easier for builds.
+
+But here's what I think is actually happening: **the model calls a query tool first (like `getMyUnits`) and then fails to follow up with `submitBuilds`.** The tool loop continues, the model generates text, no more tool calls, loop ends, retry fires, retry also fails, auto-submit waives.
+
+The issue is the SAME as the orders phase — the model produces text instead of tool calls after the first iteration. It's not a builds-specific problem. It's the general tool-call reliability degradation we see in Y2+.
+
+### What's different about builds that makes it worse
+
+1. **Builds are rarer**: Only 1 builds phase per year (after Fall). Orders phases happen twice per year. The model has 2x more "practice" at submitOrders than submitBuilds.
+
+2. **The prompt is shorter**: Builds prompts are simpler (no adjacencies for uncovered units, just "Build 2 unit(s), open: vie, tri"). Paradoxically, a shorter prompt might give the model less context to anchor on — less material to "think about" before producing a tool call.
+
+3. **No text parser fallback**: The text parser ONLY runs for `PhaseType.Orders`. Builds text like "Build Army in Vienna" is never parsed. This is a clear gap — the text parser should handle builds too.
+
+4. **The stakes feel lower**: The model might not "understand" that waiving a build is a big deal. The prompt says "ACTION REQUIRED: Build 2 unit(s)" but doesn't say "WARNING: if you don't build, you lose a major advantage."
+
+### What would actually help
+
+**Fix 1: Extend the text parser to builds (high impact, easy)**
+
+Parse text responses for build patterns:
+- "Build Army in vie" → `{"type": "Build", "unitType": "Army", "province": "vie"}`
+- "Build Fleet in tri" → `{"type": "Build", "unitType": "Fleet", "province": "tri"}`
+- "Remove unit in bud" → `{"type": "Remove", "unit": "bud"}`
+- "Waive" → `{"type": "Waive"}`
+
+This is simpler than the orders parser — fewer patterns, more constrained vocabulary. And it directly addresses the #1 cause of build failure (model produces text instead of tool calls).
+
+**Fix 2: testOrders for builds? No — wrong abstraction.**
+
+The user asked about a `testBuilds` endpoint. But there's nothing to "test" — builds are deterministic. Either you have an open home center or you don't. The prompt already tells you which centers are open. A testBuilds endpoint would just echo back what the prompt already says.
+
+What WOULD help from the server side: **server-side validation on `submitBuilds`** that rejects invalid builds (e.g., building on an occupied province) with a clear error. Same pattern as the submitOrders validation. But builds are already simple enough that syntactic errors are rare — the problem is the model not calling the tool at all, not calling it wrong.
+
+**Fix 3: Reduce the tool set during builds**
+
+During builds, the model doesn't need `getAdjacentProvinces`, `getProvinceInfo`, or `getPhaseInfo`. It only needs `submitBuilds` and maybe `getMyUnits`. Fewer tools = less confusion about which to call = higher chance of calling `submitBuilds`.
+
+This connects to R16's observation about `tool_choice`. With fewer tools, the model's "choice space" shrinks. Instead of picking 1 of 7 tools, it picks 1 of 2-3.
+
+### The real insight
+
+Builds failure is NOT a separate problem from orders failure. It's the same problem (model fails to produce tool calls in Y2+) with fewer safety nets (no text parser, no `testOrders` equivalent). The fix is extending the existing safety nets to cover builds, not building new infrastructure.
+
+**Priority:**
+1. Extend text parser to handle build/remove/waive patterns (~30 lines)
+2. Reduce tool set during builds to `submitBuilds` + `getMyUnits` + `sendMessage` only
+3. Consider adding `submitBuilds` validation to the server (reject invalid province/occupied center)
