@@ -85,6 +85,7 @@ export class OpenAICompatibleClient implements LLMClient {
           },
           signal: controller.signal,
           body: JSON.stringify(body),
+          keepalive: true,
         });
 
         if (!response.ok) {
