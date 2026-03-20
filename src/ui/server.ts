@@ -29,7 +29,7 @@ import { logger } from '../util/logger';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const PORT = parseInt(process.env.PORT || '5173');
+const PORT = parseInt(process.env.PORT || '3000');
 const DB_PATH = process.env.DB_PATH || 'diplomaicy.db';
 
 const ALL_POWERS: Power[] = [

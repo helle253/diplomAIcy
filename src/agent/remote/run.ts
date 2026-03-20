@@ -23,7 +23,7 @@ function parseArgs(): {
 } {
   const args = process.argv.slice(2);
   let power: string | undefined;
-  let server = process.env.GAME_SERVER ?? 'http://localhost:5173/trpc';
+  let server = process.env.GAME_SERVER ?? 'http://localhost:3000/trpc';
   let type: string | undefined;
   let lobbyId: string | undefined;
   let planDir: string | undefined;
