@@ -25,13 +25,22 @@ const LOCAL_QUERY_TOOLS: Record<string, string[]> = {
   Builds: ['getMyUnits', 'getPhaseInfo'],
 };
 
+/** Fallback action sets when server doesn't provide availableActions. */
+const FALLBACK_ACTIONS: Record<string, string[]> = {
+  Orders: ['submitOrders', 'testOrders', 'sendMessage'],
+  Retreats: ['submitRetreats', 'testOrders', 'sendMessage'],
+  Builds: ['submitBuilds', 'sendMessage'],
+};
+
 /**
  * Build the tool list from server-provided actions + local query tools.
  * Server defines what actions are available; agent adds its own query tools.
+ * Falls back to hardcoded defaults if server doesn't provide actions.
  */
 function filterTools(phaseType: string, serverActions: string[]): ToolDefinition[] {
+  const actions = serverActions.length > 0 ? serverActions : (FALLBACK_ACTIONS[phaseType] ?? []);
   const localTools = LOCAL_QUERY_TOOLS[phaseType] ?? Object.values(LOCAL_QUERY_TOOLS).flat();
-  const allowed = new Set([...localTools, ...serverActions]);
+  const allowed = new Set([...localTools, ...actions]);
   return TOOL_DEFINITIONS.filter((t) => allowed.has(t.function.name));
 }
 
