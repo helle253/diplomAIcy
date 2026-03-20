@@ -1281,4 +1281,94 @@ Then I just pick a destination from `canReach` and submit the object. No field r
 
 This is a bigger change but it would eliminate both the field name mismatch AND the adjacency-checking issue (R10/R15) in one move.
 
-### Status: Option A (rename getMyUnits output) is the minimum fix. The "submission-shaped results" idea is worth considering for the multi-step harness (R1) if we build that later.
+### Status: FIXED — renamed getMyUnits output field to `unit`, matching submitOrders input. Also improved the tool description to show the exact output shape.
+
+---
+
+## Reflection 18 — The Plan Block Can Never Be Saved When Tool Calls Succeed (2026-03-19 20:30)
+
+### The bug
+
+The system prompt says: "You MUST include a ```plan block in EVERY response — this is your memory between turns."
+
+But when `tool_choice: "required"` works and the model produces a tool call (the happy path!), the response's `content` field is typically empty — the model puts everything into the tool call JSON, not into text. So:
+
+1. Model produces `content: ""` + `tool_calls: [{submitOrders...}]`
+2. Tool loop executes submitOrders, `hasSubmitted` becomes true
+3. Loop returns `allText.join('\n')` which is `""` (no content was accumulated)
+4. `extractPlanBlock("")` finds nothing → plan is not saved
+
+**The plan is systematically lost on every successful tool call.** It's only saved when the model fails to produce tool calls and writes text instead — which is the failure path we're trying to eliminate.
+
+### Why this matters
+
+The plan is the model's only memory between turns. Without it, each phase starts from scratch. The model can't maintain alliances, track goals, or follow through on multi-turn strategies. This directly hurts strategic quality and may contribute to the "oscillating" behavior where models move units forward one turn and back the next.
+
+### Why I didn't catch this earlier
+
+In the integration tests, the model was mostly FAILING to produce tool calls — producing text instead. Text responses DO get plan blocks extracted. So the plan system appeared to work. But as we improve tool-call reliability (validation, text parsing, prompt reorder), this bug becomes more severe: better tool calling = less plan persistence.
+
+### The fix
+
+The plan block needs to be extracted from either:
+1. Text content alongside tool calls (some models produce both `content` and `tool_calls`)
+2. A dedicated tool call — add a `savePlan` tool that the model calls alongside `submitOrders`
+3. Post-submission: after `hasSubmitted` becomes true, make one more LLM call asking for a plan update
+
+Option 2 is cleanest and most aligned with how Claude Code works — I use Write to save notes, not inline text. A `savePlan` tool would let the model persist its strategic thinking as a separate action:
+
+```typescript
+{
+  name: 'savePlan',
+  description: 'Save your strategic plan for next turn. Called after submitting orders.',
+  parameters: {
+    properties: {
+      goal: { type: 'string', description: 'What SC are you targeting next?' },
+      allies: { type: 'string', description: 'Who are you working with?' },
+      threats: { type: 'string', description: 'Who threatens you?' },
+      nextOrders: { type: 'string', description: 'What orders will you submit next turn?' },
+      reflection: { type: 'string', description: 'What worked? What failed?' }
+    },
+    required: ['goal', 'nextOrders']
+  }
+}
+```
+
+This has a nice secondary benefit: the plan is now structured data, not a free-text blob. We can present specific fields in the prompt instead of dumping the whole plan. And the model doesn't need to remember the ```plan``` markdown format — it just fills in tool parameters.
+
+But this adds another tool call per phase (another LLM inference through the semaphore). With concurrency=1 and ~4 min/call, that's significant.
+
+### A lighter alternative
+
+Don't use a tool. Instead, after successful submission, check if the accumulated `content` contains a plan block. If not, don't make an extra LLM call — just keep the previous plan. The plan is "best effort" memory, not critical state.
+
+This is actually fine. The model's orders already reflect its strategic thinking. The plan block is supplementary context, not the source of truth. Missing one plan update is better than adding 4 minutes of latency per phase.
+
+### Status: not blocking for the integration test, but worth noting. The plan system is fundamentally broken on the happy path. The lightweight fix (keep previous plan) is a one-line change. The proper fix (savePlan tool) is worth doing if we add the multi-step harness later.
+
+---
+
+## Code Audit Summary (2026-03-19 20:45)
+
+Conducted a systematic audit of the tool-calling pipeline. Stopped the recurring review after four rounds — no more actionable findings at this level of abstraction.
+
+### Findings
+
+| # | Severity | Finding | Status |
+|---|----------|---------|--------|
+| R15 | Bug | Server validation errors double-serialized via `String(TRPCError)` — model sees garbled JSON | **FIXED** — added `formatError()` |
+| R16 | Design note | `tool_choice: "required"` not always enforced by Ollama — text responses still possible | **NOTED** — text parser is the safety net |
+| R17 | Bug | `getMyUnits` returns `{province}` but `submitOrders` expects `{unit}` — field name mismatch | **FIXED** — renamed to `unit` |
+| R18 | Bug | Plan block extraction only works on text content, which is empty on successful tool calls | **TODO** — lightweight fix: keep previous plan if no new one found |
+
+### Things that checked out OK
+- Parallel tool calls (sendMessage + submitOrders in one response) handled correctly
+- Text parser false-positive risk is well-guarded by `myUnitProvinces.has(unit)` check
+- Accumulated messages are capped at 50 (no unbounded growth)
+- Error path from server → tRPC → catch → tool result → model works end-to-end (after R15 fix)
+- `hasSubmitted` flag semantics are consistent across tool-call, text-parse, and auto-submit paths
+- Pattern precedence in text parser (support before move) is correct
+
+### Remaining before integration test
+1. Apply lightweight plan fix (keep previous plan on empty response) — 1 line
+2. Commit and push all fixes

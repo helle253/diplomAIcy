@@ -9,34 +9,29 @@ import type { GameClient } from '../remote/client';
 import { deserializeGameState, type SerializedGameState } from '../remote/deserialize';
 import type { LLMClient, ToolDefinition } from './llm-client';
 import { buildToolSystemPrompt, buildTurnPrompt, extractPlanBlock } from './prompts';
-import { parseTextOrders } from './text-parser';
+import { parseTextBuilds, parseTextOrders } from './text-parser';
 import { GameToolExecutor, TOOL_DEFINITIONS, type ToolGameClient } from './tools';
 
-const MAP_QUERY_TOOLS = [
-  'getMyUnits',
-  'getAdjacentProvinces',
-  'getProvinceInfo',
-  'getSupplyCenterCounts',
-  'getPhaseInfo',
-];
-const COMMON_TOOLS = ['sendMessage'];
+/** Local query tools that run in-process (not server actions). */
+const LOCAL_QUERY_TOOLS: Record<string, string[]> = {
+  Orders: [
+    'getMyUnits',
+    'getAdjacentProvinces',
+    'getProvinceInfo',
+    'getSupplyCenterCounts',
+    'getPhaseInfo',
+  ],
+  Retreats: ['getMyUnits', 'getRetreatOptions', 'getPhaseInfo'],
+  Builds: ['getMyUnits', 'getPhaseInfo'],
+};
 
-function filterToolsByPhase(phaseType: PhaseType): ToolDefinition[] {
-  const allowed = new Set([...MAP_QUERY_TOOLS, ...COMMON_TOOLS]);
-  switch (phaseType) {
-    case PhaseType.Orders:
-      allowed.add('submitOrders');
-      allowed.add('testOrders');
-      break;
-    case PhaseType.Retreats:
-      allowed.add('getRetreatOptions');
-      allowed.add('submitRetreats');
-      allowed.add('testOrders');
-      break;
-    case PhaseType.Builds:
-      allowed.add('submitBuilds');
-      break;
-  }
+/**
+ * Build the tool list from server-provided actions + local query tools.
+ * Server defines what actions are available; agent adds its own query tools.
+ */
+function filterTools(phaseType: string, serverActions: string[]): ToolDefinition[] {
+  const localTools = LOCAL_QUERY_TOOLS[phaseType] ?? Object.values(LOCAL_QUERY_TOOLS).flat();
+  const allowed = new Set([...localTools, ...serverActions]);
   return TOOL_DEFINITIONS.filter((t) => allowed.has(t.function.name));
 }
 
@@ -81,7 +76,7 @@ export async function connectToolAgent(
   const MESSAGE_BATCH_DELAY = parseInt(process.env.MESSAGE_BATCH_DELAY ?? '5000', 10);
 
   type WorkItem =
-    | { kind: 'phase'; gameState: GameState; deadlineMs: number }
+    | { kind: 'phase'; gameState: GameState; deadlineMs: number; availableActions?: string[] }
     | { kind: 'messageBatch'; messages: Message[] };
 
   const workQueue: WorkItem[] = [];
@@ -116,7 +111,7 @@ export async function connectToolAgent(
     }
   }
 
-  function enqueuePhase(gameState: GameState, deadlineMs: number) {
+  function enqueuePhase(gameState: GameState, deadlineMs: number, availableActions?: string[]) {
     flushPendingMessages();
 
     // Clear queued message batches — phase handler will have full accumulated context
@@ -125,7 +120,7 @@ export async function connectToolAgent(
       logger.info(`[${power}] Clearing ${staleCount} stale message batches from queue`);
     }
     workQueue.length = 0;
-    workQueue.push({ kind: 'phase', gameState, deadlineMs });
+    workQueue.push({ kind: 'phase', gameState, deadlineMs, availableActions });
     drainWorkQueue();
   }
 
@@ -150,7 +145,7 @@ export async function connectToolAgent(
 
         try {
           if (item.kind === 'phase') {
-            await handlePhase(item.gameState, item.deadlineMs);
+            await handlePhase(item.gameState, item.deadlineMs, item.availableActions);
           } else {
             await handleMessageBatch(item.messages);
           }
@@ -165,7 +160,11 @@ export async function connectToolAgent(
 
   // ── Phase handler ──────────────────────────────────────────────────
 
-  async function handlePhase(gameState: GameState, deadlineMs: number) {
+  async function handlePhase(
+    gameState: GameState,
+    deadlineMs: number,
+    availableActions?: string[],
+  ) {
     if (deadlineMs > 0) {
       const remaining = Math.max(0, Math.round((deadlineMs - Date.now()) / 1000));
       logger.info(`[${power}] Phase ${gameState.phase.type} -- deadline in ${remaining}s`);
@@ -177,7 +176,8 @@ export async function connectToolAgent(
     }
 
     const executor = new GameToolExecutor(client as unknown as ToolGameClient, gameState, power);
-    const tools = filterToolsByPhase(gameState.phase.type as PhaseType);
+    const serverActions = availableActions ?? [];
+    const tools = filterTools(gameState.phase.type, serverActions);
 
     // Include ALL accumulated messages — never cleared, so the agent retains
     // full diplomatic history. Messages carry phase stamps for temporal context.
@@ -243,38 +243,51 @@ export async function connectToolAgent(
       }
     }
 
-    // If still no submission, try parsing orders from the text responses
-    if (needsSubmit && !executor.hasSubmitted && gameState.phase.type === PhaseType.Orders) {
+    // If still no submission, try parsing from the text responses
+    if (needsSubmit && !executor.hasSubmitted) {
       const combinedText = [response, retryResponse].filter(Boolean).join('\n');
       if (combinedText.length > 0) {
-        const parsed = parseTextOrders(combinedText, gameState, power);
-        if (parsed && parsed.orders.length > 0) {
-          // Only keep orders for units we actually have (syntactic check)
-          const validOrders = parsed.orders.filter((o) =>
-            gameState.units.some((u) => u.province === o.unit && u.power === power),
-          );
-
-          if (validOrders.length > 0) {
-            // Fill holds for uncovered units
-            const coveredUnits = new Set(validOrders.map((o) => o.unit));
-            const myUnits = gameState.units.filter((u) => u.power === power);
-            const allOrders = [
-              ...validOrders,
-              ...myUnits
-                .filter((u) => !coveredUnits.has(u.province))
-                .map((u) => ({ unit: u.province, type: 'Hold' as const })),
-            ];
-
+        if (gameState.phase.type === PhaseType.Orders) {
+          const parsed = parseTextOrders(combinedText, gameState, power);
+          if (parsed && parsed.orders.length > 0) {
+            const validOrders = parsed.orders.filter((o) =>
+              gameState.units.some((u) => u.province === o.unit && u.power === power),
+            );
+            if (validOrders.length > 0) {
+              const coveredUnits = new Set(validOrders.map((o) => o.unit));
+              const myUnits = gameState.units.filter((u) => u.power === power);
+              const allOrders = [
+                ...validOrders,
+                ...myUnits
+                  .filter((u) => !coveredUnits.has(u.province))
+                  .map((u) => ({ unit: u.province, type: 'Hold' as const })),
+              ];
+              logger.warn(
+                `[${power}] Parsed ${validOrders.length} orders from text (${parsed.unmatched.length} unmatched)`,
+              );
+              try {
+                await (client.game.submitOrders.mutate as (input: unknown) => Promise<unknown>)({
+                  orders: allOrders,
+                });
+                executor.hasSubmitted = true;
+              } catch (err) {
+                logger.error(`[${power}] Text-parsed order submission error:`, err);
+              }
+            }
+          }
+        } else if (gameState.phase.type === PhaseType.Builds) {
+          const parsed = parseTextBuilds(combinedText);
+          if (parsed && parsed.builds.length > 0) {
             logger.warn(
-              `[${power}] Parsed ${validOrders.length} orders from text (${parsed.unmatched.length} unmatched lines)`,
+              `[${power}] Parsed ${parsed.builds.length} builds from text (${parsed.unmatched.length} unmatched)`,
             );
             try {
-              await (client.game.submitOrders.mutate as (input: unknown) => Promise<unknown>)({
-                orders: allOrders,
+              await (client.game.submitBuilds.mutate as (input: unknown) => Promise<unknown>)({
+                builds: parsed.builds,
               });
               executor.hasSubmitted = true;
             } catch (err) {
-              logger.error(`[${power}] Text-parsed order submission error:`, err);
+              logger.error(`[${power}] Text-parsed build submission error:`, err);
             }
           }
         }
@@ -329,7 +342,7 @@ export async function connectToolAgent(
       }
 
       const executor = new GameToolExecutor(client as unknown as ToolGameClient, gameState, power);
-      const tools = filterToolsByPhase(gameState.phase.type as PhaseType);
+      const tools = filterTools(gameState.phase.type, ['sendMessage']);
       // Pass ALL accumulated messages so the agent has full diplomatic context
       const messagePlan = await readPlan();
       const userMessage = buildTurnPrompt(gameState, power, accumulatedMessages, messagePlan);
@@ -381,7 +394,11 @@ export async function connectToolAgent(
         const key = phaseKey(gameState);
         if (key === lastHandledPhase) return;
         lastHandledPhase = key;
-        enqueuePhase(gameState, tracked.data.gameState.deadlineMs ?? 0);
+        enqueuePhase(
+          gameState,
+          tracked.data.gameState.deadlineMs ?? 0,
+          tracked.data.gameState.availableActions,
+        );
       },
       onError(err) {
         logger.error(`[${power}] onPhaseChange subscription error:`, err);
@@ -453,7 +470,7 @@ export async function connectToolAgent(
     ) {
       lastHandledPhase = key;
       logger.info(`[${power}] Catching up on current phase: ${currentGameState.phase.type}`);
-      enqueuePhase(currentGameState, serialized.deadlineMs);
+      enqueuePhase(currentGameState, serialized.deadlineMs, serialized.availableActions);
     }
   } catch (err) {
     logger.error(`[${power}] catch-up error (non-fatal):`, err);

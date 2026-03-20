@@ -177,3 +177,86 @@ export function parseTextOrders(
   if (orders.length === 0) return null;
   return { orders, unmatched };
 }
+
+// ── Build order parsing ───────────────────────────────────────────────
+
+interface ParsedBuild {
+  type: string;
+  unitType?: string;
+  province?: string;
+  coast?: string;
+}
+
+export interface TextBuildParseResult {
+  builds: ParsedBuild[];
+  unmatched: string[];
+}
+
+/**
+ * Parse natural-language build/remove/waive orders from text.
+ * Handles formats like:
+ *   "Build Army in vie", "Build Fleet bre", "Build A vie"
+ *   "Remove unit in bud", "Remove bud", "Disband bud"
+ *   "Waive", "Waive build"
+ */
+export function parseTextBuilds(text: string): TextBuildParseResult | null {
+  const builds: ParsedBuild[] = [];
+  const unmatched: string[] = [];
+
+  const lines = text.split('\n');
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#') || line.startsWith('```')) continue;
+
+    let parsed = false;
+
+    // Pattern 1: Build — "Build Army in vie", "Build Fleet bre/sc", "Build A vie"
+    const buildRe =
+      /build\s+(?:an?\s+)?(army|fleet|A|F)\s+(?:in\s+|at\s+)?(\w{2,3})(?:\s*[/]?\s*(nc|sc))?/i;
+    let m = line.match(buildRe);
+    if (m) {
+      const unitType = m[1].toLowerCase().startsWith('a') ? 'Army' : 'Fleet';
+      const province = m[2].toLowerCase();
+      const coast = m[3]?.toLowerCase();
+      if (isProvince(province)) {
+        builds.push({
+          type: 'Build',
+          unitType,
+          province,
+          ...(coast ? { coast } : {}),
+        });
+        parsed = true;
+      }
+    }
+
+    // Pattern 2: Remove — "Remove bud", "Remove unit in bud", "Disband bud"
+    if (!parsed) {
+      const removeRe = /(?:remove|disband)\s+(?:(?:unit|army|fleet)\s+)?(?:in\s+|at\s+)?(\w{2,3})/i;
+      m = line.match(removeRe);
+      if (m) {
+        const province = m[1].toLowerCase();
+        if (isProvince(province)) {
+          builds.push({ type: 'Remove', province });
+          parsed = true;
+        }
+      }
+    }
+
+    // Pattern 3: Waive — "Waive", "Waive build"
+    if (!parsed) {
+      if (/waive/i.test(line)) {
+        builds.push({ type: 'Waive' });
+        parsed = true;
+      }
+    }
+
+    if (!parsed && line.length > 3) {
+      const hasBuildRef = /build|remove|disband|waive|army|fleet/i.test(line);
+      if (hasBuildRef) unmatched.push(line);
+    }
+  }
+
+  if (builds.length === 0) return null;
+  return { builds, unmatched };
+}

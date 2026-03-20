@@ -7,7 +7,7 @@ import { PROVINCES } from '../engine/map';
 import { buildMapState } from '../engine/map-state';
 import { resolveOrders, resolveRetreats } from '../engine/resolver';
 import type { Order, OrderResolution, RetreatOrder } from '../engine/types';
-import { Coast, OrderType, Phase, Power, UnitType } from '../engine/types';
+import { Coast, OrderType, Phase, PhaseType, Power, UnitType } from '../engine/types';
 import type { LobbyManager } from './lobby-manager';
 import type { GameManager, TurnRecord } from './manager';
 import { createProtectedProcedures, publicProcedure, router } from './trpc';
@@ -158,10 +158,18 @@ function buildPowerSummary(manager: GameManager): Record<string, PowerSummary> {
   return summary;
 }
 
+/** Actions available to agents per phase type. */
+const PHASE_ACTIONS: Record<string, string[]> = {
+  [PhaseType.Orders]: ['submitOrders', 'testOrders', 'sendMessage', 'proposeDraw', 'concede'],
+  [PhaseType.Retreats]: ['submitRetreats', 'testOrders', 'sendMessage'],
+  [PhaseType.Builds]: ['submitBuilds', 'sendMessage'],
+};
+
 function serializeState(manager: GameManager) {
   const state = manager.getState();
   return {
     phase: state.phase,
+    availableActions: PHASE_ACTIONS[state.phase.type] ?? [],
     map: buildMapState(state.units, state.supplyCenters),
     powers: buildPowerSummary(manager),
     orderHistory: serializeOrderHistory(manager.getTurnHistory()),
