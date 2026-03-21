@@ -6,7 +6,7 @@
     "apiKey": "ollama",
     "model": "qwen3:8b",
     "temperature": 0.7,
-    "maxTokens": 16384,
-    "numCtx": 40960
+    "maxTokens": 8192,
+    "numCtx": 16384
   }
 }
