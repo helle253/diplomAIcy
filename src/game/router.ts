@@ -408,6 +408,60 @@ export function createGameRouter(lobbyManager: LobbyManager) {
       .input(z.object({ builds: z.array(buildOrderSchema) }))
       .mutation(({ ctx, input }) => {
         const manager = resolveManager(lobbyManager, ctx.lobbyId);
+        const state = manager.getState();
+
+        // Compute valid build locations for error messages
+        const openHomeCenters = Object.entries(PROVINCES)
+          .filter(
+            ([id, prov]) =>
+              prov.homeCenter === ctx.power &&
+              prov.supplyCenter &&
+              state.supplyCenters.get(id) === ctx.power &&
+              !state.units.some((u) => u.province === id),
+          )
+          .map(([id]) => id);
+
+        // Validate builds
+        const errors: { province?: string; error: string }[] = [];
+        for (const build of input.builds) {
+          if (build.type === 'Build') {
+            if (!openHomeCenters.includes(build.province)) {
+              errors.push({
+                province: build.province,
+                error: `Cannot build in '${build.province}'. Your open home centers: ${openHomeCenters.join(', ') || '(none)'}`,
+              });
+            } else if (
+              build.unitType === UnitType.Fleet &&
+              PROVINCES[build.province]?.type === 'Land'
+            ) {
+              errors.push({
+                province: build.province,
+                error: `Cannot build Fleet in landlocked ${build.province}`,
+              });
+            }
+          } else if (build.type === 'Remove') {
+            const unit = state.units.find(
+              (u) => u.province === build.unit && u.power === ctx.power,
+            );
+            if (!unit) {
+              const myUnits = state.units
+                .filter((u) => u.power === ctx.power)
+                .map((u) => u.province);
+              errors.push({
+                province: build.unit,
+                error: `No unit of yours at '${build.unit}'. Your units: ${myUnits.join(', ')}`,
+              });
+            }
+          }
+        }
+
+        if (errors.length > 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: JSON.stringify({ invalidBuilds: errors }),
+          });
+        }
+
         manager.submitBuilds(ctx.power, input.builds);
         return { ok: true };
       }),
