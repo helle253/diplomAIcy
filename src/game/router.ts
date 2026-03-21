@@ -428,7 +428,7 @@ export function createGameRouter(lobbyManager: LobbyManager) {
             if (!openHomeCenters.includes(build.province)) {
               errors.push({
                 province: build.province,
-                error: `Cannot build in '${build.province}'. Your open home centers: ${openHomeCenters.join(', ') || '(none)'}`,
+                error: `Cannot build in '${build.province}'`,
               });
             } else if (
               build.unitType === UnitType.Fleet &&
@@ -444,12 +444,9 @@ export function createGameRouter(lobbyManager: LobbyManager) {
               (u) => u.province === build.unit && u.power === ctx.power,
             );
             if (!unit) {
-              const myUnits = state.units
-                .filter((u) => u.power === ctx.power)
-                .map((u) => u.province);
               errors.push({
                 province: build.unit,
-                error: `No unit of yours at '${build.unit}'. Your units: ${myUnits.join(', ')}`,
+                error: `No unit of yours at '${build.unit}'`,
               });
             }
           }
