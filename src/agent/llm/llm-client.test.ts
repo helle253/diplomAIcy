@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
+// Mock the file semaphore so tests don't contend on real filesystem locks
+vi.mock('./semaphore', () => ({
+  llmSemaphore: { acquire: async () => {}, release: () => {} },
+}));
+
 import type { ToolDefinition, ToolExecutor } from './llm-client';
 import { OpenAICompatibleClient } from './llm-client';
 

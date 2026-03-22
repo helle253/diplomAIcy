@@ -27,8 +27,11 @@ export class FileSemaphore {
   private readonly lockDir: string;
   private heldSlot: number | null = null;
 
-  constructor(private readonly max: number) {
-    this.lockDir = join(tmpdir(), 'diplomaicy-llm-locks');
+  constructor(
+    private readonly max: number,
+    options?: { directory?: string },
+  ) {
+    this.lockDir = options?.directory ?? join(tmpdir(), 'diplomaicy-llm-locks');
     mkdirSync(this.lockDir, { recursive: true });
 
     // Clean up stale locks from crashed processes on startup
