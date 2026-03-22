@@ -250,6 +250,11 @@ export function resolveOrders(
   }
 
   // Iterative fixed-point resolution
+  // everBounced tracks provinces where a move has failed at any point. Once a
+  // unit's move bounces, we never optimistically treat that province as "vacating"
+  // again — strength checks always run. This prevents evaluation-order bugs where
+  // a following move succeeds before the occupier's bounce is discovered.
+  const everBounced = new Set<string>();
   let changed = true;
   let iterations = 0;
   const MAX_ITERATIONS = 100;
@@ -340,17 +345,23 @@ export function resolveOrders(
 
       const move = state.order as MoveOrder;
       const destination = move.destination;
-      const attackStrength = calculateAttackStrength(prov, orderStates, units);
+      const attackStrength = calculateAttackStrength(prov, orderStates, units, everBounced);
 
       // Check for head-to-head battle
       const headToHead = findHeadToHead(prov, move, orderStates);
 
       if (headToHead) {
-        const opposingStrength = calculateAttackStrength(headToHead, orderStates, units);
+        const opposingStrength = calculateAttackStrength(
+          headToHead,
+          orderStates,
+          units,
+          everBounced,
+        );
 
         if (attackStrength <= opposingStrength) {
           state.status = OrderStatus.Fails;
           state.reason = `Bounced in head-to-head with ${headToHead} (${attackStrength} vs ${opposingStrength})`;
+          everBounced.add(prov);
           changed = true;
           continue;
         }
@@ -361,21 +372,23 @@ export function resolveOrders(
       const competitors = getCompetingMoves(prov, destination, orderStates);
       if (competitors.length > 0) {
         const maxCompetitorStrength = Math.max(
-          ...competitors.map((c) => calculateAttackStrength(c, orderStates, units)),
+          ...competitors.map((c) => calculateAttackStrength(c, orderStates, units, everBounced)),
         );
         if (attackStrength <= maxCompetitorStrength) {
           // Bounce: we're not strictly stronger
           state.status = OrderStatus.Fails;
           state.reason = `Bounced with competing move(s) to ${destination}`;
+          everBounced.add(prov);
           changed = true;
 
           // Also fail all competitors with equal or lesser strength
           for (const comp of competitors) {
             const compState = orderStates.get(comp)!;
-            const compStrength = calculateAttackStrength(comp, orderStates, units);
+            const compStrength = calculateAttackStrength(comp, orderStates, units, everBounced);
             if (compStrength <= attackStrength && compState.status === OrderStatus.Succeeds) {
               compState.status = OrderStatus.Fails;
               compState.reason = `Bounced with competing move(s) to ${destination}`;
+              everBounced.add(comp);
               changed = true;
             }
           }
@@ -383,29 +396,26 @@ export function resolveOrders(
         }
       }
 
-      // Check if destination is occupied by a unit not moving away (or failing to move)
+      // Check if destination is occupied
       const occupier = findUnit(units, destination);
       if (occupier) {
         const occupierState = orderStates.get(destination);
-        const occupierIsMovingAway =
-          occupierState &&
-          occupierState.order.type === OrderType.Move &&
-          (occupierState.order as MoveOrder).destination !== prov &&
-          occupierState.status === OrderStatus.Succeeds;
-
         const occupierIsInHeadToHead =
           occupierState &&
           occupierState.order.type === OrderType.Move &&
           (occupierState.order as MoveOrder).destination === prov;
 
-        if (!occupierIsMovingAway && !occupierIsInHeadToHead) {
-          // Must overcome the hold strength
-          const holdStrength = calculateHoldStrength(destination, orderStates, units);
+        if (!occupierIsInHeadToHead) {
+          // holdStrength accounts for everBounced — returns ≥1 if the occupier
+          // ever failed to leave, even if Phase 0 optimistically reset it.
+          // Returns 0 only when the occupier is genuinely moving away.
+          const holdStrength = calculateHoldStrength(destination, orderStates, units, everBounced);
 
-          // Self-dislodgement prevention
-          if (state.unit.power === occupier.power) {
+          // Self-dislodgement: can't dislodge own unit that's still there
+          if (state.unit.power === occupier.power && holdStrength > 0) {
             state.status = OrderStatus.Fails;
             state.reason = 'Cannot dislodge own unit';
+            everBounced.add(prov);
             changed = true;
             continue;
           }
@@ -413,6 +423,7 @@ export function resolveOrders(
           if (attackStrength <= holdStrength) {
             state.status = OrderStatus.Fails;
             state.reason = `Failed to dislodge unit in ${destination} (${attackStrength} vs ${holdStrength})`;
+            everBounced.add(prov);
             changed = true;
             continue;
           }
@@ -449,14 +460,13 @@ export function resolveOrders(
       // Check if the supported move would dislodge a unit of the same power
       const targetOccupier = findUnit(units, sup.destination);
       if (targetOccupier && targetOccupier.power === state.unit.power) {
-        // Check if the target occupier is not moving away successfully
-        const targetState = orderStates.get(sup.destination);
-        const isMovingAway =
-          targetState &&
-          targetState.order.type === OrderType.Move &&
-          targetState.status === OrderStatus.Succeeds;
-
-        if (!isMovingAway) {
+        const targetHoldStrength = calculateHoldStrength(
+          sup.destination,
+          orderStates,
+          units,
+          everBounced,
+        );
+        if (targetHoldStrength > 0) {
           state.status = OrderStatus.Fails;
           state.reason = 'Cannot support dislodgement of own unit';
           changed = true;
@@ -559,6 +569,7 @@ function calculateAttackStrength(
   attackerProv: string,
   orderStates: Map<string, OrderState>,
   units: Unit[],
+  everBounced?: Set<string>,
 ): number {
   const state = orderStates.get(attackerProv);
   if (!state || state.order.type !== OrderType.Move) return 0;
@@ -576,13 +587,14 @@ function calculateAttackStrength(
       // Self-dislodgement check: don't count support if it would dislodge own unit
       const targetOccupier = findUnit(units, move.destination);
       if (targetOccupier && targetOccupier.power === supState.unit.power) {
-        const targetState = orderStates.get(move.destination);
-        const isMovingAway =
-          targetState &&
-          targetState.order.type === OrderType.Move &&
-          targetState.status === OrderStatus.Succeeds;
-        if (!isMovingAway) {
-          continue; // Don't count this support
+        const targetHoldStrength = calculateHoldStrength(
+          move.destination,
+          orderStates,
+          units,
+          everBounced,
+        );
+        if (targetHoldStrength > 0) {
+          continue; // Don't count this support — would dislodge own unit
         }
       }
       strength++;
@@ -596,6 +608,7 @@ function calculateHoldStrength(
   province: string,
   orderStates: Map<string, OrderState>,
   units: Unit[],
+  everBounced?: Set<string>,
 ): number {
   const unit = findUnit(units, province);
   if (!unit) return 0;
@@ -603,8 +616,14 @@ function calculateHoldStrength(
   const state = orderStates.get(province);
   if (!state) return 0;
 
-  // If the unit is successfully moving away, hold strength is 0
-  if (state.order.type === OrderType.Move && state.status === OrderStatus.Succeeds) {
+  // If the unit is moving away and has never bounced, hold strength is 0.
+  // Once a move has bounced, we don't trust the optimistic "moving away" status
+  // — Phase 0 may have reset it, but it will likely bounce again.
+  if (
+    state.order.type === OrderType.Move &&
+    state.status === OrderStatus.Succeeds &&
+    (!everBounced || !everBounced.has(province))
+  ) {
     return 0;
   }
 
