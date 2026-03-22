@@ -17,6 +17,7 @@
 **Concern**: `maxIterations=30` in the tool loop limits total tool calls. But this approach would be OUTSIDE the tool loop — it's 3 sequential `llm.complete()` / `llm.runToolLoop()` calls managed by the harness, not 3 iterations within one loop. The tool loop would only be used for step 3 (execute), where 1-2 iterations is plenty.
 
 **Implementation sketch**:
+
 ```
 async function handlePhase(gameState, power) {
   // Step 1: Observe (no tools, just text completion)
@@ -62,6 +63,7 @@ The base prompt stays small (current board state + your units + adjacencies). Th
 **Problem**: Agents submit orders with invalid destinations (e.g., lon→nor when nor isn't adjacent). The engine silently converts these to holds.
 
 **Proposal**: Add client-side validation in `GameToolExecutor.submitOrders()`:
+
 - Check each order's unit exists and belongs to this power
 - Check destination is adjacent for the unit type
 - If invalid, return an error message to the LLM instead of submitting
