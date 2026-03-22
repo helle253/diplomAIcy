@@ -43,8 +43,15 @@ export interface LLMClientConfig {
   numCtx?: number;
 }
 
+import { Agent, setGlobalDispatcher } from 'undici';
+
 import { logger } from '../../util/logger';
 import { llmSemaphore } from './semaphore';
+
+// Override undici's default 5-minute headersTimeout which kills long-running
+// Ollama requests before our own AbortController timeout fires.
+const LLM_TIMEOUT_MS = parseInt(process.env.LLM_REQUEST_TIMEOUT_MS ?? '600000', 10);
+setGlobalDispatcher(new Agent({ headersTimeout: LLM_TIMEOUT_MS, bodyTimeout: 0 }));
 
 export class OpenAICompatibleClient implements LLMClient {
   private config: Required<Omit<LLMClientConfig, 'numCtx'>>;
