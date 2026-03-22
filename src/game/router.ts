@@ -88,7 +88,7 @@ const buildOrderSchema = z.discriminatedUnion('type', [
     province: z.string(),
     coast: coastEnum.optional(),
   }),
-  z.object({ type: z.literal('Remove'), unit: z.string() }),
+  z.object({ type: z.literal('Remove'), province: z.string() }),
   z.object({ type: z.literal('Waive') }),
 ]);
 
@@ -400,6 +400,20 @@ export function createGameRouter(lobbyManager: LobbyManager) {
       .input(z.object({ retreats: z.array(retreatOrderSchema) }))
       .mutation(({ ctx, input }) => {
         const manager = resolveManager(lobbyManager, ctx.lobbyId);
+        const state = manager.getState();
+
+        // Reject empty retreats when power has dislodged units
+        const myRetreats = state.retreatSituations.filter((s) => s.unit.power === ctx.power);
+        if (myRetreats.length > 0 && input.retreats.length === 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: JSON.stringify({
+              error: 'You have dislodged units that must retreat or disband',
+              dislodgedUnits: myRetreats.map((s) => s.unit.province),
+            }),
+          });
+        }
+
         manager.submitRetreats(ctx.power, input.retreats);
         return { ok: true };
       }),
@@ -423,8 +437,17 @@ export function createGameRouter(lobbyManager: LobbyManager) {
 
         // Validate builds
         const errors: { province?: string; error: string }[] = [];
+        const seenProvinces = new Set<string>();
         for (const build of input.builds) {
           if (build.type === 'Build') {
+            if (seenProvinces.has(build.province)) {
+              errors.push({
+                province: build.province,
+                error: `Duplicate build in '${build.province}'`,
+              });
+              continue;
+            }
+            seenProvinces.add(build.province);
             if (!openHomeCenters.includes(build.province)) {
               errors.push({
                 province: build.province,
@@ -440,13 +463,21 @@ export function createGameRouter(lobbyManager: LobbyManager) {
               });
             }
           } else if (build.type === 'Remove') {
+            if (seenProvinces.has(build.province)) {
+              errors.push({
+                province: build.province,
+                error: `Duplicate remove in '${build.province}'`,
+              });
+              continue;
+            }
+            seenProvinces.add(build.province);
             const unit = state.units.find(
-              (u) => u.province === build.unit && u.power === ctx.power,
+              (u) => u.province === build.province && u.power === ctx.power,
             );
             if (!unit) {
               errors.push({
-                province: build.unit,
-                error: `No unit of yours at '${build.unit}'`,
+                province: build.province,
+                error: `No unit of yours at '${build.province}'`,
               });
             }
           }
@@ -459,7 +490,10 @@ export function createGameRouter(lobbyManager: LobbyManager) {
           });
         }
 
-        manager.submitBuilds(ctx.power, input.builds);
+        const internalBuilds = input.builds.map((b) =>
+          b.type === 'Remove' ? { type: 'Remove' as const, unit: b.province } : b,
+        );
+        manager.submitBuilds(ctx.power, internalBuilds);
         return { ok: true };
       }),
 
