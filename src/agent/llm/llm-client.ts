@@ -30,6 +30,7 @@ export interface LLMClient {
     tools: ToolDefinition[],
     executor: ToolExecutor,
     maxIterations?: number,
+    signal?: AbortSignal,
   ): Promise<string>;
 }
 
@@ -61,12 +62,19 @@ export class OpenAICompatibleClient implements LLMClient {
     this.numCtx = config.numCtx;
   }
 
-  private async fetchWithRetry(url: string, body: Record<string, unknown>): Promise<unknown> {
-    const MAX_RETRIES = 6;
+  private async fetchWithRetry(
+    url: string,
+    body: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    const MAX_RETRIES = 2;
     const REQUEST_TIMEOUT_MS = parseInt(process.env.LLM_REQUEST_TIMEOUT_MS ?? '600000', 10);
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      // Bail immediately if externally cancelled (new phase arrived)
+      if (signal?.aborted) throw new Error('LLM request cancelled (phase superseded)');
+
       if (attempt > 0) {
         const baseDelay = Math.min(1000 * Math.pow(2, attempt), 60000);
         const jitter = Math.random() * baseDelay * 0.5;
@@ -76,6 +84,9 @@ export class OpenAICompatibleClient implements LLMClient {
       await llmSemaphore.acquire();
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+      // Link external signal to internal controller so external abort cancels the fetch
+      const onExternalAbort = () => controller.abort();
+      signal?.addEventListener('abort', onExternalAbort);
       try {
         const response = await fetch(url, {
           method: 'POST',
@@ -109,6 +120,8 @@ export class OpenAICompatibleClient implements LLMClient {
         return await response.json();
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
+        // External cancellation — don't retry, propagate immediately
+        if (signal?.aborted) throw new Error('LLM request cancelled (phase superseded)');
         // Network errors and timeouts are retryable
         if (err instanceof TypeError) continue;
         if (lastError.name === 'AbortError') continue;
@@ -117,6 +130,7 @@ export class OpenAICompatibleClient implements LLMClient {
         continue;
       } finally {
         clearTimeout(timeout);
+        signal?.removeEventListener('abort', onExternalAbort);
         llmSemaphore.release();
       }
     }
@@ -139,7 +153,7 @@ export class OpenAICompatibleClient implements LLMClient {
       body.options = { num_ctx: this.numCtx };
     }
 
-    const data = (await this.fetchWithRetry(url, body)) as {
+    const data = (await this.fetchWithRetry(url, body, undefined)) as {
       choices?: { message?: { content?: string } }[];
     };
 
@@ -156,11 +170,18 @@ export class OpenAICompatibleClient implements LLMClient {
     tools: ToolDefinition[],
     executor: ToolExecutor,
     maxIterations = 30,
+    signal?: AbortSignal,
   ): Promise<string> {
     const conversation = [...messages];
     const allText: string[] = [];
 
     for (let i = 0; i < maxIterations; i++) {
+      // Bail if externally cancelled (new phase arrived)
+      if (signal?.aborted) {
+        logger.info(`[LLM] Tool loop cancelled at iter=${i} (phase superseded)`);
+        return allText.join('\n');
+      }
+
       const url = `${this.config.baseUrl}/chat/completions`;
       const body: Record<string, unknown> = {
         model: this.config.model,
@@ -179,7 +200,7 @@ export class OpenAICompatibleClient implements LLMClient {
         body.options = { num_ctx: this.numCtx };
       }
 
-      const response = await this.fetchWithRetry(url, body);
+      const response = await this.fetchWithRetry(url, body, signal);
       const data = response as {
         choices?: [
           {

@@ -91,6 +91,10 @@ export async function connectToolAgent(
   const workQueue: WorkItem[] = [];
   let working = false;
 
+  // Abort controller for the current phase — aborted when a new phase arrives
+  // so stale LLM calls don't block the work queue for up to 90 minutes.
+  let phaseAbortController: AbortController | null = null;
+
   // Messages accumulate here permanently. Both message-triggered tool loops
   // AND phase tool loops see all messages received so far. This ensures
   // diplomacy context (pacts, threats, betrayals) is never lost.
@@ -122,6 +126,13 @@ export async function connectToolAgent(
 
   function enqueuePhase(gameState: GameState, deadlineMs: number, availableActions?: string[]) {
     flushPendingMessages();
+
+    // Abort any in-flight LLM call for the previous phase so the work queue unblocks
+    if (phaseAbortController) {
+      logger.info(`[${power}] Aborting stale LLM call — new phase arrived`);
+      phaseAbortController.abort();
+      phaseAbortController = null;
+    }
 
     // Clear queued message batches — phase handler will have full accumulated context
     const staleCount = workQueue.filter((w) => w.kind === 'messageBatch').length;
@@ -184,6 +195,10 @@ export async function connectToolAgent(
       return;
     }
 
+    // Create abort controller for this phase — will be aborted if a new phase arrives
+    phaseAbortController = new AbortController();
+    const { signal } = phaseAbortController;
+
     const executor = new GameToolExecutor(client as unknown as ToolGameClient, gameState, power);
     const serverActions = availableActions ?? [];
     const tools = filterTools(gameState.phase.type, serverActions);
@@ -208,6 +223,8 @@ export async function connectToolAgent(
         ],
         tools,
         executor,
+        undefined,
+        signal,
       );
       logger.info(`[${power}] Tool loop complete for phase ${gameState.phase.type}`);
 
@@ -230,7 +247,7 @@ export async function connectToolAgent(
       gameState.phase.type === PhaseType.Retreats ||
       gameState.phase.type === PhaseType.Builds;
     let retryResponse = '';
-    if (needsSubmit && !executor.hasSubmitted) {
+    if (needsSubmit && !executor.hasSubmitted && !signal.aborted) {
       logger.warn(`[${power}] Model did not submit — retrying with explicit prompt`);
       try {
         retryResponse = await llm.runToolLoop(
@@ -245,6 +262,8 @@ export async function connectToolAgent(
           ],
           tools,
           executor,
+          undefined,
+          signal,
         );
         logger.info(`[${power}] Retry tool loop complete`);
       } catch (err) {
@@ -253,7 +272,7 @@ export async function connectToolAgent(
     }
 
     // If still no submission, try parsing from the text responses
-    if (needsSubmit && !executor.hasSubmitted) {
+    if (needsSubmit && !executor.hasSubmitted && !signal.aborted) {
       const combinedText = [response, retryResponse].filter(Boolean).join('\n');
       if (combinedText.length > 0) {
         if (gameState.phase.type === PhaseType.Orders) {
@@ -304,7 +323,7 @@ export async function connectToolAgent(
     }
 
     // If still no submission after retry and text parsing, auto-submit defaults
-    if (needsSubmit && !executor.hasSubmitted) {
+    if (needsSubmit && !executor.hasSubmitted && !signal.aborted) {
       logger.warn(`[${power}] Auto-submitting defaults — model failed to submit after retry`);
       try {
         if (gameState.phase.type === PhaseType.Orders) {

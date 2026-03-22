@@ -308,7 +308,7 @@ export class GameToolExecutor implements ToolExecutor {
       this.hasSubmitted = true;
       return JSON.stringify(result);
     } catch (e) {
-      return JSON.stringify({ error: String(e) });
+      return this.formatError(e);
     }
   }
 

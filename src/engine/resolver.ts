@@ -437,7 +437,7 @@ export function resolveOrders(
       if (state.status !== OrderStatus.Succeeds) continue;
 
       // Check if this convoy fleet is being dislodged
-      if (isBeingDislodged(prov, orderStates, units)) {
+      if (isBeingDislodged(prov, orderStates, units, everBounced)) {
         state.status = OrderStatus.Fails;
         state.reason = 'Convoy fleet dislodged';
         changed = true;
@@ -687,6 +687,7 @@ function isBeingDislodged(
   province: string,
   orderStates: Map<string, OrderState>,
   units: Unit[],
+  everBounced?: Set<string>,
 ): boolean {
   for (const [prov, state] of orderStates) {
     if (state.order.type !== OrderType.Move) continue;
@@ -699,8 +700,8 @@ function isBeingDislodged(
         return false; // Can't be dislodged by own power
       }
 
-      const attackStrength = calculateAttackStrength(prov, orderStates, units);
-      const holdStrength = calculateHoldStrength(province, orderStates, units);
+      const attackStrength = calculateAttackStrength(prov, orderStates, units, everBounced);
+      const holdStrength = calculateHoldStrength(province, orderStates, units, everBounced);
       return attackStrength > holdStrength;
     }
   }
