@@ -11,6 +11,9 @@ export interface ToolGameClient {
     sendMessage: {
       mutate: (input: { to: string | string[]; content: string }) => Promise<{ ok: boolean }>;
     };
+    testOrders: {
+      query: (input: { orders?: unknown[]; retreats?: unknown[] }) => Promise<unknown>;
+    };
   };
 }
 
@@ -82,6 +85,9 @@ export class GameToolExecutor implements ToolExecutor {
       case 'sendMessage':
         result = await this.sendMessage(args);
         break;
+      case 'testOrders':
+        result = await this.testOrders(args);
+        break;
       default:
         result = JSON.stringify({ error: `Unknown tool: ${name}` });
     }
@@ -105,7 +111,7 @@ export class GameToolExecutor implements ToolExecutor {
     const units = this.gameState.units
       .filter((u) => u.power === this.power)
       .map((u) => ({
-        province: u.province,
+        unit: u.province,
         type: u.type,
         ...(u.coast !== undefined ? { coast: u.coast } : {}),
       }));
@@ -274,7 +280,7 @@ export class GameToolExecutor implements ToolExecutor {
       this.hasSubmitted = true;
       return JSON.stringify(result);
     } catch (e) {
-      return JSON.stringify({ error: String(e) });
+      return this.formatError(e);
     }
   }
 
@@ -302,7 +308,7 @@ export class GameToolExecutor implements ToolExecutor {
       this.hasSubmitted = true;
       return JSON.stringify(result);
     } catch (e) {
-      return JSON.stringify({ error: String(e) });
+      return this.formatError(e);
     }
   }
 
@@ -317,7 +323,7 @@ export class GameToolExecutor implements ToolExecutor {
       this.hasSubmitted = true;
       return JSON.stringify(result);
     } catch (e) {
-      return JSON.stringify({ error: String(e) });
+      return this.formatError(e);
     }
   }
 
@@ -337,8 +343,37 @@ export class GameToolExecutor implements ToolExecutor {
       const result = await this.client.game.sendMessage.mutate({ to, content });
       return JSON.stringify(result);
     } catch (e) {
-      return JSON.stringify({ error: String(e) });
+      return this.formatError(e);
     }
+  }
+
+  private async testOrders(args: Record<string, unknown>): Promise<string> {
+    if (!Array.isArray(args.orders) && !Array.isArray(args.retreats)) {
+      return JSON.stringify({ error: 'orders or retreats must be an array' });
+    }
+    try {
+      const input: { orders?: unknown[]; retreats?: unknown[] } = {};
+      if (Array.isArray(args.orders)) input.orders = args.orders;
+      if (Array.isArray(args.retreats)) input.retreats = args.retreats;
+      const result = await this.client.game.testOrders.query(input);
+      return JSON.stringify(result);
+    } catch (e) {
+      return this.formatError(e);
+    }
+  }
+
+  /** Extract structured error from TRPCError or fall back to string representation. */
+  private formatError(e: unknown): string {
+    if (e instanceof Error && e.message) {
+      try {
+        const parsed = JSON.parse(e.message) as Record<string, unknown>;
+        return JSON.stringify({ error: 'Request failed', ...parsed });
+      } catch {
+        // message wasn't JSON — use it directly
+        return JSON.stringify({ error: e.message });
+      }
+    }
+    return JSON.stringify({ error: String(e) });
   }
 }
 
@@ -347,7 +382,8 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'getMyUnits',
-      description: "Get all units belonging to your power (the current player's units).",
+      description:
+        'Get all your units. Returns [{unit: "lon", type: "Fleet"}, ...] — use the "unit" field as the province ID in submitOrders.',
       parameters: {
         type: 'object',
         properties: {},
@@ -535,7 +571,8 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
                 },
                 province: {
                   type: 'string',
-                  description: 'Province to build in or remove from',
+                  description:
+                    'Province to build in (must be an unoccupied HOME supply center) or remove from',
                 },
                 coast: { type: 'string', description: 'Coast for fleet build (nc or sc)' },
               },
@@ -578,6 +615,57 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           content: { type: 'string', description: 'Message content' },
         },
         required: ['to', 'content'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'testOrders',
+      description:
+        'Simulate order or retreat resolution without submitting. Test what would happen if specific orders were issued. Pass "orders" for movement phase, "retreats" for retreat phase.',
+      parameters: {
+        type: 'object',
+        properties: {
+          orders: {
+            type: 'array',
+            description:
+              'Movement orders to simulate. Include your orders and hypothetical orders for other powers. Units without orders Hold.',
+            items: {
+              type: 'object',
+              properties: {
+                unit: { type: 'string', description: 'Province ID where the unit is' },
+                type: {
+                  type: 'string',
+                  enum: ['Hold', 'Move', 'Support', 'Convoy'],
+                },
+                destination: { type: 'string', description: 'Destination province ID' },
+                supportedUnit: { type: 'string', description: 'Province of supported unit' },
+                convoyedUnit: { type: 'string', description: 'Province of convoyed army' },
+                coast: { type: 'string', description: 'Coast (nc or sc)' },
+                viaConvoy: { type: 'boolean' },
+              },
+              required: ['unit', 'type'],
+            },
+          },
+          retreats: {
+            type: 'array',
+            description:
+              'Retreat orders to simulate. Test for collisions (two retreats to the same province = both disbanded).',
+            items: {
+              type: 'object',
+              properties: {
+                unit: { type: 'string', description: 'Province ID of dislodged unit' },
+                destination: {
+                  type: 'string',
+                  description: 'Province to retreat to. Omit to disband.',
+                },
+                coast: { type: 'string', description: 'Coast (nc or sc)' },
+              },
+              required: ['unit'],
+            },
+          },
+        },
       },
     },
   },

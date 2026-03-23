@@ -558,6 +558,246 @@ describe('Self-Dislodgement Prevention [Rule 22]', () => {
     expect(res(result, 'ruh')!.status).toBe(OrderStatus.Succeeds);
     expect(res(result, 'mar')!.status).toBe(OrderStatus.Succeeds);
   });
+
+  it('Cannot self-dislodge when own unit tries to move away but bounces', () => {
+    // German F NTH -> DEN, German A DEN -> NOR, Russian F NOR H.
+    // DEN -> NOR bounces (1:1). NTH -> DEN would self-dislodge German A DEN.
+    // Both German moves must fail.
+    const units: Unit[] = [
+      { type: UnitType.Fleet, power: Power.Germany, province: 'nth' },
+      { type: UnitType.Army, power: Power.Germany, province: 'den' },
+      { type: UnitType.Fleet, power: Power.Russia, province: 'nor' },
+    ];
+    const orders = new Map<string, Order>([
+      ['nth', { type: OrderType.Move, unit: 'nth', destination: 'den' }],
+      ['den', { type: OrderType.Move, unit: 'den', destination: 'nor' }],
+      ['nor', { type: OrderType.Hold, unit: 'nor' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'den')!.status).toBe(OrderStatus.Fails);
+    expect(res(result, 'nth')!.status).toBe(OrderStatus.Fails);
+    expect(result.dislodgedUnits).toHaveLength(0);
+  });
+
+  it('Same-power chain move succeeds when leading unit leaves', () => {
+    // German A MUN -> BUR, German A RUH -> MUN.
+    // MUN successfully moves to BUR (unoccupied), so RUH -> MUN succeeds.
+    const units: Unit[] = [
+      { type: UnitType.Army, power: Power.Germany, province: 'mun' },
+      { type: UnitType.Army, power: Power.Germany, province: 'ruh' },
+    ];
+    const orders = new Map<string, Order>([
+      ['mun', { type: OrderType.Move, unit: 'mun', destination: 'bur' }],
+      ['ruh', { type: OrderType.Move, unit: 'ruh', destination: 'mun' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'mun')!.status).toBe(OrderStatus.Succeeds);
+    expect(res(result, 'ruh')!.status).toBe(OrderStatus.Succeeds);
+  });
+});
+
+// ============================================================================
+// 5b. MOVE INTO PROVINCE WHERE OCCUPIER BOUNCES
+// When a unit moves into a province whose occupier tried to leave but bounced,
+// the move must be re-evaluated against the occupier's hold strength.
+// ============================================================================
+
+describe('Move into province where occupier bounces', () => {
+  it('Unsupported move fails when occupier bounces (1:1 standoff)', () => {
+    // English F NTH -> DEN, German A DEN -> SWE, Russian F SWE H.
+    // DEN -> SWE bounces. NTH -> DEN has attack 1 vs hold 1 => fails.
+    const units: Unit[] = [
+      { type: UnitType.Fleet, power: Power.England, province: 'nth' },
+      { type: UnitType.Army, power: Power.Germany, province: 'den' },
+      { type: UnitType.Fleet, power: Power.Russia, province: 'swe' },
+    ];
+    const orders = new Map<string, Order>([
+      ['nth', { type: OrderType.Move, unit: 'nth', destination: 'den' }],
+      ['den', { type: OrderType.Move, unit: 'den', destination: 'swe' }],
+      ['swe', { type: OrderType.Hold, unit: 'swe' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'den')!.status).toBe(OrderStatus.Fails);
+    expect(res(result, 'nth')!.status).toBe(OrderStatus.Fails);
+    expect(result.dislodgedUnits).toHaveLength(0);
+  });
+
+  it('Supported move succeeds when occupier bounces (2:1 dislodgement)', () => {
+    // English F NTH -> DEN (supported by F HEL), German A DEN -> SWE, Russian F SWE H.
+    // DEN -> SWE bounces. NTH -> DEN has attack 2 vs hold 1 => succeeds, DEN dislodged.
+    const units: Unit[] = [
+      { type: UnitType.Fleet, power: Power.England, province: 'nth' },
+      { type: UnitType.Fleet, power: Power.England, province: 'hel' },
+      { type: UnitType.Army, power: Power.Germany, province: 'den' },
+      { type: UnitType.Fleet, power: Power.Russia, province: 'swe' },
+    ];
+    const orders = new Map<string, Order>([
+      ['nth', { type: OrderType.Move, unit: 'nth', destination: 'den' }],
+      ['hel', { type: OrderType.Support, unit: 'hel', supportedUnit: 'nth', destination: 'den' }],
+      ['den', { type: OrderType.Move, unit: 'den', destination: 'swe' }],
+      ['swe', { type: OrderType.Hold, unit: 'swe' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'den')!.status).toBe(OrderStatus.Fails);
+    expect(res(result, 'nth')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.dislodgedUnits).toHaveLength(1);
+    expect(result.dislodgedUnits[0].unit.province).toBe('den');
+  });
+
+  it('3-unit same-power chain — tail bounces cascade back', () => {
+    // German A ruh -> mun, A mun -> boh, A boh -> vie.
+    // Austrian A vie holds — boh -> vie bounces.
+    // mun -> boh should fail (boh bounced, same power = self-dislodge).
+    // ruh -> mun should fail (mun bounced, same power = self-dislodge).
+    const units: Unit[] = [
+      { type: UnitType.Army, power: Power.Germany, province: 'ruh' },
+      { type: UnitType.Army, power: Power.Germany, province: 'mun' },
+      { type: UnitType.Army, power: Power.Germany, province: 'boh' },
+      { type: UnitType.Army, power: Power.Austria, province: 'vie' },
+    ];
+    const orders = new Map<string, Order>([
+      ['ruh', { type: OrderType.Move, unit: 'ruh', destination: 'mun' }],
+      ['mun', { type: OrderType.Move, unit: 'mun', destination: 'boh' }],
+      ['boh', { type: OrderType.Move, unit: 'boh', destination: 'vie' }],
+      ['vie', { type: OrderType.Hold, unit: 'vie' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'boh')!.status).toBe(OrderStatus.Fails);
+    expect(res(result, 'mun')!.status).toBe(OrderStatus.Fails);
+    expect(res(result, 'ruh')!.status).toBe(OrderStatus.Fails);
+    expect(result.dislodgedUnits).toHaveLength(0);
+  });
+
+  it('Cross-power move dislodges bounced occupier at 1:1 when occupier tried to leave', () => {
+    // German A mun -> bur. French A bur -> par bounces (Italian A par holds).
+    // mun -> bur: different power, attack 1 vs hold 1 => standoff, fails.
+    const units: Unit[] = [
+      { type: UnitType.Army, power: Power.Germany, province: 'mun' },
+      { type: UnitType.Army, power: Power.France, province: 'bur' },
+      { type: UnitType.Army, power: Power.Italy, province: 'par' },
+    ];
+    const orders = new Map<string, Order>([
+      ['mun', { type: OrderType.Move, unit: 'mun', destination: 'bur' }],
+      ['bur', { type: OrderType.Move, unit: 'bur', destination: 'par' }],
+      ['par', { type: OrderType.Hold, unit: 'par' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'bur')!.status).toBe(OrderStatus.Fails);
+    expect(res(result, 'mun')!.status).toBe(OrderStatus.Fails);
+    expect(result.dislodgedUnits).toHaveLength(0);
+  });
+
+  it('Supported same-power move still cannot self-dislodge bounced unit', () => {
+    // German F nth -> den supported by F hel. German A den -> swe bounces (Russia holds).
+    // Even with strength 2 vs hold 1, self-dislodgement is illegal.
+    const units: Unit[] = [
+      { type: UnitType.Fleet, power: Power.Germany, province: 'nth' },
+      { type: UnitType.Fleet, power: Power.Germany, province: 'hel' },
+      { type: UnitType.Army, power: Power.Germany, province: 'den' },
+      { type: UnitType.Fleet, power: Power.Russia, province: 'swe' },
+    ];
+    const orders = new Map<string, Order>([
+      ['nth', { type: OrderType.Move, unit: 'nth', destination: 'den' }],
+      ['hel', { type: OrderType.Support, unit: 'hel', supportedUnit: 'nth', destination: 'den' }],
+      ['den', { type: OrderType.Move, unit: 'den', destination: 'swe' }],
+      ['swe', { type: OrderType.Hold, unit: 'swe' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'den')!.status).toBe(OrderStatus.Fails);
+    expect(res(result, 'nth')!.status).toBe(OrderStatus.Fails);
+    expect(result.dislodgedUnits).toHaveLength(0);
+  });
+
+  it('Bounce cascade across powers — A->B->C, C bounces', () => {
+    // English F nth -> den (no support). German A den -> swe (no support).
+    // Russian F swe holds. Cascade:
+    // swe holds => den -> swe fails (1:1) => nth -> den fails (1:1).
+    const units: Unit[] = [
+      { type: UnitType.Fleet, power: Power.England, province: 'nth' },
+      { type: UnitType.Army, power: Power.Germany, province: 'den' },
+      { type: UnitType.Fleet, power: Power.Russia, province: 'swe' },
+    ];
+    const orders = new Map<string, Order>([
+      ['nth', { type: OrderType.Move, unit: 'nth', destination: 'den' }],
+      ['den', { type: OrderType.Move, unit: 'den', destination: 'swe' }],
+      ['swe', { type: OrderType.Hold, unit: 'swe' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'swe')!.status).toBe(OrderStatus.Succeeds); // hold succeeds
+    expect(res(result, 'den')!.status).toBe(OrderStatus.Fails);
+    expect(res(result, 'nth')!.status).toBe(OrderStatus.Fails);
+    expect(result.dislodgedUnits).toHaveLength(0);
+  });
+
+  it('Support cut changes bounce outcome — move succeeds after support restored', () => {
+    // French A bur H (hold 1). German A mun S A ruh -> bur (attack 2).
+    // Austrian A boh -> mun cuts German support. Now ruh (1) vs bur (1) => bounce.
+    // Separately, A tyr -> boh succeeds, so boh is empty and boh -> mun IS valid.
+    // Support is cut, attack fails. This tests that everBounced doesn't prevent
+    // a properly supported attack from succeeding in a different scenario.
+    const units: Unit[] = [
+      { type: UnitType.Army, power: Power.Germany, province: 'mun' },
+      { type: UnitType.Army, power: Power.Germany, province: 'ruh' },
+      { type: UnitType.Army, power: Power.France, province: 'bur' },
+      { type: UnitType.Army, power: Power.Austria, province: 'boh' },
+    ];
+    const orders = new Map<string, Order>([
+      ['mun', { type: OrderType.Support, unit: 'mun', supportedUnit: 'ruh', destination: 'bur' }],
+      ['ruh', { type: OrderType.Move, unit: 'ruh', destination: 'bur' }],
+      ['bur', { type: OrderType.Hold, unit: 'bur' }],
+      ['boh', { type: OrderType.Move, unit: 'boh', destination: 'mun' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'mun')!.status).toBe(OrderStatus.Fails); // support cut
+    expect(res(result, 'ruh')!.status).toBe(OrderStatus.Fails); // 1 vs 1
+    expect(res(result, 'boh')!.status).toBe(OrderStatus.Fails); // bounces off mun
+  });
+
+  it('Disrupted convoy restores support — cascading effect with bounce', () => {
+    // Scenario: A convoyed attack would cut support, but convoy is disrupted,
+    // so support is restored and the supported move succeeds.
+    // English A lon -> bel (via convoy F eng). German F bre + F mao dislodge F eng.
+    // French A bel S A bur -> ruh. German A ruh holds.
+    // Convoy disrupted => lon doesn't reach bel => support NOT cut =>
+    // bur (2) vs ruh (1) => bur dislodges ruh.
+    // This tests that everBounced doesn't interfere with convoy disruption cascades.
+    const units: Unit[] = [
+      { type: UnitType.Army, power: Power.England, province: 'lon' },
+      { type: UnitType.Fleet, power: Power.England, province: 'eng' },
+      { type: UnitType.Army, power: Power.France, province: 'bel' },
+      { type: UnitType.Army, power: Power.France, province: 'bur' },
+      { type: UnitType.Army, power: Power.Germany, province: 'ruh' },
+      { type: UnitType.Fleet, power: Power.Germany, province: 'bre' },
+      { type: UnitType.Fleet, power: Power.Germany, province: 'mao' },
+    ];
+    const orders = new Map<string, Order>([
+      ['lon', { type: OrderType.Move, unit: 'lon', destination: 'bel', viaConvoy: true }],
+      ['eng', { type: OrderType.Convoy, unit: 'eng', convoyedUnit: 'lon', destination: 'bel' }],
+      ['bel', { type: OrderType.Support, unit: 'bel', supportedUnit: 'bur', destination: 'ruh' }],
+      ['bur', { type: OrderType.Move, unit: 'bur', destination: 'ruh' }],
+      ['ruh', { type: OrderType.Hold, unit: 'ruh' }],
+      ['bre', { type: OrderType.Move, unit: 'bre', destination: 'eng' }],
+      ['mao', { type: OrderType.Support, unit: 'mao', supportedUnit: 'bre', destination: 'eng' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    // Convoy disrupted
+    expect(res(result, 'lon')!.status).toBe(OrderStatus.Fails);
+    // Support intact (convoy didn't reach bel)
+    expect(res(result, 'bel')!.status).toBe(OrderStatus.Succeeds);
+    // bur (2) dislodges ruh (1)
+    expect(res(result, 'bur')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.dislodgedUnits.find((d) => d.unit.province === 'ruh')).toBeDefined();
+  });
 });
 
 // ============================================================================
@@ -1336,6 +1576,105 @@ describe('Split Coasts [Rule 32]', () => {
 
     // SPA is occupied → move fails
     expect(res(result, 'mao')!.status).toBe(OrderStatus.Fails);
+  });
+
+  // --- Fleet from Portugal to Spain must specify coast ---
+
+  it('Fleet from POR to SPA without coast is invalid', () => {
+    // POR is adjacent to both SPA/NC and SPA/SC — fleet must specify which coast
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.France, province: 'por' }];
+    const orders = new Map<string, Order>([
+      ['por', { type: OrderType.Move, unit: 'por', destination: 'spa' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'por')!.status).toBe(OrderStatus.Invalid);
+    expect(result.newPositions[0].province).toBe('por');
+  });
+
+  it('Fleet from POR can move to SPA/NC', () => {
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.France, province: 'por' }];
+    const orders = new Map<string, Order>([
+      ['por', { type: OrderType.Move, unit: 'por', destination: 'spa', coast: Coast.North }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'por')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('spa');
+    expect(result.newPositions[0].coast).toBe(Coast.North);
+  });
+
+  it('Fleet from POR can move to SPA/SC', () => {
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.France, province: 'por' }];
+    const orders = new Map<string, Order>([
+      ['por', { type: OrderType.Move, unit: 'por', destination: 'spa', coast: Coast.South }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'por')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('spa');
+    expect(result.newPositions[0].coast).toBe(Coast.South);
+  });
+
+  // --- Fleet from Constantinople to Bulgaria must specify coast ---
+
+  it('Fleet from CON to BUL without coast is invalid', () => {
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.Turkey, province: 'con' }];
+    const orders = new Map<string, Order>([
+      ['con', { type: OrderType.Move, unit: 'con', destination: 'bul' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'con')!.status).toBe(OrderStatus.Invalid);
+    expect(result.newPositions[0].province).toBe('con');
+  });
+
+  it('Fleet from CON can move to BUL/NC (east coast)', () => {
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.Turkey, province: 'con' }];
+    const orders = new Map<string, Order>([
+      ['con', { type: OrderType.Move, unit: 'con', destination: 'bul', coast: Coast.North }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'con')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('bul');
+    expect(result.newPositions[0].coast).toBe(Coast.North);
+  });
+
+  it('Fleet from CON can move to BUL/SC', () => {
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.Turkey, province: 'con' }];
+    const orders = new Map<string, Order>([
+      ['con', { type: OrderType.Move, unit: 'con', destination: 'bul', coast: Coast.South }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'con')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('bul');
+    expect(result.newPositions[0].coast).toBe(Coast.South);
+  });
+
+  // --- Army vs fleet adjacency: Finland → Norway ---
+
+  it('Army in Finland can move to Norway (land border)', () => {
+    const units: Unit[] = [{ type: UnitType.Army, power: Power.Russia, province: 'fin' }];
+    const orders = new Map<string, Order>([
+      ['fin', { type: OrderType.Move, unit: 'fin', destination: 'nor' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'fin')!.status).toBe(OrderStatus.Succeeds);
+    expect(result.newPositions[0].province).toBe('nor');
+  });
+
+  it('Fleet in Finland cannot move to Norway (no shared coastline)', () => {
+    const units: Unit[] = [{ type: UnitType.Fleet, power: Power.Russia, province: 'fin' }];
+    const orders = new Map<string, Order>([
+      ['fin', { type: OrderType.Move, unit: 'fin', destination: 'nor' }],
+    ]);
+    const result = resolveOrders(units, orders, PROVINCES);
+
+    expect(res(result, 'fin')!.status).toBe(OrderStatus.Invalid);
+    expect(result.newPositions[0].province).toBe('fin');
   });
 
   // --- Support involving multi-coast provinces ---

@@ -566,6 +566,26 @@ describe('Specific Adjacency Spot-Checks', () => {
     });
   });
 
+  describe('Army-reachable but fleet-unreachable (land-only borders)', () => {
+    it('Finland: army can reach Norway, fleet cannot', () => {
+      const fin = PROVINCES['fin'];
+      expect(fin.adjacency.army).toContain('nor');
+      expect(fin.adjacency.fleet).not.toContain('nor');
+    });
+
+    it('Norway: army can reach Finland, fleet cannot', () => {
+      const nor = PROVINCES['nor'];
+      expect(nor.adjacency.army).toContain('fin');
+      expect(nor.adjacency.fleet).not.toContain('fin');
+    });
+
+    it('Sweden: army can reach Norway, fleet can too (shared coastline)', () => {
+      const swe = PROVINCES['swe'];
+      expect(swe.adjacency.army).toContain('nor');
+      expect(swe.adjacency.fleet).toContain('nor');
+    });
+  });
+
   describe('No army connection between non-adjacent landmasses', () => {
     it('London army adj should NOT include any province across water', () => {
       const adj = PROVINCES['lon'].adjacency.army;

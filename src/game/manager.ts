@@ -1,8 +1,7 @@
 import { PROVINCES, STARTING_SUPPLY_CENTERS, STARTING_UNITS } from '../engine/map';
-import { ResolutionResult, resolveOrders } from '../engine/resolver';
+import { ResolutionResult, resolveOrders, resolveRetreats } from '../engine/resolver';
 import {
   BuildOrder,
-  Coast,
   GameState,
   Message,
   Order,
@@ -430,39 +429,13 @@ export class GameManager {
     const allRetreatOrders = await this.collectRetreats(resolutionResult, deadlineMs);
 
     // Process retreat orders
-    const newPositions = [...resolutionResult.newPositions];
-    const retreatDestinations = new Map<string, RetreatOrder[]>();
+    const retreatResult = resolveRetreats(
+      allRetreatOrders,
+      resolutionResult.dislodgedUnits,
+      resolutionResult.newPositions,
+    );
 
-    for (const order of allRetreatOrders) {
-      if (order.type === 'RetreatMove') {
-        const existing = retreatDestinations.get(order.destination) ?? [];
-        existing.push(order);
-        retreatDestinations.set(order.destination, existing);
-      }
-    }
-
-    for (const [, orders] of retreatDestinations) {
-      if (orders.length === 1) {
-        const order = orders[0] as {
-          type: 'RetreatMove';
-          unit: string;
-          destination: string;
-          coast?: Coast;
-        };
-        const dislodgedInfo = resolutionResult.dislodgedUnits.find(
-          (d) => d.unit.province === order.unit,
-        );
-        if (dislodgedInfo) {
-          newPositions.push({
-            ...dislodgedInfo.unit,
-            province: order.destination,
-            coast: order.coast,
-          });
-        }
-      }
-    }
-
-    this.state.units = newPositions;
+    this.state.units = retreatResult.newPositions;
     this.state.retreatSituations = [];
 
     const turnRecord: TurnRecord = {

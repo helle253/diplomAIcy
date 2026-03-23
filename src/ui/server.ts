@@ -371,7 +371,7 @@ function startServer(): void {
     });
   });
 
-  server.listen(PORT, () => {
+  server.listen(PORT, '0.0.0.0', () => {
     logger.info(`Diplomacy game server running at http://localhost:${PORT}`);
     logger.info(`tRPC endpoint: http://localhost:${PORT}/trpc`);
     logger.info(`Database: ${DB_PATH}`);
