@@ -46,7 +46,7 @@ Verify reachability: `curl -s http://host.docker.internal:11434/api/tags`
 | **Fast adjudication** | "Should the engine advance as soon as all agents submit, without waiting for the phase duration?" | true | "fast adjudication" or "fast" in prompt → true |
 | **Phase duration (ms)** | "What is the maximum time each phase should last?" | 0 (no limit) | With fast adjudication: phase ends when all submit OR timer fires, whichever is first. Without: phase always waits the full duration. e.g. "60 minute phases" → 3600000 |
 | **LLM concurrency** | "How many agents can call Ollama simultaneously? (should match OLLAMA_NUM_PARALLEL on host)" | 1 | If user mentions GPU/VRAM or parallel, ask for this explicitly |
-| **Remote timeout (ms)** | "How long should the server wait for agent submissions per phase?" | 600000 | 10 min default; increase for slow models or long games |
+| **Remote timeout (ms)** | "How long should the server wait for agent submissions per phase?" | (match phaseDelayMs) | Should equal the phase duration. This is the per-agent deadline — if an agent hasn't submitted by this time, its orders default to Hold. Must be ≥ total semaphore queue time (`ceil(7 / LLM_CONCURRENCY) × avg_inference_time`). For qwen3:8b with thinking: ~52 min with concurrency=2, so 60-min phases need 60-min timeout. |
 | **LLM request timeout (ms)** | "Per-request timeout for LLM calls?" | 900000 | 15 min default for safety |
 | **Monitor interval** | "How often should the referee check in on the game?" | half the phase duration, or 10m if no phase cap | e.g. 60 min phases → 30m check-ins; no cap → 10m. User can override. Used for `/loop` interval in step 8. |
 
@@ -129,7 +129,7 @@ The server PID is saved to `game-notes/server.pid` so it can be killed from any 
 ```bash
 curl -s -X POST http://localhost:5173/trpc/lobby.create \
   -H "Content-Type: application/json" \
-  -d '{"name":"Ollama Integration Test","maxYears":2,"autostart":true,"fastAdjudication":true,"agentConfig":{"defaultAgent":{"type":"remote"}},"remoteTimeoutMs":600000}'
+  -d '{"name":"Ollama Integration Test","maxYears":2,"autostart":true,"fastAdjudication":true,"agentConfig":{"defaultAgent":{"type":"remote"}},"remoteTimeoutMs":1800000}'
 ```
 
 Response: `{"result":{"data":{"lobbyId":"...","creatorToken":"..."}}}`. Extract `lobbyId` from `result.data`. `maxYears: 2` keeps the test short (1901-1902). `fastAdjudication: true` means the engine advances as soon as all agents have submitted — no waiting for `PHASE_DELAY`.
@@ -297,9 +297,57 @@ LLM_CONCURRENCY=2
 
 ### Timeouts
 
-- **`LLM_REQUEST_TIMEOUT_MS`** — Per-request timeout on the agent side (default: 600s / 10 min). Set to 900000 (15 min) for slower models or large prompts.
-- **`remoteTimeoutMs`** — In lobby creation, controls how long the server waits for agent submissions per phase.
-- **`keep_alive`** — Sent in every LLM request body (hardcoded to `60m`). Tells Ollama to keep the model loaded for 60 minutes between requests instead of the default 5 minutes. This prevents unnecessary model reloads during long games.
+There are multiple timeouts at different layers. They interact — if an inner timeout fires before an outer one, the agent loses its chance to submit and orders default to Hold.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  phaseDelayMs (lobby config)                                │
+│  Max wall-clock time for an entire phase.                   │
+│  The outermost deadline. When it fires, the server          │
+│  resolves the phase with whatever has been submitted.       │
+│  e.g. 3600000 = 1 hour                                     │
+│                                                             │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │  remoteTimeoutMs (lobby config)                        │ │
+│  │  How long the server waits for each agent to submit    │ │
+│  │  per phase. Starts when the phase begins. If an agent  │ │
+│  │  hasn't called submitOrders/submitBuilds/submitRetreats│ │
+│  │  by this deadline, its orders default to Hold.         │ │
+│  │  With fast adjudication: phase ends when all agents    │ │
+│  │  submit OR this timer fires, whichever comes first.    │ │
+│  │  SET EQUAL TO phaseDelayMs — see note below.           │ │
+│  │                                                        │ │
+│  │  ┌─────────────────────────────────────────────────┐   │ │
+│  │  │  LLM_REQUEST_TIMEOUT_MS (agent env var)         │   │ │
+│  │  │  Per-request timeout on the agent side for a    │   │ │
+│  │  │  single LLM API call. If the model takes longer │   │ │
+│  │  │  than this to respond, the agent aborts that    │   │ │
+│  │  │  call and may retry.                            │   │ │
+│  │  │  DEFAULT: 900000 (15 min)                       │   │ │
+│  │  │                                                 │   │ │
+│  │  │  ┌──────────────────────────────────────────┐   │   │ │
+│  │  │  │  undici headersTimeout (Node.js internal) │   │   │ │
+│  │  │  │  Hardcoded 5-min timeout on HTTP          │   │   │ │
+│  │  │  │  connections waiting for response headers.│   │   │ │
+│  │  │  │  We override this in llm-client.ts to     │   │   │ │
+│  │  │  │  match LLM_REQUEST_TIMEOUT_MS. Without    │   │   │ │
+│  │  │  │  the override, any LLM call >5 min fails  │   │   │ │
+│  │  │  │  with UND_ERR_HEADERS_TIMEOUT.            │   │   │ │
+│  │  │  └──────────────────────────────────────────┘   │   │ │
+│  │  └─────────────────────────────────────────────────┘   │ │
+│  └────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key rule: `remoteTimeoutMs` > `LLM_REQUEST_TIMEOUT_MS` > undici override.** If the remote timeout is shorter than the LLM request timeout, the server will default the agent's orders before the LLM call even finishes — the agent gets "Aborting stale LLM call — new phase arrived".
+
+**IMPORTANT — align `remoteTimeoutMs` with `phaseDelayMs`:**
+Set `remoteTimeoutMs` equal to `phaseDelayMs` (e.g. both 3600000 for 1-hour phases). The remote timeout is the *effective* deadline for agent submissions — if it's shorter than the phase duration, agents get aborted mid-generation when the server advances the phase early.
+
+With 7 agents sharing a 2-slot semaphore (`LLM_CONCURRENCY=2`), the total time for all agents to complete one phase is roughly `(7 / LLM_CONCURRENCY) × avg_inference_time`. For qwen3:8b with thinking tokens, that's ~3.5 rounds × 15 min = **~52 minutes**. A 10-min or even 30-min remote timeout causes most agents to be aborted before they ever reach the LLM. Setting it to 60 min (matching the phase) resolved this — 6-7/7 agents submit per phase instead of 1-3/7.
+
+Other timeouts:
+- **`keep_alive`** — Sent in every LLM request body (hardcoded to `60m`). Tells Ollama to keep the model loaded for 60 minutes between requests instead of the default 5 minutes. Prevents unnecessary model reloads during long games.
 - **`PHASE_DELAY`** — Server env var for minimum delay between engine phases. With `fastAdjudication: true`, the engine advances as soon as all agents submit, so this only matters if agents are faster than the delay.
 
 ## Monitoring
