@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { STARTING_UNITS } from '../engine/map';
-import { BuildOrder, Order, OrderType, PhaseType, Power, Season } from '../engine/types';
+import { BuildOrder, Order, OrderType, PhaseType, Power, Season, UnitType } from '../engine/types';
 import { GameEvent, GameManager } from './manager';
 
 const ALL_POWERS = [
@@ -250,8 +250,8 @@ describe('GameManager — Build phase', () => {
           if (power === Power.Germany && buildCount > 0) {
             // Submit a mix: valid build (kie — open home center) + invalid build (bur — not home)
             manager.submitBuilds(power, [
-              { type: 'Build', province: 'kie', unitType: 'Fleet' as const },
-              { type: 'Build', province: 'bur', unitType: 'Army' as const },
+              { type: 'Build', province: 'kie', unitType: UnitType.Fleet },
+              { type: 'Build', province: 'bur', unitType: UnitType.Army },
             ]);
           } else if (buildCount > 0) {
             manager.submitBuilds(
