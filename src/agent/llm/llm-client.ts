@@ -41,6 +41,7 @@ export interface LLMClientConfig {
   temperature?: number;
   maxTokens?: number;
   numCtx?: number;
+  think?: boolean;
 }
 
 import { Agent, setGlobalDispatcher } from 'undici';
@@ -54,9 +55,15 @@ const LLM_TIMEOUT_MS = parseInt(process.env.LLM_REQUEST_TIMEOUT_MS ?? '600000', 
 setGlobalDispatcher(new Agent({ headersTimeout: LLM_TIMEOUT_MS, bodyTimeout: 0 }));
 
 export class OpenAICompatibleClient implements LLMClient {
-  private config: Required<Omit<LLMClientConfig, 'numCtx'>>;
+  private config: Required<Omit<LLMClientConfig, 'numCtx' | 'think'>>;
 
   private numCtx?: number;
+
+  private think?: boolean;
+
+  // Ollama base URL for native /api/chat endpoint (e.g. http://host:11434)
+  // Derived by stripping /v1 suffix from baseUrl when think=false
+  private ollamaBaseUrl?: string;
 
   constructor(config: LLMClientConfig) {
     this.config = {
@@ -67,6 +74,17 @@ export class OpenAICompatibleClient implements LLMClient {
       maxTokens: config.maxTokens ?? 2048,
     };
     this.numCtx = config.numCtx;
+    this.think = config.think;
+
+    // When think=false, derive the Ollama native API URL so we can use
+    // /api/chat with think:false (the OpenAI-compat endpoint ignores it)
+    if (this.think === false) {
+      const stripped = this.config.baseUrl.replace(/\/v1$/, '');
+      if (stripped !== this.config.baseUrl) {
+        this.ollamaBaseUrl = stripped;
+        logger.info(`[LLM] Thinking disabled — using Ollama native API at ${this.ollamaBaseUrl}`);
+      }
+    }
   }
 
   private async fetchWithRetry(
@@ -145,7 +163,91 @@ export class OpenAICompatibleClient implements LLMClient {
     throw lastError ?? new Error('LLM request failed after retries');
   }
 
+  /**
+   * Call Ollama's native /api/chat endpoint with think:false and convert the
+   * response back to OpenAI-compatible format so the rest of the code is unchanged.
+   */
+  private async ollamaNativeChat(
+    messages: ChatMessage[],
+    tools?: ToolDefinition[],
+    signal?: AbortSignal,
+  ): Promise<{
+    choices: [
+      {
+        message: {
+          role: string;
+          content: string | null;
+          tool_calls?: ToolCall[];
+        };
+      },
+    ];
+  }> {
+    const url = `${this.ollamaBaseUrl}/api/chat`;
+    const body: Record<string, unknown> = {
+      model: this.config.model,
+      messages,
+      think: false,
+      stream: false,
+      keep_alive: '60m',
+      options: {
+        temperature: this.config.temperature,
+        num_predict: this.config.maxTokens,
+        ...(this.numCtx !== undefined ? { num_ctx: this.numCtx } : {}),
+      },
+    };
+
+    if (tools && tools.length > 0) {
+      body.tools = tools;
+    }
+
+    const data = (await this.fetchWithRetry(url, body, signal)) as {
+      message?: {
+        role?: string;
+        content?: string;
+        tool_calls?: { function: { name: string; arguments: Record<string, unknown> } }[];
+      };
+    };
+
+    const msg = data.message;
+    if (!msg) {
+      throw new Error('Unexpected Ollama response shape: no message');
+    }
+
+    // Convert Ollama tool_calls to OpenAI format (arguments as JSON string, add id)
+    const toolCalls = msg.tool_calls?.map(
+      (tc, i): ToolCall => ({
+        id: `call_${Date.now()}_${i}`,
+        type: 'function',
+        function: {
+          name: tc.function.name,
+          arguments: JSON.stringify(tc.function.arguments),
+        },
+      }),
+    );
+
+    return {
+      choices: [
+        {
+          message: {
+            role: msg.role ?? 'assistant',
+            content: msg.content ?? null,
+            ...(toolCalls && toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+          },
+        },
+      ],
+    };
+  }
+
   async complete(messages: ChatMessage[]): Promise<string> {
+    if (this.ollamaBaseUrl) {
+      const data = await this.ollamaNativeChat(messages);
+      const content = data.choices[0].message.content;
+      if (typeof content !== 'string') {
+        throw new Error('Unexpected LLM response shape: no content');
+      }
+      return content;
+    }
+
     const url = `${this.config.baseUrl}/chat/completions`;
     const body: Record<string, unknown> = {
       model: this.config.model,
@@ -189,26 +291,7 @@ export class OpenAICompatibleClient implements LLMClient {
         return allText.join('\n');
       }
 
-      const url = `${this.config.baseUrl}/chat/completions`;
-      const body: Record<string, unknown> = {
-        model: this.config.model,
-        messages: conversation,
-        temperature: this.config.temperature,
-        max_tokens: this.config.maxTokens,
-        keep_alive: '60m',
-      };
-
-      if (tools.length > 0) {
-        body.tools = tools;
-        body.tool_choice = 'required';
-      }
-
-      if (this.numCtx !== undefined) {
-        body.options = { num_ctx: this.numCtx };
-      }
-
-      const response = await this.fetchWithRetry(url, body, signal);
-      const data = response as {
+      let data: {
         choices?: [
           {
             message?: {
@@ -219,6 +302,30 @@ export class OpenAICompatibleClient implements LLMClient {
           },
         ];
       };
+
+      if (this.ollamaBaseUrl) {
+        data = await this.ollamaNativeChat(conversation, tools, signal);
+      } else {
+        const url = `${this.config.baseUrl}/chat/completions`;
+        const body: Record<string, unknown> = {
+          model: this.config.model,
+          messages: conversation,
+          temperature: this.config.temperature,
+          max_tokens: this.config.maxTokens,
+          keep_alive: '60m',
+        };
+
+        if (tools.length > 0) {
+          body.tools = tools;
+          body.tool_choice = 'required';
+        }
+
+        if (this.numCtx !== undefined) {
+          body.options = { num_ctx: this.numCtx };
+        }
+
+        data = (await this.fetchWithRetry(url, body, signal)) as typeof data;
+      }
 
       const assistantMsg = data.choices?.[0]?.message;
       if (!assistantMsg) {

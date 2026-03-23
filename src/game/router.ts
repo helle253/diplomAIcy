@@ -370,10 +370,9 @@ export function createGameRouter(lobbyManager: LobbyManager) {
         const manager = resolveManager(lobbyManager, ctx.lobbyId);
         const state = manager.getState();
 
-        // Reject syntactically invalid orders (unknown province, unit not yours)
-        const myUnitProvinces = state.units
-          .filter((u) => u.power === ctx.power)
-          .map((u) => u.province);
+        // Reject syntactically invalid orders (unknown province, unit not yours, missing coast)
+        const myUnits = state.units.filter((u) => u.power === ctx.power);
+        const myUnitProvinces = myUnits.map((u) => u.province);
         const errors: { unit: string; error: string }[] = [];
         for (const order of input.orders) {
           if (!PROVINCES[order.unit]) {
@@ -383,6 +382,21 @@ export function createGameRouter(lobbyManager: LobbyManager) {
               unit: order.unit,
               error: `No unit of yours at '${order.unit}'. Your units: ${myUnitProvinces.join(', ')}`,
             });
+          } else if ('destination' in order && order.destination) {
+            const dest = PROVINCES[order.destination as string];
+            const unit = myUnits.find((u) => u.province === order.unit);
+            // Fleet moving to a multi-coast province must specify which coast
+            if (
+              unit?.type === UnitType.Fleet &&
+              dest?.coasts &&
+              dest.coasts.length > 0 &&
+              !('coast' in order && order.coast)
+            ) {
+              errors.push({
+                unit: order.unit,
+                error: `Fleet moving to '${order.destination}' must specify a coast (${dest.coasts.join(' or ')})`,
+              });
+            }
           }
         }
         if (errors.length > 0) {
@@ -422,74 +436,9 @@ export function createGameRouter(lobbyManager: LobbyManager) {
       .input(z.object({ builds: z.array(buildOrderSchema) }))
       .mutation(({ ctx, input }) => {
         const manager = resolveManager(lobbyManager, ctx.lobbyId);
-        const state = manager.getState();
 
-        // Compute valid build locations for error messages
-        const openHomeCenters = Object.entries(PROVINCES)
-          .filter(
-            ([id, prov]) =>
-              prov.homeCenter === ctx.power &&
-              prov.supplyCenter &&
-              state.supplyCenters.get(id) === ctx.power &&
-              !state.units.some((u) => u.province === id),
-          )
-          .map(([id]) => id);
-
-        // Validate builds
-        const errors: { province?: string; error: string }[] = [];
-        const seenProvinces = new Set<string>();
-        for (const build of input.builds) {
-          if (build.type === 'Build') {
-            if (seenProvinces.has(build.province)) {
-              errors.push({
-                province: build.province,
-                error: `Duplicate build in '${build.province}'`,
-              });
-              continue;
-            }
-            seenProvinces.add(build.province);
-            if (!openHomeCenters.includes(build.province)) {
-              errors.push({
-                province: build.province,
-                error: `Cannot build in '${build.province}'`,
-              });
-            } else if (
-              build.unitType === UnitType.Fleet &&
-              PROVINCES[build.province]?.type === 'Land'
-            ) {
-              errors.push({
-                province: build.province,
-                error: `Cannot build Fleet in landlocked ${build.province}`,
-              });
-            }
-          } else if (build.type === 'Remove') {
-            if (seenProvinces.has(build.province)) {
-              errors.push({
-                province: build.province,
-                error: `Duplicate remove in '${build.province}'`,
-              });
-              continue;
-            }
-            seenProvinces.add(build.province);
-            const unit = state.units.find(
-              (u) => u.province === build.province && u.power === ctx.power,
-            );
-            if (!unit) {
-              errors.push({
-                province: build.province,
-                error: `No unit of yours at '${build.province}'`,
-              });
-            }
-          }
-        }
-
-        if (errors.length > 0) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: JSON.stringify({ invalidBuilds: errors }),
-          });
-        }
-
+        // Pass all builds to the engine — it silently skips invalid ones.
+        // We just convert Remove orders to the internal format.
         const internalBuilds = input.builds.map((b) =>
           b.type === 'Remove' ? { type: 'Remove' as const, unit: b.province } : b,
         );

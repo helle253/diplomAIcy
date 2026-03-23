@@ -46,9 +46,10 @@ Verify reachability: `curl -s http://host.docker.internal:11434/api/tags`
 | **Fast adjudication** | "Should the engine advance as soon as all agents submit, without waiting for the phase duration?" | true | "fast adjudication" or "fast" in prompt → true |
 | **Phase duration (ms)** | "What is the maximum time each phase should last?" | 0 (no limit) | With fast adjudication: phase ends when all submit OR timer fires, whichever is first. Without: phase always waits the full duration. e.g. "60 minute phases" → 3600000 |
 | **LLM concurrency** | "How many agents can call Ollama simultaneously? (should match OLLAMA_NUM_PARALLEL on host)" | 1 | If user mentions GPU/VRAM or parallel, ask for this explicitly |
-| **Remote timeout (ms)** | "How long should the server wait for agent submissions per phase?" | (match phaseDelayMs) | Should equal the phase duration. This is the per-agent deadline — if an agent hasn't submitted by this time, its orders default to Hold. Must be ≥ total semaphore queue time (`ceil(7 / LLM_CONCURRENCY) × avg_inference_time`). For qwen3:8b with thinking: ~52 min with concurrency=2, so 60-min phases need 60-min timeout. |
-| **LLM request timeout (ms)** | "Per-request timeout for LLM calls?" | 900000 | 15 min default for safety |
-| **Monitor interval** | "How often should the referee check in on the game?" | half the phase duration, or 10m if no phase cap | e.g. 60 min phases → 30m check-ins; no cap → 10m. User can override. Used for `/loop` interval in step 8. |
+| **Disable thinking** | "Should thinking/reasoning be disabled for this model?" | false | Set `"think": false` in the Ollama config JSON. Only relevant for thinking models (qwen3, etc). See "Thinking mode" section below for dramatic performance impact. "no_think" or "/no_think" in prompt → true |
+| **Remote timeout (ms)** | "How long should the server wait for agent submissions per phase?" | (match phaseDelayMs) | Should equal the phase duration. This is the per-agent deadline — if an agent hasn't submitted by this time, its orders default to Hold. Must be ≥ total semaphore queue time (`ceil(7 / LLM_CONCURRENCY) × avg_inference_time`). With thinking: ~52 min for qwen3:8b (concurrency=2). Without thinking: ~3 min. |
+| **LLM request timeout (ms)** | "Per-request timeout for LLM calls?" | 900000 | 15 min default for safety. Can reduce to 300000 (5 min) with thinking disabled. |
+| **Monitor interval** | "How often should the referee check in on the game?" | half the phase duration, or 10m if no phase cap | e.g. 60 min phases → 30m check-ins; no cap → 10m. With thinking disabled and fast adjudication, phases resolve in ~3-6 min — use 5m. User can override. Used for `/loop` interval in step 8. |
 
 ### Ambiguity rules
 
@@ -349,6 +350,30 @@ With 7 agents sharing a 2-slot semaphore (`LLM_CONCURRENCY=2`), the total time f
 Other timeouts:
 - **`keep_alive`** — Sent in every LLM request body (hardcoded to `60m`). Tells Ollama to keep the model loaded for 60 minutes between requests instead of the default 5 minutes. Prevents unnecessary model reloads during long games.
 - **`PHASE_DELAY`** — Server env var for minimum delay between engine phases. With `fastAdjudication: true`, the engine advances as soon as all agents submit, so this only matters if agents are faster than the delay.
+
+### Thinking mode (qwen3 and other reasoning models)
+
+Models like qwen3 have a "thinking" mode that generates internal reasoning tokens before responding. This has a **massive impact** on game speed, tool-call reliability, and strategic quality.
+
+**To disable thinking**, set `"think": false` in the Ollama config JSON (e.g. `diplomaicy.config.ollama-host.json`). When `think` is `false` and the base URL ends in `/v1`, the client automatically switches from the OpenAI-compatible endpoint to Ollama's native `/api/chat` endpoint (the only one that supports `think: false`).
+
+**Measured impact (qwen3:8b, LLM_CONCURRENCY=2, 7 agents):**
+
+| Metric | Thinking ON | Thinking OFF |
+|--------|-------------|--------------|
+| Time per phase (all 7 submit) | ~60 min | ~3 min |
+| Agents submitting via tool calls | 3-6 of 7 | 7 of 7 |
+| Text-instead-of-tool-calls rate | ~40% | ~0% |
+| Auto-default (timeout) rate | ~20% | ~0% |
+| Strategic quality | Cautious holds, board stagnation | Aggressive moves, active conflict |
+| Game-years per hour | ~0.4 | ~10+ |
+
+**Why thinking hurts so much in this setup:**
+1. **Inference time**: Each thinking call takes 15-30 min (reasoning tokens + response). With 7 agents and 2 semaphore slots, total phase time is `ceil(7/2) × 20 min ≈ 80 min`.
+2. **Tool-call compliance**: The model spends its token budget on internal reasoning, then often produces a text summary instead of calling the `submitOrders` tool. This triggers the text-parse fallback or auto-default.
+3. **Strategic paralysis**: When the model does submit, thinking mode makes it overly cautious — it reasons itself into holding every unit rather than taking risks.
+
+**Recommendation**: Always disable thinking for Diplomacy games with qwen3. The non-thinking mode produces faster, more decisive, and more strategically interesting play. If you need reasoning capability, use a larger non-thinking model (e.g. qwen2.5:14b) instead.
 
 ## Monitoring
 

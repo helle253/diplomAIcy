@@ -214,6 +214,77 @@ describe('GameManager — Build phase', () => {
     expect(manager.getState().units).toHaveLength(22);
   });
 
+  it('accepts valid builds and skips invalid ones in the same batch', async () => {
+    // Set up a game where Germany captures a neutral SC so it earns a build
+    const manager = new GameManager({ maxYears: 1 });
+
+    for (const power of ALL_POWERS) {
+      manager.onPhaseChange(async (_phase, state) => {
+        await new Promise<void>((r) => setTimeout(r, 0));
+        if (state.phase.type === PhaseType.Orders) {
+          if (power === Power.Germany && state.phase.season === Season.Spring) {
+            // Germany: move army to Denmark (neutral SC)
+            const orders: Order[] = state.units
+              .filter((u) => u.power === power)
+              .map((u) => {
+                if (u.province === 'kie') {
+                  return { type: OrderType.Move as const, unit: 'kie', destination: 'den' };
+                }
+                return { type: OrderType.Hold as const, unit: u.province };
+              });
+            manager.submitOrders(power, orders);
+          } else {
+            // Everyone else holds
+            const orders: Order[] = state.units
+              .filter((u) => u.power === power)
+              .map((u) => ({ type: OrderType.Hold as const, unit: u.province }));
+            manager.submitOrders(power, orders);
+          }
+        } else if (state.phase.type === PhaseType.Retreats) {
+          const retreats = state.retreatSituations
+            .filter((s) => s.unit.power === power)
+            .map((s) => ({ type: 'Disband' as const, unit: s.unit.province }));
+          manager.submitRetreats(power, retreats);
+        } else if (state.phase.type === PhaseType.Builds) {
+          const buildCount = manager.getBuildCount(power);
+          if (power === Power.Germany && buildCount > 0) {
+            // Submit a mix: valid build (kie — open home center) + invalid build (bur — not home)
+            manager.submitBuilds(power, [
+              { type: 'Build', province: 'kie', unitType: 'Fleet' as const },
+              { type: 'Build', province: 'bur', unitType: 'Army' as const },
+            ]);
+          } else if (buildCount > 0) {
+            manager.submitBuilds(
+              power,
+              Array.from({ length: buildCount }, () => ({ type: 'Waive' as const })),
+            );
+          } else if (buildCount < 0) {
+            const myUnits = state.units.filter((u) => u.power === power);
+            manager.submitBuilds(
+              power,
+              myUnits
+                .slice(0, Math.abs(buildCount))
+                .map((u) => ({ type: 'Remove' as const, unit: u.province })),
+            );
+          } else {
+            manager.submitBuilds(power, []);
+          }
+        }
+      });
+    }
+
+    await manager.run();
+
+    const state = manager.getState();
+    // Germany should have built in Kiel (valid) and skipped Burgundy (invalid)
+    const germanUnits = state.units.filter((u) => u.power === Power.Germany);
+    expect(germanUnits.some((u) => u.province === 'kie')).toBe(true);
+    // Burgundy should NOT have a German unit from a build
+    expect(germanUnits.some((u) => u.province === 'bur')).toBe(false);
+    // Germany started with 3 units, captured den, should build 1 valid = 4 total
+    expect(germanUnits).toHaveLength(4);
+  });
+
   it('build events are emitted in winter', async () => {
     const manager = new GameManager({ maxYears: 1 });
     connectAllHold(manager);
