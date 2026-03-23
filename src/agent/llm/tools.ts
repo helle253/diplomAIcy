@@ -568,7 +568,8 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
                 },
                 province: {
                   type: 'string',
-                  description: 'Province to build in or remove from',
+                  description:
+                    'Province to build in (must be an unoccupied HOME supply center) or remove from',
                 },
                 coast: { type: 'string', description: 'Coast for fleet build (nc or sc)' },
               },
