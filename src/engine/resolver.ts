@@ -888,7 +888,7 @@ export function resolveRetreats(
         coast?: Coast;
       };
       const dislodgedInfo = dislodgedUnits.find((d) => d.unit.province === order.unit);
-      if (dislodgedInfo) {
+      if (dislodgedInfo?.validDestinations.includes(order.destination)) {
         const movedUnit = {
           ...dislodgedInfo.unit,
           province: order.destination,
@@ -896,6 +896,8 @@ export function resolveRetreats(
         };
         newPositions.push(movedUnit);
         succeeded.push({ unit: dislodgedInfo.unit, destination: dest, coast: order.coast });
+      } else if (dislodgedInfo) {
+        disbanded.push(dislodgedInfo.unit);
       }
     } else {
       // Collision — all units retreating here are disbanded

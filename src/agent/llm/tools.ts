@@ -12,7 +12,7 @@ export interface ToolGameClient {
       mutate: (input: { to: string | string[]; content: string }) => Promise<{ ok: boolean }>;
     };
     testOrders: {
-      query: (input: { orders: unknown[] }) => Promise<unknown>;
+      query: (input: { orders?: unknown[]; retreats?: unknown[] }) => Promise<unknown>;
     };
   };
 }
@@ -348,11 +348,14 @@ export class GameToolExecutor implements ToolExecutor {
   }
 
   private async testOrders(args: Record<string, unknown>): Promise<string> {
-    if (!Array.isArray(args.orders)) {
-      return JSON.stringify({ error: 'orders must be an array' });
+    if (!Array.isArray(args.orders) && !Array.isArray(args.retreats)) {
+      return JSON.stringify({ error: 'orders or retreats must be an array' });
     }
     try {
-      const result = await this.client.game.testOrders.query({ orders: args.orders });
+      const input: { orders?: unknown[]; retreats?: unknown[] } = {};
+      if (Array.isArray(args.orders)) input.orders = args.orders;
+      if (Array.isArray(args.retreats)) input.retreats = args.retreats;
+      const result = await this.client.game.testOrders.query(input);
       return JSON.stringify(result);
     } catch (e) {
       return this.formatError(e);

@@ -382,7 +382,7 @@ export function createGameRouter(lobbyManager: LobbyManager) {
               unit: order.unit,
               error: `No unit of yours at '${order.unit}'. Your units: ${myUnitProvinces.join(', ')}`,
             });
-          } else if ('destination' in order && order.destination) {
+          } else if (order.type === OrderType.Move && order.destination) {
             const dest = PROVINCES[order.destination as string];
             const unit = myUnits.find((u) => u.province === order.unit);
             // Fleet moving to a multi-coast province must specify which coast

@@ -386,6 +386,8 @@ export async function connectToolAgent(
           ],
           tools,
           executor,
+          undefined,
+          phaseAbortController?.signal,
         );
       } catch (err) {
         logger.error(`[${power}] Message batch tool loop error:`, err);
