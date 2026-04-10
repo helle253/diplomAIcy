@@ -215,8 +215,8 @@ export class OpenAICompatibleClient implements LLMClient {
 
     // Convert Ollama tool_calls to OpenAI format (arguments as JSON string, add id)
     const toolCalls = msg.tool_calls?.map(
-      (tc, i): ToolCall => ({
-        id: `call_${Date.now()}_${i}`,
+      (tc): ToolCall => ({
+        id: `call_${crypto.randomUUID()}`,
         type: 'function',
         function: {
           name: tc.function.name,

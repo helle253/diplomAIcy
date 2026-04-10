@@ -666,6 +666,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
             },
           },
         },
+        minProperties: 1,
       },
     },
   },

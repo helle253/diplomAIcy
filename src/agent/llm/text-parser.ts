@@ -245,7 +245,7 @@ export function parseTextBuilds(text: string): TextBuildParseResult | null {
 
     // Pattern 3: Waive — "Waive", "Waive build"
     if (!parsed) {
-      if (/waive/i.test(line)) {
+      if (/\bwaive\b/i.test(line)) {
         builds.push({ type: 'Waive' });
         parsed = true;
       }

@@ -867,9 +867,16 @@ export function resolveRetreats(
   const succeeded: { unit: Unit; destination: string; coast?: Coast }[] = [];
   const retreatDestinations = new Map<string, RetreatOrder[]>();
 
-  // Group retreat-moves by destination
+  // Validate retreat-moves and group valid ones by destination.
+  // Invalid retreats (destination not in validDestinations) are disbanded
+  // immediately so they cannot cause false collisions with valid retreats.
   for (const order of retreatOrders) {
     if (order.type === 'RetreatMove') {
+      const dislodgedInfo = dislodgedUnits.find((d) => d.unit.province === order.unit);
+      if (!dislodgedInfo || !dislodgedInfo.validDestinations.includes(order.destination)) {
+        if (dislodgedInfo) disbanded.push(dislodgedInfo.unit);
+        continue;
+      }
       const existing = retreatDestinations.get(order.destination) ?? [];
       existing.push(order);
       retreatDestinations.set(order.destination, existing);
@@ -887,8 +894,9 @@ export function resolveRetreats(
         destination: string;
         coast?: Coast;
       };
+      // Validity already checked during bucketing — just apply the move
       const dislodgedInfo = dislodgedUnits.find((d) => d.unit.province === order.unit);
-      if (dislodgedInfo?.validDestinations.includes(order.destination)) {
+      if (dislodgedInfo) {
         const movedUnit = {
           ...dislodgedInfo.unit,
           province: order.destination,
@@ -896,8 +904,6 @@ export function resolveRetreats(
         };
         newPositions.push(movedUnit);
         succeeded.push({ unit: dislodgedInfo.unit, destination: dest, coast: order.coast });
-      } else if (dislodgedInfo) {
-        disbanded.push(dislodgedInfo.unit);
       }
     } else {
       // Collision — all units retreating here are disbanded
