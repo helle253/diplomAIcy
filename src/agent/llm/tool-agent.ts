@@ -9,31 +9,38 @@ import type { GameClient } from '../remote/client';
 import { deserializeGameState, type SerializedGameState } from '../remote/deserialize';
 import type { LLMClient, ToolDefinition } from './llm-client';
 import { buildToolSystemPrompt, buildTurnPrompt, extractPlanBlock } from './prompts';
+import { parseTextBuilds, parseTextOrders } from './text-parser';
 import { GameToolExecutor, TOOL_DEFINITIONS, type ToolGameClient } from './tools';
 
-const MAP_QUERY_TOOLS = [
-  'getMyUnits',
-  'getAdjacentProvinces',
-  'getProvinceInfo',
-  'getSupplyCenterCounts',
-  'getPhaseInfo',
-];
-const COMMON_TOOLS = ['sendMessage'];
+/** Local query tools that run in-process (not server actions). */
+const LOCAL_QUERY_TOOLS: Record<string, string[]> = {
+  Orders: [
+    'getMyUnits',
+    'getAdjacentProvinces',
+    'getProvinceInfo',
+    'getSupplyCenterCounts',
+    'getPhaseInfo',
+  ],
+  Retreats: ['getMyUnits', 'getRetreatOptions', 'getPhaseInfo'],
+  Builds: ['getMyUnits', 'getPhaseInfo'],
+};
 
-function filterToolsByPhase(phaseType: PhaseType): ToolDefinition[] {
-  const allowed = new Set([...MAP_QUERY_TOOLS, ...COMMON_TOOLS]);
-  switch (phaseType) {
-    case PhaseType.Orders:
-      allowed.add('submitOrders');
-      break;
-    case PhaseType.Retreats:
-      allowed.add('getRetreatOptions');
-      allowed.add('submitRetreats');
-      break;
-    case PhaseType.Builds:
-      allowed.add('submitBuilds');
-      break;
-  }
+/** Fallback action sets when server doesn't provide availableActions. */
+const FALLBACK_ACTIONS: Record<string, string[]> = {
+  Orders: ['submitOrders', 'testOrders', 'sendMessage'],
+  Retreats: ['submitRetreats', 'testOrders', 'sendMessage'],
+  Builds: ['submitBuilds', 'sendMessage'],
+};
+
+/**
+ * Build the tool list from server-provided actions + local query tools.
+ * Server defines what actions are available; agent adds its own query tools.
+ * Falls back to hardcoded defaults if server doesn't provide actions.
+ */
+function filterTools(phaseType: string, serverActions: string[]): ToolDefinition[] {
+  const actions = serverActions.length > 0 ? serverActions : (FALLBACK_ACTIONS[phaseType] ?? []);
+  const localTools = LOCAL_QUERY_TOOLS[phaseType] ?? Object.values(LOCAL_QUERY_TOOLS).flat();
+  const allowed = new Set([...localTools, ...actions]);
   return TOOL_DEFINITIONS.filter((t) => allowed.has(t.function.name));
 }
 
@@ -78,11 +85,15 @@ export async function connectToolAgent(
   const MESSAGE_BATCH_DELAY = parseInt(process.env.MESSAGE_BATCH_DELAY ?? '5000', 10);
 
   type WorkItem =
-    | { kind: 'phase'; gameState: GameState; deadlineMs: number }
+    | { kind: 'phase'; gameState: GameState; deadlineMs: number; availableActions?: string[] }
     | { kind: 'messageBatch'; messages: Message[] };
 
   const workQueue: WorkItem[] = [];
   let working = false;
+
+  // Abort controller for the current phase — aborted when a new phase arrives
+  // so stale LLM calls don't block the work queue for up to 90 minutes.
+  let phaseAbortController: AbortController | null = null;
 
   // Messages accumulate here permanently. Both message-triggered tool loops
   // AND phase tool loops see all messages received so far. This ensures
@@ -113,8 +124,15 @@ export async function connectToolAgent(
     }
   }
 
-  function enqueuePhase(gameState: GameState, deadlineMs: number) {
+  function enqueuePhase(gameState: GameState, deadlineMs: number, availableActions?: string[]) {
     flushPendingMessages();
+
+    // Abort any in-flight LLM call for the previous phase so the work queue unblocks
+    if (phaseAbortController) {
+      logger.info(`[${power}] Aborting stale LLM call — new phase arrived`);
+      phaseAbortController.abort();
+      phaseAbortController = null;
+    }
 
     // Clear queued message batches — phase handler will have full accumulated context
     const staleCount = workQueue.filter((w) => w.kind === 'messageBatch').length;
@@ -122,7 +140,7 @@ export async function connectToolAgent(
       logger.info(`[${power}] Clearing ${staleCount} stale message batches from queue`);
     }
     workQueue.length = 0;
-    workQueue.push({ kind: 'phase', gameState, deadlineMs });
+    workQueue.push({ kind: 'phase', gameState, deadlineMs, availableActions });
     drainWorkQueue();
   }
 
@@ -147,7 +165,7 @@ export async function connectToolAgent(
 
         try {
           if (item.kind === 'phase') {
-            await handlePhase(item.gameState, item.deadlineMs);
+            await handlePhase(item.gameState, item.deadlineMs, item.availableActions);
           } else {
             await handleMessageBatch(item.messages);
           }
@@ -162,7 +180,11 @@ export async function connectToolAgent(
 
   // ── Phase handler ──────────────────────────────────────────────────
 
-  async function handlePhase(gameState: GameState, deadlineMs: number) {
+  async function handlePhase(
+    gameState: GameState,
+    deadlineMs: number,
+    availableActions?: string[],
+  ) {
     if (deadlineMs > 0) {
       const remaining = Math.max(0, Math.round((deadlineMs - Date.now()) / 1000));
       logger.info(`[${power}] Phase ${gameState.phase.type} -- deadline in ${remaining}s`);
@@ -173,8 +195,13 @@ export async function connectToolAgent(
       return;
     }
 
+    // Create abort controller for this phase — will be aborted if a new phase arrives
+    phaseAbortController = new AbortController();
+    const { signal } = phaseAbortController;
+
     const executor = new GameToolExecutor(client as unknown as ToolGameClient, gameState, power);
-    const tools = filterToolsByPhase(gameState.phase.type as PhaseType);
+    const serverActions = availableActions ?? [];
+    const tools = filterTools(gameState.phase.type, serverActions);
 
     // Include ALL accumulated messages — never cleared, so the agent retains
     // full diplomatic history. Messages carry phase stamps for temporal context.
@@ -196,10 +223,12 @@ export async function connectToolAgent(
         ],
         tools,
         executor,
+        undefined,
+        signal,
       );
       logger.info(`[${power}] Tool loop complete for phase ${gameState.phase.type}`);
 
-      // Extract and persist plan block from primary response
+      // Extract and persist plan block from primary response (if any text was produced)
       if (response) {
         const { plan } = extractPlanBlock(response);
         if (plan) {
@@ -207,6 +236,7 @@ export async function connectToolAgent(
           logger.info(`[${power}] Plan saved for next phase`);
         }
       }
+      // Note: when tool calls succeed, response is typically empty — previous plan is kept
     } catch (err) {
       logger.error(`[${power}] Tool loop error:`, err);
     }
@@ -216,10 +246,11 @@ export async function connectToolAgent(
       gameState.phase.type === PhaseType.Orders ||
       gameState.phase.type === PhaseType.Retreats ||
       gameState.phase.type === PhaseType.Builds;
-    if (needsSubmit && !executor.hasSubmitted) {
+    let retryResponse = '';
+    if (needsSubmit && !executor.hasSubmitted && !signal.aborted) {
       logger.warn(`[${power}] Model did not submit — retrying with explicit prompt`);
       try {
-        await llm.runToolLoop(
+        retryResponse = await llm.runToolLoop(
           [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userMessage },
@@ -231,6 +262,8 @@ export async function connectToolAgent(
           ],
           tools,
           executor,
+          undefined,
+          signal,
         );
         logger.info(`[${power}] Retry tool loop complete`);
       } catch (err) {
@@ -238,8 +271,59 @@ export async function connectToolAgent(
       }
     }
 
-    // If still no submission after retry, auto-submit defaults so the phase can advance
-    if (needsSubmit && !executor.hasSubmitted) {
+    // If still no submission, try parsing from the text responses
+    if (needsSubmit && !executor.hasSubmitted && !signal.aborted) {
+      const combinedText = [response, retryResponse].filter(Boolean).join('\n');
+      if (combinedText.length > 0) {
+        if (gameState.phase.type === PhaseType.Orders) {
+          const parsed = parseTextOrders(combinedText, gameState, power);
+          if (parsed && parsed.orders.length > 0) {
+            const validOrders = parsed.orders.filter((o) =>
+              gameState.units.some((u) => u.province === o.unit && u.power === power),
+            );
+            if (validOrders.length > 0) {
+              const coveredUnits = new Set(validOrders.map((o) => o.unit));
+              const myUnits = gameState.units.filter((u) => u.power === power);
+              const allOrders = [
+                ...validOrders,
+                ...myUnits
+                  .filter((u) => !coveredUnits.has(u.province))
+                  .map((u) => ({ unit: u.province, type: 'Hold' as const })),
+              ];
+              logger.warn(
+                `[${power}] Parsed ${validOrders.length} orders from text (${parsed.unmatched.length} unmatched)`,
+              );
+              try {
+                await (client.game.submitOrders.mutate as (input: unknown) => Promise<unknown>)({
+                  orders: allOrders,
+                });
+                executor.hasSubmitted = true;
+              } catch (err) {
+                logger.error(`[${power}] Text-parsed order submission error:`, err);
+              }
+            }
+          }
+        } else if (gameState.phase.type === PhaseType.Builds) {
+          const parsed = parseTextBuilds(combinedText);
+          if (parsed && parsed.builds.length > 0) {
+            logger.warn(
+              `[${power}] Parsed ${parsed.builds.length} builds from text (${parsed.unmatched.length} unmatched)`,
+            );
+            try {
+              await (client.game.submitBuilds.mutate as (input: unknown) => Promise<unknown>)({
+                builds: parsed.builds,
+              });
+              executor.hasSubmitted = true;
+            } catch (err) {
+              logger.error(`[${power}] Text-parsed build submission error:`, err);
+            }
+          }
+        }
+      }
+    }
+
+    // If still no submission after retry and text parsing, auto-submit defaults
+    if (needsSubmit && !executor.hasSubmitted && !signal.aborted) {
       logger.warn(`[${power}] Auto-submitting defaults — model failed to submit after retry`);
       try {
         if (gameState.phase.type === PhaseType.Orders) {
@@ -286,7 +370,7 @@ export async function connectToolAgent(
       }
 
       const executor = new GameToolExecutor(client as unknown as ToolGameClient, gameState, power);
-      const tools = filterToolsByPhase(gameState.phase.type as PhaseType);
+      const tools = filterTools(gameState.phase.type, ['sendMessage']);
       // Pass ALL accumulated messages so the agent has full diplomatic context
       const messagePlan = await readPlan();
       const userMessage = buildTurnPrompt(gameState, power, accumulatedMessages, messagePlan);
@@ -302,6 +386,8 @@ export async function connectToolAgent(
           ],
           tools,
           executor,
+          undefined,
+          phaseAbortController?.signal,
         );
       } catch (err) {
         logger.error(`[${power}] Message batch tool loop error:`, err);
@@ -338,7 +424,11 @@ export async function connectToolAgent(
         const key = phaseKey(gameState);
         if (key === lastHandledPhase) return;
         lastHandledPhase = key;
-        enqueuePhase(gameState, tracked.data.gameState.deadlineMs ?? 0);
+        enqueuePhase(
+          gameState,
+          tracked.data.gameState.deadlineMs ?? 0,
+          tracked.data.gameState.availableActions,
+        );
       },
       onError(err) {
         logger.error(`[${power}] onPhaseChange subscription error:`, err);
@@ -410,7 +500,7 @@ export async function connectToolAgent(
     ) {
       lastHandledPhase = key;
       logger.info(`[${power}] Catching up on current phase: ${currentGameState.phase.type}`);
-      enqueuePhase(currentGameState, serialized.deadlineMs);
+      enqueuePhase(currentGameState, serialized.deadlineMs, serialized.availableActions);
     }
   } catch (err) {
     logger.error(`[${power}] catch-up error (non-fatal):`, err);

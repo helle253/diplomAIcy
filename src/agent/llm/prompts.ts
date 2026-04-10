@@ -215,36 +215,7 @@ export function buildTurnPrompt(
     );
   }
 
-  // Last turn results
-  if (state.orderHistory.length > 0) {
-    const last = state.orderHistory[state.orderHistory.length - 1];
-    lines.push('\n--- Last Turn Results ---');
-    for (const r of last) {
-      const o = (r as OrderResolution).order;
-      let desc = `${o.unit} ???`;
-      switch (o.type) {
-        case 'Hold':
-          desc = `${o.unit} HOLD`;
-          break;
-        case 'Move':
-          desc = `${o.unit} -> ${o.destination}${o.coast ? '/' + o.coast : ''}`;
-          break;
-        case 'Support':
-          desc = o.destination
-            ? `${o.unit} S ${o.supportedUnit} -> ${o.destination}`
-            : `${o.unit} S ${o.supportedUnit} (hold)`;
-          break;
-        case 'Convoy':
-          desc = `${o.unit} C ${o.convoyedUnit} -> ${o.destination}`;
-          break;
-      }
-      lines.push(
-        `  ${(r as OrderResolution).power}: ${desc} [${(r as OrderResolution).status}]${(r as OrderResolution).reason ? ' - ' + (r as OrderResolution).reason : ''}`,
-      );
-    }
-  }
-
-  // Your units with adjacencies
+  // ── YOUR UNITS (high-attention zone — immediately after header) ──
   lines.push('\n--- Your Units ---');
   if (myUnits.length > 0) {
     for (const u of myUnits) {
@@ -263,27 +234,7 @@ export function buildTurnPrompt(
     lines.push('(none)');
   }
 
-  // Strategic situation (auto-computed)
-  lines.push('\n' + buildStrategicSummary(state, power));
-
-  // Agent plan (persisted across phases)
-  const planContent =
-    plan ?? '(No plan yet — write one using the format: GOAL, ALLIES, THREATS, ORDERS, REFLECTION)';
-  lines.push(
-    '\n--- Your Plan (from last phase) ---\n' +
-      planContent +
-      '\n\n⚠️ You MUST include an updated ```plan block. Check your ORDERS from last phase — did you follow through? Update based on results.',
-  );
-
-  // Pending messages (phase labels included by formatMessage for temporal context)
-  if (pendingMessages.length > 0) {
-    lines.push('\n--- Incoming Messages ---');
-    for (const m of pendingMessages) {
-      lines.push(formatMessage(m, power));
-    }
-  }
-
-  // Phase-specific instructions
+  // ── ACTION REQUIRED (high-attention zone — right after units) ──
   switch (phase.type) {
     case 'Orders': {
       // Identify nearby unowned SCs to suggest targets
@@ -304,29 +255,23 @@ export function buildTurnPrompt(
         }
       }
       const targetHint =
-        targets.length > 0
-          ? `\n\nNEARBY NEUTRAL SUPPLY CENTERS (capture these!):\n${targets.join('\n')}`
-          : '';
+        targets.length > 0 ? `\nNEARBY NEUTRAL SUPPLY CENTERS:\n${targets.join('\n')}` : '';
       lines.push(
-        '\n⚠️ ACTION REQUIRED: You MUST call submitOrders with one order per unit.' +
-          '\nUse sendMessage to negotiate before submitting — propose alliances, coordinate attacks, or warn neighbors.' +
-          '\nDo NOT hold all units — move toward supply centers! Holding every unit is losing.' +
-          '\nUse Move orders to advance, Support orders to help allies or reinforce your own moves.' +
+        '\n⚠️ ACTION REQUIRED: Call submitOrders with one order per unit.' +
+          '\nDo NOT hold all units — move toward supply centers!' +
           targetHint,
       );
       break;
     }
     case 'Retreats':
       lines.push(
-        '\n⚠️ ACTION REQUIRED: You MUST call the submitRetreats tool.' +
-          '\nSteps: 1) getRetreatOptions 2) submitRetreats' +
-          '\nDo NOT end your turn without calling submitRetreats.',
+        '\n⚠️ ACTION REQUIRED: Call submitRetreats.' +
+          '\nSteps: 1) getRetreatOptions 2) submitRetreats',
       );
       break;
     case 'Builds': {
       const buildCount = mySCs - myUnits.length;
       if (buildCount > 0) {
-        // Find open home centers for build suggestions
         const homeCenters = [...state.supplyCenters.entries()]
           .filter(([, p]) => p === power)
           .map(([prov]) => prov)
@@ -334,30 +279,78 @@ export function buildTurnPrompt(
           .filter((prov) => !state.units.some((u) => u.province === prov));
         const homeList =
           homeCenters.length > 0
-            ? `\nYour open home centers: ${homeCenters.join(', ')}`
-            : '\nWARNING: All home centers are occupied — you must Waive.';
-        const buildInstructions =
-          homeCenters.length > 0
-            ? '\nCall submitBuilds with a Build order for each unit. Each needs: type "Build", unitType "Army" or "Fleet", province (one of your open home centers above).' +
-              '\nFor fleet builds on multi-coast provinces (stp, spa, bul), also specify coast: "nc" or "sc".'
-            : '\nAll home centers are occupied. Call submitBuilds with Waive orders: type "Waive" (no unitType or province needed).';
-        lines.push(
-          `\n⚠️ ACTION REQUIRED: You MUST build ${buildCount} unit(s).` +
-            homeList +
-            buildInstructions +
-            '\nDo NOT submit an empty array — you must build to grow stronger!',
-        );
+            ? `\nOpen home centers: ${homeCenters.join(', ')}`
+            : '\nAll home centers occupied — must Waive.';
+        lines.push(`\n⚠️ ACTION REQUIRED: Build ${buildCount} unit(s).` + homeList);
       } else if (buildCount < 0) {
         lines.push(
-          `\n⚠️ ACTION REQUIRED: You have ${myUnits.length} units but only ${mySCs} supply centers — you MUST disband ${-buildCount} unit(s).` +
-            '\nCall submitBuilds with an array of Remove orders. Each remove needs: type "Remove" and province (where the unit to disband is).',
+          `\n⚠️ ACTION REQUIRED: Disband ${-buildCount} unit(s) (${myUnits.length} units, ${mySCs} SCs).`,
         );
       } else {
-        lines.push(
-          '\nYou have equal units and supply centers — no builds or disbands needed. Call submitBuilds with an empty array.',
-        );
+        lines.push('\nNo builds or disbands needed. Call submitBuilds with an empty array.');
       }
       break;
+    }
+  }
+
+  // ── LAST TURN RESULTS (your orders only) ──
+  if (state.orderHistory.length > 0) {
+    const last = state.orderHistory[state.orderHistory.length - 1];
+    const myResults = last.filter((r) => (r as OrderResolution).power === power);
+    if (myResults.length > 0) {
+      lines.push('\n--- Your Last Orders ---');
+      for (const r of myResults) {
+        const o = (r as OrderResolution).order;
+        let desc = `${o.unit} ???`;
+        switch (o.type) {
+          case 'Hold':
+            desc = `${o.unit} HOLD`;
+            break;
+          case 'Move':
+            desc = `${o.unit} -> ${o.destination}${o.coast ? '/' + o.coast : ''}`;
+            break;
+          case 'Support':
+            desc = o.destination
+              ? `${o.unit} S ${o.supportedUnit} -> ${o.destination}`
+              : `${o.unit} S ${o.supportedUnit} (hold)`;
+            break;
+          case 'Convoy':
+            desc = `${o.unit} C ${o.convoyedUnit} -> ${o.destination}`;
+            break;
+        }
+        lines.push(
+          `  ${desc} [${(r as OrderResolution).status}]${(r as OrderResolution).reason ? ' - ' + (r as OrderResolution).reason : ''}`,
+        );
+      }
+    }
+  }
+
+  // ── COMPACT SC COUNTS (replaces full strategic summary) ──
+  const scCounts: string[] = [];
+  const allPowers = Object.values(Power);
+  for (const p of allPowers) {
+    let count = 0;
+    for (const [, owner] of state.supplyCenters) {
+      if (owner === p) count++;
+    }
+    if (count > 0) {
+      const marker = p === power ? '*' : '';
+      scCounts.push(`${p}${marker}: ${count}`);
+    }
+  }
+  lines.push(`\nSC counts: ${scCounts.join(' | ')}`);
+
+  // ── PLAN (brief) ──
+  if (plan) {
+    lines.push('\n--- Your Plan ---\n' + plan);
+  }
+  lines.push('\nInclude a ```plan block: GOAL, ALLIES, THREATS, ORDERS, REFLECTION.');
+
+  // ── MESSAGES ──
+  if (pendingMessages.length > 0) {
+    lines.push('\n--- Messages ---');
+    for (const m of pendingMessages) {
+      lines.push(formatMessage(m, power));
     }
   }
 

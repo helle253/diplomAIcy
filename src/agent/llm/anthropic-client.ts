@@ -47,7 +47,7 @@ interface AnthropicResponse {
  * Uses the same LLMClientConfig but hits /v1/messages instead of /chat/completions.
  */
 export class AnthropicClient implements LLMClient {
-  private config: Required<Omit<LLMClientConfig, 'numCtx'>>;
+  private config: Required<Omit<LLMClientConfig, 'numCtx' | 'think'>>;
 
   constructor(config: LLMClientConfig) {
     this.config = {

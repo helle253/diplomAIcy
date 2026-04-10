@@ -46,9 +46,10 @@ Verify reachability: `curl -s http://host.docker.internal:11434/api/tags`
 | **Fast adjudication** | "Should the engine advance as soon as all agents submit, without waiting for the phase duration?" | true | "fast adjudication" or "fast" in prompt → true |
 | **Phase duration (ms)** | "What is the maximum time each phase should last?" | 0 (no limit) | With fast adjudication: phase ends when all submit OR timer fires, whichever is first. Without: phase always waits the full duration. e.g. "60 minute phases" → 3600000 |
 | **LLM concurrency** | "How many agents can call Ollama simultaneously? (should match OLLAMA_NUM_PARALLEL on host)" | 1 | If user mentions GPU/VRAM or parallel, ask for this explicitly |
-| **Remote timeout (ms)** | "How long should the server wait for agent submissions per phase?" | 600000 | 10 min default; increase for slow models or long games |
-| **LLM request timeout (ms)** | "Per-request timeout for LLM calls?" | 900000 | 15 min default for safety |
-| **Monitor interval** | "How often should the referee check in on the game?" | half the phase duration, or 10m if no phase cap | e.g. 60 min phases → 30m check-ins; no cap → 10m. User can override. Used for `/loop` interval in step 8. |
+| **Disable thinking** | "Should thinking/reasoning be disabled for this model?" | false | Set `"think": false` in the Ollama config JSON. Only relevant for thinking models (qwen3, etc). See "Thinking mode" section below for dramatic performance impact. "no_think" or "/no_think" in prompt → true |
+| **Remote timeout (ms)** | "How long should the server wait for agent submissions per phase?" | (match phaseDelayMs) | Should equal the phase duration. This is the per-agent deadline — if an agent hasn't submitted by this time, its orders default to Hold. Must be ≥ total semaphore queue time (`ceil(7 / LLM_CONCURRENCY) × avg_inference_time`). With thinking: ~52 min for qwen3:8b (concurrency=2). Without thinking: ~3 min. |
+| **LLM request timeout (ms)** | "Per-request timeout for LLM calls?" | 900000 | 15 min default for safety. Can reduce to 300000 (5 min) with thinking disabled. |
+| **Monitor interval** | "How often should the referee check in on the game?" | half the phase duration, or 10m if no phase cap | e.g. 60 min phases → 30m check-ins; no cap → 10m. With thinking disabled and fast adjudication, phases resolve in ~3-6 min — use 5m. User can override. Used for `/loop` interval in step 8. |
 
 ### Ambiguity rules
 
@@ -114,7 +115,7 @@ Start the server and wait for it to be healthy. This MUST run in the foreground 
 npx tsx src/ui/server.ts > /tmp/server-boot.log 2>&1 &
 SERVER_PID=$!
 # Health check — wait for /api/health to respond before proceeding
-until curl -sf http://localhost:3000/api/health > /dev/null 2>&1; do sleep 1; done
+until curl -sf http://localhost:5173/api/health > /dev/null 2>&1; do sleep 1; done
 # Save PID to a well-known file for cleanup across sessions
 echo "$SERVER_PID" > game-notes/server.pid
 echo "Server ready (PID $SERVER_PID)"
@@ -127,9 +128,9 @@ The server PID is saved to `game-notes/server.pid` so it can be killed from any 
 ### 4. Create a lobby
 
 ```bash
-curl -s -X POST http://localhost:3000/trpc/lobby.create \
+curl -s -X POST http://localhost:5173/trpc/lobby.create \
   -H "Content-Type: application/json" \
-  -d '{"name":"Ollama Integration Test","maxYears":2,"autostart":true,"fastAdjudication":true,"agentConfig":{"defaultAgent":{"type":"remote"}},"remoteTimeoutMs":600000}'
+  -d '{"name":"Ollama Integration Test","maxYears":2,"autostart":true,"fastAdjudication":true,"agentConfig":{"defaultAgent":{"type":"remote"}},"remoteTimeoutMs":1800000}'
 ```
 
 Response: `{"result":{"data":{"lobbyId":"...","creatorToken":"..."}}}`. Extract `lobbyId` from `result.data`. `maxYears: 2` keeps the test short (1901-1902). `fastAdjudication: true` means the engine advances as soon as all agents have submitted — no waiting for `PHASE_DELAY`.
@@ -196,19 +197,19 @@ After all agents are connected, invoke the `/loop` skill to set up recurring mon
 Use the `/loop` skill with the computed interval:
 
 ```text
-/loop <monitor-interval> Check game <LOBBY_ID>: curl game state from localhost:3000, report phase/year, SC counts per power, unit positions, check lobby status for game completion. If game is finished, report final results and stop. Append notable events to <GAME_DIR>/REFEREE_NOTES.md.
+/loop <monitor-interval> Check game <LOBBY_ID>: curl game state from localhost:5173, report phase/year, SC counts per power, unit positions, check lobby status for game completion. If game is finished, report final results and stop. Append notable events to <GAME_DIR>/REFEREE_NOTES.md.
 ```
 
 You can also poll manually at any time:
 
 ```bash
-curl -s "http://localhost:3000/trpc/game.getState?input=%7B%22lobbyId%22%3A%22${LOBBY_ID}%22%7D" | python3 -m json.tool
+curl -s "http://localhost:5173/trpc/game.getState?input=%7B%22lobbyId%22%3A%22${LOBBY_ID}%22%7D" | python3 -m json.tool
 ```
 
 Check lobby status for game completion:
 
 ```bash
-curl -s "http://localhost:3000/trpc/lobby.get?input=%7B%22id%22%3A%22${LOBBY_ID}%22%7D" | python3 -m json.tool
+curl -s "http://localhost:5173/trpc/lobby.get?input=%7B%22id%22%3A%22${LOBBY_ID}%22%7D" | python3 -m json.tool
 ```
 
 Response data is at `result.data`.
@@ -297,10 +298,82 @@ LLM_CONCURRENCY=2
 
 ### Timeouts
 
-- **`LLM_REQUEST_TIMEOUT_MS`** — Per-request timeout on the agent side (default: 600s / 10 min). Set to 900000 (15 min) for slower models or large prompts.
-- **`remoteTimeoutMs`** — In lobby creation, controls how long the server waits for agent submissions per phase.
-- **`keep_alive`** — Sent in every LLM request body (hardcoded to `60m`). Tells Ollama to keep the model loaded for 60 minutes between requests instead of the default 5 minutes. This prevents unnecessary model reloads during long games.
+There are multiple timeouts at different layers. They interact — if an inner timeout fires before an outer one, the agent loses its chance to submit and orders default to Hold.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  phaseDelayMs (lobby config)                                │
+│  Max wall-clock time for an entire phase.                   │
+│  The outermost deadline. When it fires, the server          │
+│  resolves the phase with whatever has been submitted.       │
+│  e.g. 3600000 = 1 hour                                     │
+│                                                             │
+│  ┌────────────────────────────────────────────────────────┐ │
+│  │  remoteTimeoutMs (lobby config)                        │ │
+│  │  How long the server waits for each agent to submit    │ │
+│  │  per phase. Starts when the phase begins. If an agent  │ │
+│  │  hasn't called submitOrders/submitBuilds/submitRetreats│ │
+│  │  by this deadline, its orders default to Hold.         │ │
+│  │  With fast adjudication: phase ends when all agents    │ │
+│  │  submit OR this timer fires, whichever comes first.    │ │
+│  │  SET EQUAL TO phaseDelayMs — see note below.           │ │
+│  │                                                        │ │
+│  │  ┌─────────────────────────────────────────────────┐   │ │
+│  │  │  LLM_REQUEST_TIMEOUT_MS (agent env var)         │   │ │
+│  │  │  Per-request timeout on the agent side for a    │   │ │
+│  │  │  single LLM API call. If the model takes longer │   │ │
+│  │  │  than this to respond, the agent aborts that    │   │ │
+│  │  │  call and may retry.                            │   │ │
+│  │  │  DEFAULT: 900000 (15 min)                       │   │ │
+│  │  │                                                 │   │ │
+│  │  │  ┌──────────────────────────────────────────┐   │   │ │
+│  │  │  │  undici headersTimeout (Node.js internal) │   │   │ │
+│  │  │  │  Hardcoded 5-min timeout on HTTP          │   │   │ │
+│  │  │  │  connections waiting for response headers.│   │   │ │
+│  │  │  │  We override this in llm-client.ts to     │   │   │ │
+│  │  │  │  match LLM_REQUEST_TIMEOUT_MS. Without    │   │   │ │
+│  │  │  │  the override, any LLM call >5 min fails  │   │   │ │
+│  │  │  │  with UND_ERR_HEADERS_TIMEOUT.            │   │   │ │
+│  │  │  └──────────────────────────────────────────┘   │   │ │
+│  │  └─────────────────────────────────────────────────┘   │ │
+│  └────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key rule: `remoteTimeoutMs` > `LLM_REQUEST_TIMEOUT_MS` > undici override.** If the remote timeout is shorter than the LLM request timeout, the server will default the agent's orders before the LLM call even finishes — the agent gets "Aborting stale LLM call — new phase arrived".
+
+**IMPORTANT — align `remoteTimeoutMs` with `phaseDelayMs`:**
+Set `remoteTimeoutMs` equal to `phaseDelayMs` (e.g. both 3600000 for 1-hour phases). The remote timeout is the *effective* deadline for agent submissions — if it's shorter than the phase duration, agents get aborted mid-generation when the server advances the phase early.
+
+With 7 agents sharing a 2-slot semaphore (`LLM_CONCURRENCY=2`), the total time for all agents to complete one phase is roughly `(7 / LLM_CONCURRENCY) × avg_inference_time`. For qwen3:8b with thinking tokens, that's ~3.5 rounds × 15 min = **~52 minutes**. A 10-min or even 30-min remote timeout causes most agents to be aborted before they ever reach the LLM. Setting it to 60 min (matching the phase) resolved this — 6-7/7 agents submit per phase instead of 1-3/7.
+
+Other timeouts:
+- **`keep_alive`** — Sent in every LLM request body (hardcoded to `60m`). Tells Ollama to keep the model loaded for 60 minutes between requests instead of the default 5 minutes. Prevents unnecessary model reloads during long games.
 - **`PHASE_DELAY`** — Server env var for minimum delay between engine phases. With `fastAdjudication: true`, the engine advances as soon as all agents submit, so this only matters if agents are faster than the delay.
+
+### Thinking mode (qwen3 and other reasoning models)
+
+Models like qwen3 have a "thinking" mode that generates internal reasoning tokens before responding. This has a **massive impact** on game speed, tool-call reliability, and strategic quality.
+
+**To disable thinking**, set `"think": false` in the Ollama config JSON (e.g. `diplomaicy.config.ollama-host.json`). When `think` is `false` and the base URL ends in `/v1`, the client automatically switches from the OpenAI-compatible endpoint to Ollama's native `/api/chat` endpoint (the only one that supports `think: false`).
+
+**Measured impact (qwen3:8b, LLM_CONCURRENCY=2, 7 agents):**
+
+| Metric | Thinking ON | Thinking OFF |
+|--------|-------------|--------------|
+| Time per phase (all 7 submit) | ~60 min | ~3 min |
+| Agents submitting via tool calls | 3-6 of 7 | 7 of 7 |
+| Text-instead-of-tool-calls rate | ~40% | ~0% |
+| Auto-default (timeout) rate | ~20% | ~0% |
+| Strategic quality | Cautious holds, board stagnation | Aggressive moves, active conflict |
+| Game-years per hour | ~0.4 | ~10+ |
+
+**Why thinking hurts so much in this setup:**
+1. **Inference time**: Each thinking call takes 15-30 min (reasoning tokens + response). With 7 agents and 2 semaphore slots, total phase time is `ceil(7/2) × 20 min ≈ 80 min`.
+2. **Tool-call compliance**: The model spends its token budget on internal reasoning, then often produces a text summary instead of calling the `submitOrders` tool. This triggers the text-parse fallback or auto-default.
+3. **Strategic paralysis**: When the model does submit, thinking mode makes it overly cautious — it reasons itself into holding every unit rather than taking risks.
+
+**Recommendation**: Always disable thinking for Diplomacy games with qwen3. The non-thinking mode produces faster, more decisive, and more strategically interesting play. If you need reasoning capability, use a larger non-thinking model (e.g. qwen2.5:14b) instead.
 
 ## Monitoring
 

@@ -3,9 +3,11 @@ import { readFileSync } from 'fs';
 import { z } from 'zod';
 import { toJSONSchema } from 'zod/v4';
 
+import { PROVINCES } from '../engine/map';
 import { buildMapState } from '../engine/map-state';
-import type { OrderResolution } from '../engine/types';
-import { Coast, OrderType, Phase, Power, UnitType } from '../engine/types';
+import { resolveOrders, resolveRetreats } from '../engine/resolver';
+import type { Order, OrderResolution, RetreatOrder } from '../engine/types';
+import { Coast, OrderType, Phase, PhaseType, Power, UnitType } from '../engine/types';
 import type { LobbyManager } from './lobby-manager';
 import type { GameManager, TurnRecord } from './manager';
 import { createProtectedProcedures, publicProcedure, router } from './trpc';
@@ -86,7 +88,7 @@ const buildOrderSchema = z.discriminatedUnion('type', [
     province: z.string(),
     coast: coastEnum.optional(),
   }),
-  z.object({ type: z.literal('Remove'), unit: z.string() }),
+  z.object({ type: z.literal('Remove'), province: z.string() }),
   z.object({ type: z.literal('Waive') }),
 ]);
 
@@ -156,10 +158,18 @@ function buildPowerSummary(manager: GameManager): Record<string, PowerSummary> {
   return summary;
 }
 
+/** Actions available to agents per phase type. */
+const PHASE_ACTIONS: Record<string, string[]> = {
+  [PhaseType.Orders]: ['submitOrders', 'testOrders', 'sendMessage', 'proposeDraw', 'concede'],
+  [PhaseType.Retreats]: ['submitRetreats', 'testOrders', 'sendMessage'],
+  [PhaseType.Builds]: ['submitBuilds', 'sendMessage'],
+};
+
 function serializeState(manager: GameManager) {
   const state = manager.getState();
   return {
     phase: state.phase,
+    availableActions: PHASE_ACTIONS[state.phase.type] ?? [],
     map: buildMapState(state.units, state.supplyCenters),
     powers: buildPowerSummary(manager),
     orderHistory: serializeOrderHistory(manager.getTurnHistory()),
@@ -245,6 +255,84 @@ export function createGameRouter(lobbyManager: LobbyManager) {
       return manager.getActivePowers();
     }),
 
+    testOrders: playerProcedure
+      .input(
+        z.object({
+          orders: z.array(orderSchema).optional(),
+          retreats: z
+            .array(
+              z.object({
+                unit: z.string(),
+                destination: z.string().optional(),
+                coast: coastEnum.optional(),
+              }),
+            )
+            .optional(),
+        }),
+      )
+      .query(({ ctx, input }) => {
+        const manager = resolveManager(lobbyManager, ctx.lobbyId);
+        const state = manager.getState();
+
+        // Retreat simulation
+        if (input.retreats) {
+          const retreatOrders: RetreatOrder[] = input.retreats.map((r) =>
+            r.destination
+              ? {
+                  type: 'RetreatMove' as const,
+                  unit: r.unit,
+                  destination: r.destination,
+                  coast: r.coast,
+                }
+              : { type: 'Disband' as const, unit: r.unit },
+          );
+
+          const result = resolveRetreats(
+            retreatOrders,
+            state.retreatSituations,
+            state.units.filter(
+              (u) => !state.retreatSituations.some((s) => s.unit.province === u.province),
+            ),
+          );
+
+          return {
+            retreatResults: {
+              succeeded: result.succeeded.map((s) => ({
+                unit: s.unit.province,
+                destination: s.destination,
+              })),
+              disbanded: result.disbanded.map((u) => u.province),
+              collisions: result.collisions.map((c) => ({
+                destination: c.destination,
+                units: c.units.map((u) => u.province),
+              })),
+            },
+          };
+        }
+
+        // Order simulation (default)
+        const orderMap = new Map<string, Order>();
+        for (const order of input.orders ?? []) {
+          orderMap.set(order.unit, order);
+        }
+
+        const result = resolveOrders(state.units, orderMap, PROVINCES);
+
+        return {
+          resolutions: result.resolutions.map((r) => ({
+            order: r.order,
+            power: r.power,
+            status: r.status,
+            reason: r.reason,
+          })),
+          dislodgedUnits: result.dislodgedUnits.map((d) => ({
+            unit: d.unit,
+            attackedFrom: d.attackedFrom,
+            validDestinations: d.validDestinations,
+          })),
+        };
+      }),
+
     getMessages: publicProcedure.input(lobbyIdInput).query(({ input, ctx }) => {
       const manager = resolveManager(lobbyManager, input.lobbyId);
       // Authenticated: see messages addressed to this power (private + global)
@@ -280,6 +368,44 @@ export function createGameRouter(lobbyManager: LobbyManager) {
       .input(z.object({ orders: z.array(orderSchema) }))
       .mutation(({ ctx, input }) => {
         const manager = resolveManager(lobbyManager, ctx.lobbyId);
+        const state = manager.getState();
+
+        // Reject syntactically invalid orders (unknown province, unit not yours, missing coast)
+        const myUnits = state.units.filter((u) => u.power === ctx.power);
+        const myUnitProvinces = myUnits.map((u) => u.province);
+        const errors: { unit: string; error: string }[] = [];
+        for (const order of input.orders) {
+          if (!PROVINCES[order.unit]) {
+            errors.push({ unit: order.unit, error: `Unknown province '${order.unit}'` });
+          } else if (!myUnitProvinces.includes(order.unit)) {
+            errors.push({
+              unit: order.unit,
+              error: `No unit of yours at '${order.unit}'. Your units: ${myUnitProvinces.join(', ')}`,
+            });
+          } else if (order.type === OrderType.Move && order.destination) {
+            const dest = PROVINCES[order.destination as string];
+            const unit = myUnits.find((u) => u.province === order.unit);
+            // Fleet moving to a multi-coast province must specify which coast
+            if (
+              unit?.type === UnitType.Fleet &&
+              dest?.coasts &&
+              dest.coasts.length > 0 &&
+              !('coast' in order && order.coast)
+            ) {
+              errors.push({
+                unit: order.unit,
+                error: `Fleet moving to '${order.destination}' must specify a coast (${dest.coasts.join(' or ')})`,
+              });
+            }
+          }
+        }
+        if (errors.length > 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: JSON.stringify({ invalidOrders: errors }),
+          });
+        }
+
         manager.submitOrders(ctx.power, input.orders);
         return { ok: true };
       }),
@@ -288,6 +414,20 @@ export function createGameRouter(lobbyManager: LobbyManager) {
       .input(z.object({ retreats: z.array(retreatOrderSchema) }))
       .mutation(({ ctx, input }) => {
         const manager = resolveManager(lobbyManager, ctx.lobbyId);
+        const state = manager.getState();
+
+        // Reject empty retreats when power has dislodged units
+        const myRetreats = state.retreatSituations.filter((s) => s.unit.power === ctx.power);
+        if (myRetreats.length > 0 && input.retreats.length === 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: JSON.stringify({
+              error: 'You have dislodged units that must retreat or disband',
+              dislodgedUnits: myRetreats.map((s) => s.unit.province),
+            }),
+          });
+        }
+
         manager.submitRetreats(ctx.power, input.retreats);
         return { ok: true };
       }),
@@ -296,7 +436,13 @@ export function createGameRouter(lobbyManager: LobbyManager) {
       .input(z.object({ builds: z.array(buildOrderSchema) }))
       .mutation(({ ctx, input }) => {
         const manager = resolveManager(lobbyManager, ctx.lobbyId);
-        manager.submitBuilds(ctx.power, input.builds);
+
+        // Pass all builds to the engine — it silently skips invalid ones.
+        // We just convert Remove orders to the internal format.
+        const internalBuilds = input.builds.map((b) =>
+          b.type === 'Remove' ? { type: 'Remove' as const, unit: b.province } : b,
+        );
+        manager.submitBuilds(ctx.power, internalBuilds);
         return { ok: true };
       }),
 

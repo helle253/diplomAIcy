@@ -6,9 +6,9 @@ import { GameToolExecutor, type ToolGameClient } from './tools';
 
 type MockToolGameClient = {
   game: {
-    [K in keyof ToolGameClient['game']]: {
-      mutate: Mock;
-    };
+    [K in keyof ToolGameClient['game']]: K extends 'testOrders'
+      ? { query: Mock }
+      : { mutate: Mock };
   };
 };
 
@@ -43,11 +43,7 @@ describe('GameToolExecutor - map query tools', () => {
     const exec = new GameToolExecutor(mockClient, makeState(), Power.England);
     const result = JSON.parse(await exec.execute('getMyUnits', {}));
     expect(result).toHaveLength(3);
-    expect(result.map((u: { province: string }) => u.province).sort()).toEqual([
-      'edi',
-      'lon',
-      'lvp',
-    ]);
+    expect(result.map((u: { unit: string }) => u.unit).sort()).toEqual(['edi', 'lon', 'lvp']);
   });
 
   it('getAdjacentProvinces returns army adjacencies', async () => {
@@ -141,6 +137,7 @@ describe('GameToolExecutor - action tools', () => {
         submitRetreats: { mutate: vi.fn().mockResolvedValue({ ok: true }) },
         submitBuilds: { mutate: vi.fn().mockResolvedValue({ ok: true }) },
         sendMessage: { mutate: vi.fn().mockResolvedValue({ ok: true }) },
+        testOrders: { query: vi.fn().mockResolvedValue({ resolutions: [] }) },
       },
     } as MockToolGameClient;
   }
@@ -153,7 +150,7 @@ describe('GameToolExecutor - action tools', () => {
         orders: [
           { unit: 'lon', type: 'Hold' },
           { unit: 'edi', type: 'Move', destination: 'nth' },
-          { unit: 'lvp', type: 'Support', supportedUnit: 'edi', destination: 'nth' },
+          { unit: 'lvp', type: 'Move', destination: 'yor' },
         ],
       }),
     );
@@ -211,7 +208,16 @@ describe('GameToolExecutor - action tools', () => {
 
   it('submitRetreats converts missing destination to Disband', async () => {
     const client = makeMockClient();
-    const exec = new GameToolExecutor(client, makeState(), Power.England);
+    const state = makeState({
+      retreatSituations: [
+        {
+          unit: { type: UnitType.Fleet, power: Power.England, province: 'lon' },
+          attackedFrom: 'wal',
+          validDestinations: ['yor'],
+        },
+      ],
+    });
+    const exec = new GameToolExecutor(client, state, Power.England);
     const result = JSON.parse(
       await exec.execute('submitRetreats', {
         retreats: [{ unit: 'lon' }],
@@ -220,5 +226,30 @@ describe('GameToolExecutor - action tools', () => {
     expect(result.ok).toBe(true);
     const args = client.game.submitRetreats.mutate.mock.calls[0][0];
     expect(args.retreats[0].type).toBe('Disband');
+  });
+
+  it('submitOrders accepts non-adjacent move (engine resolves as hold)', async () => {
+    const client = makeMockClient();
+    const exec = new GameToolExecutor(client, makeState(), Power.England);
+    const result = JSON.parse(
+      await exec.execute('submitOrders', {
+        orders: [{ unit: 'lon', type: 'Move', destination: 'nor' }],
+      }),
+    );
+    expect(result.ok).toBe(true);
+    expect(client.game.submitOrders.mutate).toHaveBeenCalledOnce();
+  });
+
+  it('hasSubmitted stays false when server rejects orders', async () => {
+    const client = makeMockClient();
+    client.game.submitOrders.mutate.mockRejectedValueOnce(new Error('BAD_REQUEST'));
+    const exec = new GameToolExecutor(client, makeState(), Power.England);
+    const result = JSON.parse(
+      await exec.execute('submitOrders', {
+        orders: [{ unit: 'par', type: 'Hold' }],
+      }),
+    );
+    expect(result.error).toBeDefined();
+    expect(exec.hasSubmitted).toBe(false);
   });
 });

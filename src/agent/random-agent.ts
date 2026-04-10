@@ -374,7 +374,10 @@ export async function connectRandomAgent(
           for (const b of builds) {
             logger.info(`[${power}]   build: ${JSON.stringify(b)}`);
           }
-          await client.game.submitBuilds.mutate({ builds });
+          const wireBuilds = builds.map((b) =>
+            b.type === 'Remove' ? { type: 'Remove' as const, province: b.unit } : b,
+          );
+          await client.game.submitBuilds.mutate({ builds: wireBuilds });
           logger.info(`[${power}] builds submitted to server`);
         }
       }

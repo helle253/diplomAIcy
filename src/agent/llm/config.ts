@@ -14,6 +14,7 @@ export interface AgentConfig {
   temperature?: number;
   maxTokens?: number;
   numCtx?: number;
+  think?: boolean;
 }
 
 export interface GameConfig {
@@ -79,5 +80,6 @@ export function toLLMClientConfig(agent: AgentConfig): LLMClientConfig {
     temperature: agent.temperature,
     maxTokens: agent.maxTokens,
     numCtx: agent.numCtx,
+    think: agent.think,
   };
 }

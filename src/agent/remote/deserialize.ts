@@ -18,6 +18,7 @@ export interface WireOrderRound {
 /** The wire format returned by the tRPC router (unified map state). */
 export interface SerializedGameState {
   phase: Phase;
+  availableActions?: string[];
   map: Record<string, ProvinceState>;
   orderHistory: Record<string, WireOrderRound[]>;
   retreatSituations: RetreatSituation[];
